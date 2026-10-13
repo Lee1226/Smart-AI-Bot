@@ -37,6 +37,7 @@ def build_model_kwargs(
     Rules:
     - ZhipuAI / ZhiPu  → openai/<model> + hard-coded api_base
     - Bedrock          → bedrock/<model> (AWS creds come from env, set at run start)
+    - Ark               → openai/<bare model> + Ark gateway base URL / key
     - Custom api_base   → openai/<model> + caller's api_base (proxy speaks OpenAI protocol)
     - Everything else   → provider/<model> with no extra_kwargs
     """
@@ -50,6 +51,9 @@ def build_model_kwargs(
         # (vision + tools) automatically. Credentials are read from the
         # AWS_* env vars exported at run start. Don't prefix if already prefixed.
         model_str = model if model.startswith("bedrock/") else f"bedrock/{model}"
+    elif provider.lower() == "ark":
+        model_str = f"openai/{model.removeprefix('ark/')}"
+        extra_kwargs["api_base"] = api_base or "https://ark.cn-beijing.volces.com/api/v3"
     elif api_base:
         model_str = f"openai/{model}"
         extra_kwargs["api_base"] = api_base

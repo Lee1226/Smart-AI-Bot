@@ -42,6 +42,7 @@ def _load_api_key(provider: str) -> str:
             "zhipuai": "zhipu_api_key",
             "zhipu": "zhipu_api_key",
             "groq": "groq_api_key",
+            "ark": "ark_api_key",
         }
         field = key_map.get(provider.lower(), f"{provider.lower()}_api_key")
         return data.get(field, "")
@@ -57,6 +58,7 @@ def _load_api_base(provider: str) -> str:
     try:
         data = json.loads(settings_path.read_text())
         base_map = {
+            "ark": data.get("ark_base_url", "https://ark.cn-beijing.volces.com/api/v3"),
             "anthropic": data.get("anthropic_base_url", ""),
             "ollama": data.get("ollama_base_url", "http://localhost:11434"),
         }

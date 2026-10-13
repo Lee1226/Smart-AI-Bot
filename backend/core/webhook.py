@@ -9,27 +9,26 @@ Supported types:
 """
 from __future__ import annotations
 
-import json
 import logging
-from pathlib import Path
 from typing import Optional
 
 import httpx
 
+from core.settings_store import load_settings, resolve_webhook
+from db.database import AsyncSessionLocal
+from db.models import TestRun
+
 logger = logging.getLogger(__name__)
 
-SETTINGS_PATH = Path(__file__).parent.parent / "data" / "settings.json"
 
-
-def _load_webhook_config() -> tuple[str, str]:
-    """Return (webhook_url, webhook_type) from settings."""
-    if not SETTINGS_PATH.exists():
-        return "", ""
-    try:
-        data = json.loads(SETTINGS_PATH.read_text())
-        return data.get("webhook_url", ""), data.get("webhook_type", "")
-    except Exception:
-        return "", ""
+async def _load_webhook_config(run_id: str) -> tuple[str, str]:
+    """Return (webhook_url, webhook_type) from the run's owning account settings."""
+    async with AsyncSessionLocal() as db:
+        run = await db.get(TestRun, run_id)
+        if run is None or not run.account_id:
+            return "", ""
+        settings = await load_settings(run.account_id)
+    return resolve_webhook(settings)
 
 
 def _build_feishu_body(title: str, text: str, link: str) -> dict:
@@ -102,12 +101,20 @@ async def send_run_notification(
     provider: str,
     model: str,
     base_url: str = "",
+    webhook_url: str = "",
 ) -> None:
     """Send a webhook notification for a completed run.
 
-    Silently returns if no webhook is configured.
+    Silently returns if no webhook is configured. A per-run *webhook_url* overrides
+    the globally configured URL (settings.json) — used by CLI / API-triggered runs
+    that want the result delivered to their own callback.
     """
-    url, wh_type = _load_webhook_config()
+    url, wh_type = await _load_webhook_config(run_id)
+    if webhook_url:
+        url = webhook_url
+        # Per-run webhook defaults to the raw "custom" structured payload.
+        if not wh_type:
+            wh_type = "custom"
     if not url:
         return
 

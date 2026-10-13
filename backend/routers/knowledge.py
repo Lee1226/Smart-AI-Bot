@@ -3,12 +3,21 @@ an LLM and stored as queryable markdown. A reference library (not auto-fed to
 the agent)."""
 from typing import Optional
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Request
 from pydantic import BaseModel
 
+from auth.access import require_operator
 from core.knowledge import add_note, delete_note, get_note, search_notes, update_note
+from db.database import AsyncSessionLocal
 
-router = APIRouter(prefix="/api/knowledge", tags=["knowledge"])
+
+async def _operator_guard(request: Request):
+    async with AsyncSessionLocal() as db:
+        await require_operator(request, db)
+
+router = APIRouter(
+    prefix="/api/knowledge", tags=["knowledge"], dependencies=[Depends(_operator_guard)]
+)
 
 
 class NoteOut(BaseModel):

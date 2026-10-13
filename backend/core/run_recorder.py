@@ -77,9 +77,9 @@ class RunRecorder:
             from db.models import Device
             async with AsyncSessionLocal() as db:
                 device = await db.get(Device, device_id)
-            if device is None or device.connection_type == "browser_usb":
-                # Browser owns USB. Never start host adb or record an unrelated
-                # server-side phone while testing a browser-local device.
+            if device is None or device.connection_type in {"browser_usb", "adb_bridge", "hdc_bridge"}:
+                # USB belongs to a browser/bridge on another host. Never record
+                # an unrelated server-side phone for that registered device.
                 return False
         self.serial = _single_adb_serial()
         if not self.serial:

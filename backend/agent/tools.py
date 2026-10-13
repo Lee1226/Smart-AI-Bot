@@ -181,6 +181,33 @@ TOOLS: list[dict] = [
     {
         "type": "function",
         "function": {
+            "name": "install_apk",
+            "description": (
+                "Install an APK by calling this function directly with a download URL. "
+                "Calling this tool immediately triggers the download + system installer — "
+                "you do NOT need to open any chat/assistant app, and do NOT type the "
+                "command into an input box; just call install_apk(url) directly. "
+                "After calling it, the system installer shows confirmation dialogs whose "
+                "text/buttons vary by device. You MUST keep watching the screen and tap "
+                "the confirm button via tap_element() until the app is actually installed, "
+                "then dismiss any '完成/打开' dialog. "
+                "⚠️ 隐蔽场景：(1) 小米 MIUI 纯净模式会弹「安装被拦截」页，上面的「取消」「安装其他应用」"
+                "都不能点，正确是点右上角「⋮ 三个点」菜单，再选「授权本次安装」。"
+                "(2) 其它 ROM 的确认按钮文案可能是「继续安装/允许本次安装/仍然安装」。"
+                "Do NOT call mark_done until the whole install dialog flow is finished."
+            ),
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "url": {"type": "string", "description": "APK download URL"},
+                },
+                "required": ["url"],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
             "name": "list_packages",
             "description": (
                 "List installed, launchable apps as 'App Name | package.name' "
@@ -431,3 +458,26 @@ KB_READ_TOOLS: list[dict] = [
         },
     },
 ]
+
+
+def tools_for_platform(platform: str) -> list[dict]:
+    if platform != 'harmony':
+        return list(TOOLS)
+    from copy import deepcopy
+    tools = deepcopy([tool for tool in TOOLS if tool['function']['name'] != 'install_apk'])
+    for tool in tools:
+        fn = tool['function']
+        if fn['name'] == 'start_app':
+            fn['description'] = ('Launch a HarmonyOS app by its exact bundle name. Use list_packages first; '
+                                 'activity is an optional Harmony Ability name, resolved from bundle metadata if omitted.')
+        elif fn['name'] == 'list_packages':
+            fn['description'] = 'List installed HarmonyOS bundle names; use the returned bundle for start_app. Some system bundles are not launchable.'
+        elif fn['name'] == 'press_key':
+            fn['parameters']['properties']['key']['enum'] = ['back', 'home', 'enter', 'del', 'tab']
+        elif fn['name'] == 'global_action':
+            fn['description'] = 'Trigger a HarmonyOS back or home action.'
+            fn['parameters']['properties']['action']['enum'] = ['back', 'home']
+        elif fn['name'] == 'input_text':
+            fn['description'] = 'Type printable ASCII into the focused Harmony field. Unicode and clear=true are not supported.'
+            fn['parameters']['properties']['clear']['enum'] = [False]
+    return tools

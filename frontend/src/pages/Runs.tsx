@@ -4,6 +4,9 @@ import { fetchRuns, startRun, deleteRun, Run } from '../lib/api'
 import { useT } from '../lib/i18n'
 
 const STATUS_COLOR: Record<string, string> = {
+  queued: 'bg-yellow-50 text-yellow-600',
+  preparing: 'bg-yellow-50 text-yellow-600',
+  interrupted: 'bg-orange-100 text-orange-700',
   pending:   'bg-yellow-50 text-yellow-600',
   running:   'bg-primary-soft text-primary-deep',
   done:      'bg-green-100 text-ok',
@@ -11,7 +14,7 @@ const STATUS_COLOR: Record<string, string> = {
   cancelled: 'bg-primary-soft text-primary-deep',
 }
 
-const TERMINAL = new Set(['done', 'error', 'cancelled'])
+const TERMINAL = new Set(['done', 'error', 'cancelled', 'interrupted'])
 
 function statusBadge(s: string) {
   return (

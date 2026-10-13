@@ -10,6 +10,10 @@ def _uuid() -> str:
     return str(uuid.uuid4())
 
 
+QUICK_SUITE_FORMAT = "quick"
+QUICK_SUITE_PREFIX = "快速任务:"
+
+
 class Device(Base):
     __tablename__ = "devices"
 
@@ -19,6 +23,7 @@ class Device(Base):
     connection_type: Mapped[str] = mapped_column(String, default="portal")
     status: Mapped[str] = mapped_column(String, default="offline")  # online/offline
     last_seen: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+    account_id: Mapped[Optional[str]] = mapped_column(String, nullable=True)
 
 
 class TestSuite(Base):
@@ -32,6 +37,10 @@ class TestSuite(Base):
     # Target app package — used to match an optional Project Profile (external
     # KB / skills / source) so the agent gets project-specific context.
     app_package: Mapped[str] = mapped_column(String, default="")
+    project_id: Mapped[str] = mapped_column(String, default="")
+    account_id: Mapped[Optional[str]] = mapped_column(String, nullable=True)
+    # User-defined grouping tag (e.g. "登录", "支付", "回归") — empty = ungrouped.
+    tag: Mapped[str] = mapped_column(String, default="")
 
     cases: Mapped[list["TestCase"]] = relationship(back_populates="suite", cascade="all, delete-orphan")
     runs: Mapped[list["TestRun"]] = relationship(back_populates="suite", cascade="all, delete-orphan")
@@ -55,6 +64,12 @@ class TestCase(Base):
     # action while making real progress. Skips the L4 stuck-loop backstop and
     # relies on max_steps instead. See docs/agent-architecture.md.
     loop_task: Mapped[bool] = mapped_column(Boolean, default=False)
+    account_id: Mapped[Optional[str]] = mapped_column(String, nullable=True)
+    # Deterministic replay: raw recorded actions (JSON list of
+    # {kind, x, y, text, direction, action, package, delay_ms}) captured at
+    # record time. When present, a run in "replay" mode executes these verbatim
+    # (coordinates + timing) without per-step AI decisions.
+    replay_steps: Mapped[str] = mapped_column(Text, default="")
 
     suite: Mapped["TestSuite"] = relationship(back_populates="cases")
 
@@ -83,6 +98,7 @@ class StepNode(Base):
     #   ref_id    — a LIVE LINK: this node resolves to ref_id's node + subtree
     source_id: Mapped[Optional[str]] = mapped_column(String, nullable=True)
     ref_id: Mapped[Optional[str]] = mapped_column(String, nullable=True, index=True)
+    account_id: Mapped[Optional[str]] = mapped_column(String, nullable=True)
 
 
 class TestRun(Base):
@@ -97,6 +113,11 @@ class TestRun(Base):
     model: Mapped[str] = mapped_column(String, default="")
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
     finished_at: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True)
+    account_id: Mapped[Optional[str]] = mapped_column(String, nullable=True)
+    # Optional per-run webhook URL — if set, POST structured result here on completion.
+    webhook_url: Mapped[str] = mapped_column(String, default="")
+    test_account_id: Mapped[str] = mapped_column(String, default="")
+    test_account_name: Mapped[str] = mapped_column(String, default="")
 
     suite: Mapped["TestSuite"] = relationship(back_populates="runs")
     results: Mapped[list["TestResult"]] = relationship(back_populates="run", cascade="all, delete-orphan")
@@ -119,6 +140,7 @@ class TestResult(Base):
     is_starred: Mapped[bool] = mapped_column(Boolean, default=False)
     action_history_json: Mapped[str] = mapped_column(Text, default="")  # JSON list of {step,fn_name,args,result}
     total_tokens: Mapped[int] = mapped_column(Integer, default=0)
+    account_id: Mapped[Optional[str]] = mapped_column(String, nullable=True)
 
     run: Mapped["TestRun"] = relationship(back_populates="results")
     step_logs: Mapped[list["TestStepLog"]] = relationship(back_populates="result", cascade="all, delete-orphan")
@@ -149,6 +171,7 @@ class TestStepLog(Base):
     # Subgoal context (null for single-agent runs)
     subgoal_index: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
     subgoal_desc: Mapped[str] = mapped_column(Text, default="")
+    account_id: Mapped[Optional[str]] = mapped_column(String, nullable=True)
 
     result: Mapped["TestResult"] = relationship(back_populates="step_logs")
 
@@ -167,3 +190,91 @@ class LessonLearned(Base):
     source_run_id: Mapped[str] = mapped_column(String, default="")
     source_step: Mapped[int] = mapped_column(Integer, default=0)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+    account_id: Mapped[Optional[str]] = mapped_column(String, nullable=True)
+
+
+# ── Multi-tenancy: Accounts & Users ──────────────────────────────────────────
+
+
+class Account(Base):
+    """A tenant / team — owns all resources (devices, suites, runs, …)."""
+    __tablename__ = "accounts"
+
+    id: Mapped[str] = mapped_column(String, primary_key=True, default=_uuid)
+    name: Mapped[str] = mapped_column(String, unique=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+    # Installation-level operator: owns global settings / releases / project profiles.
+    # Only one account should have this set; auth resolves it (env pin → this flag → oldest).
+    is_operator: Mapped[bool] = mapped_column(Boolean, default=False)
+
+    users: Mapped[list["User"]] = relationship(back_populates="account", cascade="all, delete-orphan")
+    api_keys: Mapped[list["ApiKey"]] = relationship(back_populates="account", cascade="all, delete-orphan")
+
+
+class AccountSettings(Base):
+    """Per-account settings (LLM keys / default model / language / webhook).
+
+    Isolated from the operator's global secrets — each account configures and
+    uses its own keys.  JSON blob mirrors the legacy global settings.json shape.
+    """
+    __tablename__ = "account_settings"
+
+    account_id: Mapped[str] = mapped_column(ForeignKey("accounts.id"), primary_key=True)
+    data: Mapped[str] = mapped_column(Text, default="{}")   # JSON-serialized settings dict
+    updated_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+
+
+class User(Base):
+    """A login user belonging to exactly one account."""
+    __tablename__ = "users"
+
+    id: Mapped[str] = mapped_column(String, primary_key=True, default=_uuid)
+    account_id: Mapped[str] = mapped_column(ForeignKey("accounts.id"), index=True)
+    email: Mapped[str] = mapped_column(String, unique=True, index=True)
+    password_hash: Mapped[str] = mapped_column(String)
+    name: Mapped[str] = mapped_column(String, default="")
+    role: Mapped[str] = mapped_column(String, default="member")  # owner / admin / member
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+    last_login_at: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True)
+
+    account: Mapped["Account"] = relationship(back_populates="users")
+
+
+class ApiKey(Base):
+    """API key for programmatic access — belongs to an account, created by a user."""
+    __tablename__ = "api_keys"
+
+    id: Mapped[str] = mapped_column(String, primary_key=True, default=_uuid)
+    account_id: Mapped[str] = mapped_column(ForeignKey("accounts.id"), index=True)
+    name: Mapped[str] = mapped_column(String, default="")          # human label
+    key_hash: Mapped[str] = mapped_column(String, unique=True)     # sha256(full_key)
+    key_prefix: Mapped[str] = mapped_column(String, default="")    # sk-XXXX… for UI display
+    permissions: Mapped[str] = mapped_column(Text, default="[]")   # JSON list, reserved
+    created_by: Mapped[Optional[str]] = mapped_column(ForeignKey("users.id"), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+    last_used_at: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True)
+
+    account: Mapped["Account"] = relationship(back_populates="api_keys")
+
+
+class ProjectTestAccount(Base):
+    __tablename__ = "project_test_accounts"
+    id: Mapped[str] = mapped_column(String, primary_key=True, default=_uuid)
+    account_id: Mapped[str] = mapped_column(String, index=True)
+    project_id: Mapped[str] = mapped_column(String, index=True)
+    name: Mapped[str] = mapped_column(String)
+    environment: Mapped[str] = mapped_column(String, default="测试服")
+    platforms: Mapped[str] = mapped_column(Text, default='["android", "harmony"]')
+    login_mode: Mapped[str] = mapped_column(String, default="phone")
+    username_enc: Mapped[str] = mapped_column(Text, default="")
+    password_enc: Mapped[str] = mapped_column(Text, default="")
+    verification_code_enc: Mapped[str] = mapped_column(Text, default="")
+    notes: Mapped[str] = mapped_column(Text, default="")
+    is_default: Mapped[bool] = mapped_column(Boolean, default=False)
+    active: Mapped[bool] = mapped_column(Boolean, default=True)
+
+
+class TestAccountLease(Base):
+    __tablename__ = "test_account_leases"
+    test_account_id: Mapped[str] = mapped_column(String, primary_key=True)
+    run_id: Mapped[str] = mapped_column(String, index=True)

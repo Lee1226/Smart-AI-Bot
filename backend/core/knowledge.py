@@ -24,7 +24,7 @@ from pathlib import Path
 from typing import Optional
 
 from agent.llm import ModelTarget, resilient_completion
-from core.i18n import current_language, lang_directive
+from core.i18n import lang_directive
 
 logger = logging.getLogger(__name__)
 
@@ -36,7 +36,6 @@ logger = logging.getLogger(__name__)
 # OUTSIDE the volume — every rebuild silently wiped them.
 NOTES_DIR = Path(__file__).resolve().parent.parent / "data" / "notes"
 _LEGACY_NOTES_DIR = Path(__file__).resolve().parent.parent.parent / "test_knowledge" / "notes"
-_SETTINGS = Path(__file__).resolve().parent.parent / "data" / "settings.json"
 
 
 def _migrate_legacy_notes() -> None:
@@ -65,43 +64,35 @@ _migrate_legacy_notes()
 _META_RE = re.compile(r"<!--\s*smartbot-note\s*(\{.*?\})\s*-->", re.DOTALL)
 
 
-# ── Model resolution (reuse the configured default provider) ───────────────
+# ── Model resolution (reuse the operator account's configured model) ───────
 
-def _resolve_model() -> tuple[str, str, str, str]:
-    """(provider, model, api_key, api_base) from settings.json defaults."""
-    try:
-        data = json.loads(_SETTINGS.read_text())
-    except Exception:
-        return ("openai", "gpt-4o", "", "")
-    provider = (data.get("default_provider") or "openai").lower()
-    model = data.get("default_model") or "gpt-4o"
-    key_map = {
-        "openai": "openai_api_key", "anthropic": "anthropic_api_key",
-        "google": "gemini_api_key", "gemini": "gemini_api_key",
-        "zhipuai": "zhipu_api_key", "zhipu": "zhipu_api_key",
-        "groq": "groq_api_key", "ollama": "",
-    }
-    api_key = data.get(key_map.get(provider, f"{provider}_api_key"), "")
-    base_map = {
-        "anthropic": data.get("anthropic_base_url", ""),
-        "ollama": data.get("ollama_base_url", "http://localhost:11434"),
-    }
-    if provider == "bedrock":
-        _apply_aws_env(data)  # litellm/boto3 read AWS creds from the environment
-    return (provider, model, api_key, base_map.get(provider, ""))
+async def _resolve_operator_model() -> tuple[str, str, str, str, str]:
+    """(provider, model, api_key, api_base, language) from the operator settings.
 
+    The knowledge base is operator-only (see routers/knowledge.py), so its LLM
+    runs on the operator's configured keys, not a per-tenant account.
+    """
+    from core.settings_store import (
+        apply_aws_env,
+        load_settings,
+        operator_account_id,
+        resolve_api_base,
+        resolve_api_key,
+        resolve_language,
+        resolve_provider_model,
+    )
+    from db.database import AsyncSessionLocal
 
-def _apply_aws_env(data: dict) -> None:
-    """Export AWS Bedrock creds from settings into the process env so the
-    'bedrock' provider authenticates (mirrors the test-runner's behavior)."""
-    ak, sk = data.get("aws_access_key_id", ""), data.get("aws_secret_access_key", "")
-    region = data.get("aws_region_name", "") or "us-east-1"
-    if ak and sk:
-        os.environ["AWS_ACCESS_KEY_ID"] = ak
-        os.environ["AWS_SECRET_ACCESS_KEY"] = sk
-        os.environ["AWS_REGION_NAME"] = region
-        os.environ["AWS_DEFAULT_REGION"] = region
-        os.environ["AWS_REGION"] = region
+    async with AsyncSessionLocal() as db:
+        op = await operator_account_id(db)
+    settings = await load_settings(op)
+    provider, model = resolve_provider_model(settings)
+    api_key = resolve_api_key(settings, provider)
+    api_base = resolve_api_base(settings, provider)
+    language = resolve_language(settings)
+    if provider.lower() == "bedrock":
+        apply_aws_env(settings)
+    return provider, model, api_key, api_base, language
 
 
 # ── Storage ────────────────────────────────────────────────────────────────
@@ -277,7 +268,7 @@ async def organize(raw_input: str) -> dict:
 
     Always returns a usable dict; on any failure it falls back to storing the
     raw text verbatim so the user never loses input."""
-    provider, model, api_key, api_base = _resolve_model()
+    provider, model, api_key, api_base, language = await _resolve_operator_model()
     fallback = {
         "title": raw_input.strip()[:20] or "未命名",
         "body": raw_input.strip(),
@@ -289,7 +280,7 @@ async def organize(raw_input: str) -> dict:
             primary=ModelTarget(provider, model, api_key, api_base),
             base_kwargs={
                 "messages": [
-                    {"role": "system", "content": _ORGANIZE_PROMPT + lang_directive(current_language())},
+                    {"role": "system", "content": _ORGANIZE_PROMPT + lang_directive(language)},
                     {"role": "user", "content": raw_input.strip()},
                 ],
                 "temperature": 0.2,

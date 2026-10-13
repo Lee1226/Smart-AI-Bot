@@ -3,15 +3,27 @@ import json
 from dataclasses import asdict
 from typing import List, Optional
 
-from fastapi import APIRouter, Depends, File, HTTPException, UploadFile
+from fastapi import APIRouter, Depends, File, Form, HTTPException, Request, UploadFile
 from pydantic import BaseModel
-from sqlalchemy import delete, func, or_, select, update
+from sqlalchemy import and_, delete, func, not_, or_, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from core.step_tree import ChainItem, NodeRow, chain_to_node, clone_chain
-from core.test_parser import parse_file
+from auth.access import require_node as require_owned_node
+from core.step_tree import ChainItem, NodeRow, chain_to_node, clone_chain, dfs_run_targets, flatten_chain, resolve_links
+from core.test_parser import Step, TestCaseData, parse_file
+from core.suite_organizer import ImportDraft, organize_suite, source_cases, validate_coverage
 from db.database import AsyncSessionLocal
-from db.models import LessonLearned, StepNode, TestCase, TestResult, TestRun, TestStepLog, TestSuite
+from db.models import (
+    QUICK_SUITE_FORMAT,
+    QUICK_SUITE_PREFIX,
+    LessonLearned,
+    StepNode,
+    TestCase,
+    TestResult,
+    TestRun,
+    TestStepLog,
+    TestSuite,
+)
 
 router = APIRouter(prefix="/api/suites", tags=["suites"])
 
@@ -28,6 +40,14 @@ class SuiteOut(BaseModel):
     case_count: int
     created_at: str
     app_package: str = ""
+    project_id: str = ""
+    tag: str = ""
+
+
+class SuiteListPage(BaseModel):
+    total: int
+    items: List[SuiteOut]
+    tags: List[str]  # distinct tags in use (for the grouping sidebar)
 
 
 class CaseOut(BaseModel):
@@ -99,29 +119,119 @@ class CopyIn(BaseModel):
     link: bool = False   # True = live link (one ref node); False = snapshot copy
 
 
-@router.get("", response_model=List[SuiteOut])
-async def list_suites(db: AsyncSession = Depends(get_db)):
-    result = await db.execute(select(TestSuite).order_by(TestSuite.created_at.desc()))
+def visible_suite_clause():
+    """Exclude internal quick-run containers from the user's suite library.
+
+    New quick tasks use a dedicated source format.  The name check also hides
+    containers created by older releases, while leaving imported XMind/Markdown
+    files with a similar title visible.
+    """
+    return not_(or_(
+        TestSuite.source_format == QUICK_SUITE_FORMAT,
+        and_(
+            TestSuite.source_format == "manual",
+            TestSuite.name.startswith(QUICK_SUITE_PREFIX),
+        ),
+    ))
+
+
+@router.get("", response_model=SuiteListPage)
+async def list_suites(
+    request: Request,
+    q: str = "",
+    tag: str = "",
+    page: int = 1,
+    page_size: int = 50,
+    db: AsyncSession = Depends(get_db),
+):
+    """List suites with optional name search (q), tag filter, and pagination."""
+    stmt = select(TestSuite).where(visible_suite_clause())
+    if request.state.account_id:
+        stmt = stmt.where(TestSuite.account_id == request.state.account_id)
+    if q:
+        stmt = stmt.where(TestSuite.name.ilike(f"%{q}%"))
+    if tag:
+        stmt = stmt.where(TestSuite.tag == tag)
+
+    total = len((await db.execute(stmt)).scalars().all())
+
+    offset = (page - 1) * page_size
+    result = await db.execute(
+        stmt.order_by(TestSuite.created_at.desc()).offset(offset).limit(page_size)
+    )
     suites = result.scalars().all()
+
     out = []
     for s in suites:
         count_res = await db.execute(
             select(TestCase).where(TestCase.suite_id == s.id)
         )
         count = len(count_res.scalars().all())
+        if s.source_format == "manual":
+            count = await manual_case_count(db, s.id)
         out.append(SuiteOut(
             id=s.id,
             name=s.name,
             source_format=s.source_format,
             case_count=count,
             created_at=s.created_at.isoformat(),
-            app_package=s.app_package or "",
+            app_package=s.app_package or "", project_id=s.project_id or "",
+            tag=s.tag or "",
         ))
-    return out
+
+    # Distinct tags in use (for the grouping sidebar), scoped to the account.
+    tags_stmt = select(TestSuite.tag).where(
+        TestSuite.tag != "",
+        visible_suite_clause(),
+    )
+    if request.state.account_id:
+        tags_stmt = tags_stmt.where(TestSuite.account_id == request.state.account_id)
+    tags = sorted({t for (t,) in (await db.execute(tags_stmt.distinct())).all()})
+
+    return SuiteListPage(total=total, items=out, tags=tags)
+
+
+class ManualSuiteIn(BaseModel):
+    name: str
+    app_package: str = ""
+    project_id: str = ""
+    tag: str = ""
+
+
+async def validate_project_assignment(project_id: str, request: Request, db):
+    if project_id:
+        from auth.access import require_operator
+        from core.projects import get_project
+        await require_operator(request, db)
+        if not get_project(project_id):
+            raise HTTPException(status_code=400, detail="Project not found")
+
+
+async def manual_case_count(db: AsyncSession, suite_id: str) -> int:
+    nodes = (await db.execute(select(StepNode).where(StepNode.suite_id == suite_id))).scalars().all()
+    parents = {node.parent_id for node in nodes if node.parent_id}
+    return sum(node.id not in parents for node in nodes)
+
+
+@router.post("/manual", response_model=SuiteOut, status_code=201)
+async def create_manual_suite(body: ManualSuiteIn, request: Request, db: AsyncSession = Depends(get_db)):
+    name = body.name.strip()
+    if not name or len(name) > 120 or name.startswith(QUICK_SUITE_PREFIX):
+        raise HTTPException(status_code=422, detail="套件名称需为 1–120 个字符，且不能使用快速任务保留前缀")
+    await validate_project_assignment(body.project_id.strip(), request, db)
+    suite = TestSuite(project_id=body.project_id.strip(), name=name, source_format="manual", app_package=body.app_package.strip(),
+                      tag=body.tag.strip(), account_id=request.state.account_id)
+    db.add(suite)
+    await db.commit()
+    await db.refresh(suite)
+    return SuiteOut(id=suite.id, name=suite.name, source_format=suite.source_format,
+                    case_count=0, created_at=suite.created_at.isoformat(),
+                    project_id=suite.project_id or "", app_package=suite.app_package, tag=suite.tag)
 
 
 @router.post("", response_model=SuiteOut, status_code=201)
 async def upload_suite(
+    request: Request,
     file: UploadFile = File(...),
     db: AsyncSession = Depends(get_db),
 ):
@@ -139,7 +249,7 @@ async def upload_suite(
     ext = filename.rsplit(".", 1)[-1].lower()
     fmt = "xmind" if ext == "xmind" else "markdown"
 
-    suite = TestSuite(name=filename, source_format=fmt)
+    suite = TestSuite(name=filename, source_format=fmt, account_id=request.state.account_id)
     db.add(suite)
     await db.flush()  # get suite.id
 
@@ -155,6 +265,7 @@ async def upload_suite(
             expected=c.expected,
             order=i,
             checkpoints=checkpoints_json,
+            account_id=request.state.account_id,
         ))
 
     await db.commit()
@@ -166,30 +277,41 @@ async def upload_suite(
         source_format=suite.source_format,
         case_count=len(cases),
         created_at=suite.created_at.isoformat(),
-        app_package=suite.app_package or "",
+        project_id=suite.project_id or "", app_package=suite.app_package or "",
+        tag=suite.tag or "",
     )
 
 
 class SuitePatch(BaseModel):
-    app_package: str = ""
+    app_package: Optional[str] = None
+    project_id: Optional[str] = None
+    tag: Optional[str] = None
 
 
 @router.patch("/{suite_id}", response_model=SuiteOut)
-async def update_suite(suite_id: str, body: SuitePatch, db: AsyncSession = Depends(get_db)):
-    """Set the suite's target app package (used to match a Project Profile)."""
+async def update_suite(suite_id: str, body: SuitePatch, request: Request, db: AsyncSession = Depends(get_db)):
+    """Set the suite's target app package / grouping tag. Omitted fields are left unchanged."""
     suite = await db.get(TestSuite, suite_id)
     if not suite:
         raise HTTPException(status_code=404, detail="Suite not found")
-    suite.app_package = (body.app_package or "").strip()
+    if body.project_id is not None:
+        await validate_project_assignment(body.project_id.strip(), request, db)
+        suite.project_id = body.project_id.strip()
+    if body.app_package is not None:
+        suite.app_package = body.app_package.strip()
+    if body.tag is not None:
+        suite.tag = body.tag.strip()
     await db.commit()
     await db.refresh(suite)
     count = len((await db.execute(
         select(TestCase).where(TestCase.suite_id == suite_id)
     )).scalars().all())
+    if suite.source_format == "manual":
+        count = await manual_case_count(db, suite_id)
     return SuiteOut(
         id=suite.id, name=suite.name, source_format=suite.source_format,
         case_count=count, created_at=suite.created_at.isoformat(),
-        app_package=suite.app_package or "",
+        project_id=suite.project_id or "", app_package=suite.app_package or "", tag=suite.tag or "",
     )
 
 
@@ -202,13 +324,16 @@ async def get_suite(suite_id: str, db: AsyncSession = Depends(get_db)):
         select(TestCase).where(TestCase.suite_id == suite_id)
     )
     count = len(count_res.scalars().all())
+    if suite.source_format == "manual":
+        count = await manual_case_count(db, suite_id)
     return SuiteOut(
         id=suite.id,
         name=suite.name,
         source_format=suite.source_format,
         case_count=count,
         created_at=suite.created_at.isoformat(),
-        app_package=suite.app_package or "",
+        project_id=suite.project_id or "", app_package=suite.app_package or "",
+        tag=suite.tag or "",
     )
 
 
@@ -233,11 +358,268 @@ async def list_cases(suite_id: str, db: AsyncSession = Depends(get_db)):
     ]
 
 
+@router.get("/{suite_id}/export")
+async def export_suite(suite_id: str, db: AsyncSession = Depends(get_db)):
+    """导出测试套件为 JSON 文件（suite + cases + step-tree）。"""
+    from fastapi.responses import Response
+
+    suite = await db.get(TestSuite, suite_id)
+    if not suite:
+        raise HTTPException(status_code=404, detail="Suite not found")
+
+    cases = (await db.execute(
+        select(TestCase).where(TestCase.suite_id == suite_id).order_by(TestCase.order)
+    )).scalars().all()
+    nodes = (await db.execute(
+        select(StepNode).where(StepNode.suite_id == suite_id).order_by(StepNode.order)
+    )).scalars().all()
+
+    payload = {
+        "version": 1,
+        "name": suite.name,
+        "source_format": suite.source_format,
+        "app_package": suite.app_package or "",
+        "project_id": suite.project_id or "",
+        "tag": suite.tag or "",
+        "cases": [
+            {
+                "path": c.path, "expected": c.expected, "order": c.order,
+                "parameters": c.parameters or "", "checkpoints": c.checkpoints or "",
+                "loop_task": c.loop_task, "replay_steps": c.replay_steps or "",
+            }
+            for c in cases
+        ],
+        "nodes": [
+            {
+                "id": n.id, "parent_id": n.parent_id,
+                "action": n.action, "expected": n.expected, "order": n.order,
+                "reversible": n.reversible, "loop_task": n.loop_task,
+                "parameters": n.parameters or "", "source_id": n.source_id, "ref_id": n.ref_id,
+            }
+            for n in nodes
+        ],
+    }
+    content = json.dumps(payload, ensure_ascii=False, indent=2)
+    # 文件名用 ASCII（中文名会触发 latin-1 编码错误），内容仍是完整 JSON
+    filename = f"suite_{suite_id[:8]}.json"
+    return Response(
+        content=content,
+        media_type="application/json",
+        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+    )
+
+
+class ImportSuiteBody(BaseModel):
+    name: str
+    source_format: str = "markdown"
+    app_package: str = ""
+    project_id: str = ""
+    tag: str = ""
+    cases: List[dict] = []
+    nodes: List[dict] = []
+
+
+@router.post("/import/ai-preview", response_model=ImportDraft)
+async def preview_organized_suite(request: Request, file: UploadFile = File(...), platform: str = Form("android")):
+    """Generate a reviewable draft without creating or changing a suite."""
+    if platform not in {"android", "ios", "harmony"}:
+        raise HTTPException(status_code=422, detail="不支持的平台")
+    content = await file.read(10 * 1024 * 1024 + 1)
+    if len(content) > 10 * 1024 * 1024:
+        raise HTTPException(status_code=413, detail="文件过大，AI 整理支持不超过 10MB 的文件")
+    try:
+        sources = source_cases(parse_file(file.filename or "upload.xmind", content))
+    except Exception as exc:
+        raise HTTPException(status_code=422, detail=f"文件无法解析：{exc}") from exc
+    try:
+        return await organize_suite(request.state.account_id, file.filename or "AI 整理用例", platform, sources)
+    except ValueError as exc:
+        # Pydantic/JSON validation failures should not echo model output.
+        if type(exc) is ValueError:
+            raise HTTPException(status_code=422, detail=str(exc)) from exc
+        raise HTTPException(status_code=422, detail="AI 整理结果不完整或格式不正确，请重试；原文件未导入") from exc
+    except Exception as exc:
+        raise HTTPException(status_code=502, detail="AI 整理调用失败，请检查当前模型配置或重试；也可原样导入") from exc
+
+
+@router.post("/import/ai-confirm", response_model=SuiteOut, status_code=201)
+async def confirm_organized_suite(body: ImportDraft, request: Request, db: AsyncSession = Depends(get_db)):
+    try:
+        validate_coverage(body)
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    await validate_project_assignment(body.project_id.strip(), request, db)
+    suite = TestSuite(project_id=body.project_id.strip(), name=body.name, source_format="ai_organized", app_package=body.app_package,
+                      account_id=request.state.account_id)
+    db.add(suite)
+    await db.flush()
+    for order, case in enumerate(body.cases):
+        def expected(step):
+            return "\n".join(f"• {a.text}" for a in step.assertions)
+        metadata = json.dumps({"platform": body.platform, "preconditions": case.preconditions,
+                               "review_notes": body.review_notes, "changes": body.changes,
+                               "source_cases": [s.model_dump() for s in body.sources],
+                               "organized_case": case.model_dump(), "model": body.model}, ensure_ascii=False)
+        db.add(TestCase(suite_id=suite.id, path=case.title, expected=expected(case.steps[-1]), order=order,
+                        checkpoints=json.dumps([{"action": s.action, "expected": expected(s)} for s in case.steps], ensure_ascii=False),
+                        parameters=metadata, account_id=request.state.account_id))
+        label = case.title
+        if case.preconditions:
+            label += "\n前置条件：" + "；".join(case.preconditions)
+        root = StepNode(suite_id=suite.id, action=label, order=order, parameters=metadata,
+                        reversible=False, account_id=request.state.account_id)
+        db.add(root)
+        await db.flush()
+        parent_id = root.id
+        for index, step in enumerate(case.steps):
+            node = StepNode(suite_id=suite.id, parent_id=parent_id, action=step.action,
+                            expected=expected(step), order=index, reversible=False,
+                            parameters=json.dumps({"assertions": [a.model_dump() for a in step.assertions]}, ensure_ascii=False),
+                            account_id=request.state.account_id)
+            db.add(node)
+            await db.flush()
+            parent_id = node.id
+    await db.commit()
+    return SuiteOut(id=suite.id, name=suite.name, source_format=suite.source_format,
+                    case_count=len(body.cases), created_at=suite.created_at.isoformat(),
+                    project_id=suite.project_id or "", app_package=suite.app_package or "", tag=suite.tag or "")
+
+
+class OrganizeOptions(BaseModel):
+    platform: str = "android"
+
+
+@router.post("/{suite_id}/organize/preview", response_model=ImportDraft)
+async def preview_existing_suite(suite_id: str, body: OrganizeOptions, request: Request, db: AsyncSession = Depends(get_db)):
+    suite = (await db.execute(select(TestSuite).where(TestSuite.id == suite_id,
+                          TestSuite.account_id == request.state.account_id))).scalar_one_or_none()
+    if not suite:
+        raise HTTPException(status_code=404, detail="Suite not found")
+    if body.platform not in {"android", "ios", "harmony"}:
+        raise HTTPException(status_code=422, detail="不支持的平台")
+    rows = (await db.execute(select(StepNode).where(StepNode.suite_id == suite_id))).scalars().all()
+    if rows:
+        def node_row(row):
+            return NodeRow(id=row.id, parent_id=row.parent_id, action=row.action, expected=row.expected or "",
+                           order=row.order, ref_id=row.ref_id or "")
+        nodes = [node_row(row) for row in rows]
+        if any(n.ref_id for n in nodes):
+            all_rows = (await db.execute(select(StepNode).join(TestSuite, TestSuite.id == StepNode.suite_id)
+                                        .where(TestSuite.account_id == request.state.account_id))).scalars().all()
+            nodes = resolve_links(nodes, {row.id: node_row(row) for row in all_rows})
+        original = [flatten_chain(target.chain) for target in dfs_run_targets(nodes)]
+    else:
+        rows = (await db.execute(select(TestCase).where(TestCase.suite_id == suite_id).order_by(TestCase.order))).scalars().all()
+        original = [TestCaseData(path=row.path, expected=row.expected,
+                    steps=[Step(**s) for s in json.loads(row.checkpoints or "[]")]) for row in rows]
+    try:
+        sources = source_cases(original)
+        draft = await organize_suite(request.state.account_id, suite.name + " · AI 整理", body.platform, sources)
+        draft.app_package = suite.app_package or ""
+        draft.project_id = suite.project_id or ""
+        return draft
+    except ValueError as exc:
+        if type(exc) is ValueError:
+            raise HTTPException(status_code=422, detail=str(exc)) from exc
+        raise HTTPException(status_code=422, detail="AI 整理结果不完整或格式不正确，请重试") from exc
+    except Exception as exc:
+        raise HTTPException(status_code=502, detail="AI 整理调用失败，请检查当前模型配置或重试") from exc
+
+
+@router.post("/import", response_model=SuiteOut, status_code=201)
+async def import_suite(body: ImportSuiteBody, request: Request, db: AsyncSession = Depends(get_db)):
+    """从 JSON 导入测试套件（suite + cases + step-tree）。"""
+    await validate_project_assignment(body.project_id.strip(), request, db)
+    suite = TestSuite(
+        project_id=body.project_id.strip(),
+        name=body.name,
+        source_format=body.source_format,
+        app_package=body.app_package,
+        tag=body.tag,
+        account_id=request.state.account_id,
+    )
+    db.add(suite)
+    await db.flush()
+
+    for c in body.cases:
+        db.add(TestCase(
+            suite_id=suite.id,
+            path=c.get("path", ""),
+            expected=c.get("expected", ""),
+            order=int(c.get("order", 0) or 0),
+            parameters=c.get("parameters", ""),
+            checkpoints=c.get("checkpoints", ""),
+            loop_task=bool(c.get("loop_task", False)),
+            replay_steps=c.get("replay_steps", ""),
+            account_id=request.state.account_id,
+        ))
+
+    # nodes：先全部创建（记录旧 id → 新 id），再回填 parent_id / ref_id
+    id_map: dict = {}
+    node_objs: list = []
+    for n in body.nodes:
+        node = StepNode(
+            suite_id=suite.id,
+            action=n.get("action", ""),
+            expected=n.get("expected", ""),
+            order=int(n.get("order", 0) or 0),
+            reversible=bool(n.get("reversible", True)),
+            loop_task=bool(n.get("loop_task", False)),
+            parameters=n.get("parameters", ""),
+            account_id=request.state.account_id,
+        )
+        db.add(node)
+        await db.flush()
+        if n.get("id"):
+            id_map[n["id"]] = node.id
+        node_objs.append((n, node))
+
+    for n, node in node_objs:
+        old_parent = n.get("parent_id")
+        if old_parent and old_parent in id_map:
+            node.parent_id = id_map[old_parent]
+        old_ref = n.get("ref_id")
+        if old_ref and old_ref in id_map:
+            node.ref_id = id_map[old_ref]
+
+    await db.commit()
+
+    return SuiteOut(
+        id=suite.id, name=suite.name, source_format=suite.source_format,
+        case_count=len(body.cases), created_at=suite.created_at.isoformat(),
+        project_id=suite.project_id or "", app_package=suite.app_package or "", tag=suite.tag or "",
+    )
+
+
 @router.delete("/{suite_id}", status_code=204)
 async def delete_suite(suite_id: str, db: AsyncSession = Depends(get_db)):
     suite = await db.get(TestSuite, suite_id)
     if not suite:
         raise HTTPException(status_code=404, detail="Suite not found")
+
+    # The step-tree nodes (case library) live in a separate table with NO
+    # cascade from TestSuite, so they'd leak if we only deleted the suite.
+    # Collect this suite's node ids, clean cross-suite references, then delete.
+    node_ids = [
+        nid for (nid,) in (
+            await db.execute(select(StepNode.id).where(StepNode.suite_id == suite_id))
+        ).all()
+    ]
+
+    if node_ids:
+        # Live-link nodes in OTHER suites that point at a deleted node are now
+        # dangling — remove them.
+        await db.execute(delete(StepNode).where(StepNode.ref_id.in_(node_ids)))
+        # Snapshot-copy provenance pointing at a deleted node loses its source —
+        # clear it (the copy itself stays usable, just untraceable).
+        await db.execute(
+            update(StepNode).where(StepNode.source_id.in_(node_ids)).values(source_id=None)
+        )
+
+    # Delete this suite's step-tree nodes.
+    await db.execute(delete(StepNode).where(StepNode.suite_id == suite_id))
+
+    # Delete the suite (cascade deletes its TestCases, TestRuns, results, step logs).
     await db.delete(suite)
     await db.commit()
 
@@ -258,6 +640,7 @@ async def add_case(suite_id: str, body: CaseIn, db: AsyncSession = Depends(get_d
         order=max_order + 1, parameters=body.parameters,
         checkpoints=body.checkpoints or "",
         loop_task=bool(body.loop_task),
+        account_id=suite.account_id,
     )
     db.add(case)
     await db.commit()
@@ -310,7 +693,7 @@ def _node_out(n: StepNode, ref_path: str = "") -> NodeOut:
 
 
 @router.get("/{suite_id}/nodes", response_model=List[NodeOut])
-async def list_nodes(suite_id: str, db: AsyncSession = Depends(get_db)):
+async def list_nodes(suite_id: str, request: Request, db: AsyncSession = Depends(get_db)):
     async def _load():
         return (await db.execute(
             select(StepNode).where(StepNode.suite_id == suite_id)
@@ -328,7 +711,10 @@ async def list_nodes(suite_id: str, db: AsyncSession = Depends(get_db)):
     ref_paths: dict = {}
     link_targets = [r.ref_id for r in rows if r.ref_id]
     if link_targets:
-        all_rows = (await db.execute(select(StepNode))).scalars().all()
+        all_rows = (await db.execute(
+            select(StepNode).join(TestSuite, TestSuite.id == StepNode.suite_id)
+            .where(TestSuite.account_id == request.state.account_id)
+        )).scalars().all()
         node_rows = [NodeRow(id=a.id, parent_id=a.parent_id, action=a.action,
                              expected=a.expected or "", order=a.order) for a in all_rows]
         for r in rows:
@@ -339,7 +725,12 @@ async def list_nodes(suite_id: str, db: AsyncSession = Depends(get_db)):
 
 
 @router.post("/{suite_id}/nodes", response_model=NodeOut, status_code=201)
-async def add_node(suite_id: str, body: NodeIn, db: AsyncSession = Depends(get_db)):
+async def add_node(suite_id: str, body: NodeIn, request: Request, db: AsyncSession = Depends(get_db)):
+    suite = await db.get(TestSuite, suite_id)
+    if body.parent_id:
+        parent = await require_owned_node(request, db, body.parent_id)
+        if parent.suite_id != suite_id:
+            raise HTTPException(status_code=400, detail="Parent node must belong to the target suite")
     res = await db.execute(
         select(func.max(StepNode.order))
         .where(StepNode.suite_id == suite_id, StepNode.parent_id == body.parent_id)
@@ -349,6 +740,7 @@ async def add_node(suite_id: str, body: NodeIn, db: AsyncSession = Depends(get_d
         suite_id=suite_id, parent_id=body.parent_id, action=body.action,
         expected=body.expected or "", loop_task=body.loop_task,
         order=(max_order + 1) if max_order is not None else 0,
+        account_id=suite.account_id,
     )
     db.add(node)
     await db.commit()
@@ -389,12 +781,16 @@ async def _descendant_ids(db: AsyncSession, node_id: str) -> set:
 
 @router.post("/{suite_id}/nodes/{node_id}/move", response_model=NodeOut)
 async def move_node(suite_id: str, node_id: str, body: MoveIn,
-                    db: AsyncSession = Depends(get_db)):
+                    request: Request, db: AsyncSession = Depends(get_db)):
     node = await db.get(StepNode, node_id)
     if not node or node.suite_id != suite_id:
         raise HTTPException(status_code=404, detail="Node not found")
     if body.new_parent_id == node_id or body.new_parent_id in await _descendant_ids(db, node_id):
         raise HTTPException(status_code=400, detail="Cannot move a node under itself")
+    if body.new_parent_id:
+        parent = await require_owned_node(request, db, body.new_parent_id)
+        if parent.suite_id != suite_id:
+            raise HTTPException(status_code=400, detail="Parent node must belong to the target suite")
     res = await db.execute(
         select(func.max(StepNode.order))
         .where(StepNode.suite_id == suite_id, StepNode.parent_id == body.new_parent_id)
@@ -421,13 +817,17 @@ async def delete_node(suite_id: str, node_id: str, db: AsyncSession = Depends(ge
 
 
 @router.post("/{suite_id}/nodes/copy", response_model=List[NodeOut])
-async def copy_nodes(suite_id: str, body: CopyIn, db: AsyncSession = Depends(get_db)):
+async def copy_nodes(suite_id: str, body: CopyIn, request: Request,
+                     db: AsyncSession = Depends(get_db)):
     """Reuse a source flow under parent_id. link=False -> snapshot copy of the
     source's root→node chain (new ids, source_id provenance). link=True -> one
     live-link node (ref_id=source) that resolves to that chain at run time."""
-    src = await db.get(StepNode, body.source_node_id)
-    if not src:
-        raise HTTPException(status_code=404, detail="Source node not found")
+    src = await require_owned_node(request, db, body.source_node_id)
+    target_suite = await db.get(TestSuite, suite_id)
+    if body.parent_id:
+        parent = await require_owned_node(request, db, body.parent_id)
+        if parent.suite_id != suite_id:
+            raise HTTPException(status_code=400, detail="Parent node must belong to the target suite")
     res = await db.execute(
         select(func.max(StepNode.order))
         .where(StepNode.suite_id == suite_id, StepNode.parent_id == body.parent_id)
@@ -436,7 +836,8 @@ async def copy_nodes(suite_id: str, body: CopyIn, db: AsyncSession = Depends(get
 
     if body.link:
         node = StepNode(suite_id=suite_id, parent_id=body.parent_id,
-                        action="🔗 链接", order=base_order, ref_id=body.source_node_id)
+                        action="🔗 链接", order=base_order, ref_id=body.source_node_id,
+                        account_id=target_suite.account_id)
         db.add(node); await db.commit(); await db.refresh(node)
         all_rows = (await db.execute(select(StepNode))).scalars().all()
         node_rows = [NodeRow(id=a.id, parent_id=a.parent_id, action=a.action,
@@ -457,7 +858,8 @@ async def copy_nodes(suite_id: str, body: CopyIn, db: AsyncSession = Depends(get
 
     async def _persist(bn, parent_id, order, src_id=None):
         row = StepNode(suite_id=suite_id, parent_id=parent_id, action=bn.action,
-                       expected=bn.expected, order=order, source_id=src_id)
+                       expected=bn.expected, order=order, source_id=src_id,
+                       account_id=target_suite.account_id)
         db.add(row); await db.flush()
         created.append(row)
         for i, ch in enumerate(bn.children):
@@ -475,14 +877,19 @@ nodes_router = APIRouter(prefix="/api/nodes", tags=["nodes"])
 
 
 @nodes_router.get("/search", response_model=List[NodeSearchHit])
-async def search_nodes(q: str, limit: int = 20, db: AsyncSession = Depends(get_db)):
+async def search_nodes(request: Request, q: str, limit: int = 20, db: AsyncSession = Depends(get_db)):
     """Search every suite's step-tree for nodes whose root→node path or expected
     contains `q` (case-insensitive substring)."""
     ql = q.strip().lower()
     if not ql:
         return []
-    rows = (await db.execute(select(StepNode))).scalars().all()
-    suites = {s.id: s.name for s in (await db.execute(select(TestSuite))).scalars().all()}
+    rows = (await db.execute(
+        select(StepNode).join(TestSuite, TestSuite.id == StepNode.suite_id)
+        .where(TestSuite.account_id == request.state.account_id)
+    )).scalars().all()
+    suites = {s.id: s.name for s in (await db.execute(
+        select(TestSuite).where(TestSuite.account_id == request.state.account_id)
+    )).scalars().all()}
     by_suite: dict = {}
     for r in rows:
         by_suite.setdefault(r.suite_id, []).append(
@@ -727,10 +1134,14 @@ class NodeUsageRef(BaseModel):
 
 
 @nodes_router.get("/usage")
-async def nodes_usage(db: AsyncSession = Depends(get_db)):
+async def nodes_usage(request: Request, db: AsyncSession = Depends(get_db)):
     """Map node_id -> {links, copies}: how many nodes reference it (live link)
     or were snapshot-copied from it. The de-facto reusable components."""
-    rows = (await db.execute(select(StepNode.ref_id, StepNode.source_id))).all()
+    rows = (await db.execute(
+        select(StepNode.ref_id, StepNode.source_id)
+        .join(TestSuite, TestSuite.id == StepNode.suite_id)
+        .where(TestSuite.account_id == request.state.account_id)
+    )).all()
     counts: dict = {}
     for ref_id, source_id in rows:
         if ref_id:
@@ -758,14 +1169,19 @@ class NodeListPage(BaseModel):
 
 
 @nodes_router.get("/all", response_model=NodeListPage)
-async def list_all_nodes(q: str = "", suite_id: str = "", include_derived: bool = False,
+async def list_all_nodes(request: Request, q: str = "", suite_id: str = "", include_derived: bool = False,
                          offset: int = 0, limit: int = 50, db: AsyncSession = Depends(get_db)):
     """Flat, searchable, paginated list of step nodes (the library catalog).
     Sorted most-reused first. q matches the node's path or expected; suite_id filters.
     By default DERIVED nodes (snapshot copies / live-link placeholders) are hidden so a
     reused flow isn't listed twice — set include_derived=true to show them."""
-    rows = (await db.execute(select(StepNode))).scalars().all()
-    suites = {s.id: s.name for s in (await db.execute(select(TestSuite))).scalars().all()}
+    rows = (await db.execute(
+        select(StepNode).join(TestSuite, TestSuite.id == StepNode.suite_id)
+        .where(TestSuite.account_id == request.state.account_id)
+    )).scalars().all()
+    suites = {s.id: s.name for s in (await db.execute(
+        select(TestSuite).where(TestSuite.account_id == request.state.account_id)
+    )).scalars().all()}
     reuse: dict = {}
     child: dict = {}
     by_suite: dict = {}
@@ -817,15 +1233,20 @@ class NodeContextOut(BaseModel):
 
 
 @nodes_router.get("/{node_id}/context", response_model=NodeContextOut)
-async def node_context(node_id: str, db: AsyncSession = Depends(get_db)):
+async def node_context(node_id: str, request: Request, db: AsyncSession = Depends(get_db)):
     """A selected node's neighbourhood: its parent, its children, and every node
     that reuses it (live link / snapshot copy)."""
     node = await _require_node(node_id, db)
-    all_rows = (await db.execute(select(StepNode))).scalars().all()
+    all_rows = (await db.execute(
+        select(StepNode).join(TestSuite, TestSuite.id == StepNode.suite_id)
+        .where(TestSuite.account_id == request.state.account_id)
+    )).scalars().all()
     by_id = {a.id: a for a in all_rows}
     node_rows = [NodeRow(id=a.id, parent_id=a.parent_id, action=a.action,
                          expected=a.expected or "", order=a.order) for a in all_rows]
-    suites = {s.id: s.name for s in (await db.execute(select(TestSuite))).scalars().all()}
+    suites = {s.id: s.name for s in (await db.execute(
+        select(TestSuite).where(TestSuite.account_id == request.state.account_id)
+    )).scalars().all()}
     path = " > ".join(c.action for c in chain_to_node(node_rows, node_id))
     parent = by_id.get(node.parent_id)
     children = [NodeBrief(node_id=a.id, action=a.action, expected=a.expected or "")
@@ -857,17 +1278,25 @@ async def node_context(node_id: str, db: AsyncSession = Depends(get_db)):
 
 
 @nodes_router.get("/{node_id}/usage", response_model=List[NodeUsageRef])
-async def node_usage(node_id: str, db: AsyncSession = Depends(get_db)):
+async def node_usage(node_id: str, request: Request, db: AsyncSession = Depends(get_db)):
     """Where a node is reused: nodes that live-link to it or were copied from it."""
     refs = (await db.execute(
-        select(StepNode).where(or_(StepNode.ref_id == node_id, StepNode.source_id == node_id))
+        select(StepNode).join(TestSuite, TestSuite.id == StepNode.suite_id).where(
+            or_(StepNode.ref_id == node_id, StepNode.source_id == node_id),
+            TestSuite.account_id == request.state.account_id,
+        )
     )).scalars().all()
     if not refs:
         return []
-    all_rows = (await db.execute(select(StepNode))).scalars().all()
+    all_rows = (await db.execute(
+        select(StepNode).join(TestSuite, TestSuite.id == StepNode.suite_id)
+        .where(TestSuite.account_id == request.state.account_id)
+    )).scalars().all()
     node_rows = [NodeRow(id=a.id, parent_id=a.parent_id, action=a.action,
                          expected=a.expected or "", order=a.order) for a in all_rows]
-    suites = {s.id: s.name for s in (await db.execute(select(TestSuite))).scalars().all()}
+    suites = {s.id: s.name for s in (await db.execute(
+        select(TestSuite).where(TestSuite.account_id == request.state.account_id)
+    )).scalars().all()}
     out: List[NodeUsageRef] = []
     for r in refs:
         path = " > ".join(c.action for c in chain_to_node(node_rows, r.id))

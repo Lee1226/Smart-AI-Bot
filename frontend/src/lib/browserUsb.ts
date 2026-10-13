@@ -94,7 +94,7 @@ async function screenshot(device: Adb, signal: AbortSignal) {
   } finally { bitmap.close() }
 }
 
-async function execute(device: Adb, method: string, p: Record<string, unknown>, signal: AbortSignal) {
+export async function executeBrowserUsb(device: Adb, method: string, p: Record<string, unknown>, signal: AbortSignal) {
   const shell = (d: Adb, command: string) => runShell(d, command, false, signal)
   const num = (key: string, min = 0, max = 100000) => {
     const value = p[key]
@@ -130,10 +130,13 @@ async function execute(device: Adb, method: string, p: Record<string, unknown>, 
       if (!/^[\x20-\x7e]*$/.test(text) || text.includes('%')) throw new Error('USB 本地模式暂只支持不含 % 的英文和数字输入；中文请手动输入')
       await shell(device, `input text ${quote(text.replace(/ /g, '%s'))}`); return 'OK'
     }
+    case 'app': // Portal/SAB's start_app RPC name.
     case 'app/launch': {
       const name = pkg()
+      const explicit = p.activity
+      if (explicit && (typeof explicit !== 'string' || !/^[\w.$]+$/.test(explicit))) throw new Error('无效应用 Activity')
       if (p.stopBeforeLaunch) await shell(device, `am force-stop ${quote(name)}`)
-      const activity = (await shell(device, `cmd package resolve-activity --brief ${quote(name)}`) as string).trim().split('\n').pop() || ''
+      const activity = explicit ? `${name}/${explicit}` : (await shell(device, `cmd package resolve-activity --brief ${quote(name)}`) as string).trim().split('\n').pop() || ''
       if (!/^[\w.$]+\/[\w.$]+$/.test(activity)) throw new Error(`找不到应用入口：${name}`)
       const result = await shell(device, `am start -W -n ${quote(activity)}`) as string
       if (/Error:|Exception|Status: (?!ok)/i.test(result)) throw new Error(result)
@@ -208,13 +211,17 @@ export async function connectUsb(existingId?: string) {
           const timer = window.setTimeout(() => controller.abort(), Math.max(0, 25000 - (Date.now() - arrived)))
           try {
             if (Date.now() - arrived > 20000) throw new Error('设备忙，操作排队超时')
-            respond({ result: await execute(localAdb, msg.method!, msg.params || {}, controller.signal) })
+            respond({ result: await executeBrowserUsb(localAdb, msg.method!, msg.params || {}, controller.signal) })
           } catch (e) { respond({ status: 'error', result: errorText(e) }) }
           finally { clearTimeout(timer) }
         })
       }
     })
   } catch (e) {
-    if (current === generation) disconnectUsb(`${errorText(e)}。若 USB 被占用，请关闭 Android Studio 或停止本机 adb server 后重试。`)
+    if (current === generation) {
+      const message = errorText(e)
+      const busy = /already in use|already in used|DeviceBusy/i.test(message)
+      disconnectUsb(busy ? `${message}。WebUSB 无法共享已被本机 ADB 使用的接口；可选择 ADB 桥接与 Android Studio 共存。` : message)
+    }
   }
 }

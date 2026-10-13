@@ -287,3 +287,7 @@ PRs and issues welcome. Common contribution paths:
 ## License
 
 MIT — see [LICENSE](LICENSE).
+
+## Projects and multi-platform regression
+
+Harmony HDC, project-scoped encrypted test accounts, device scheduling and regression/CI support. Create the first workspace account in the browser after startup; public registration is then disabled by default. See [setup notes](docs/open-source-sync.zh-CN.md), [projects](docs/projects.zh-CN.md), [Harmony](docs/hdc-bridge.zh-CN.md) and [regression](docs/regression.zh-CN.md).

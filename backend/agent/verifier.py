@@ -180,7 +180,7 @@ class LLMVerifier:
             {
                 "role": "system",
                 "content": (
-                    "You are a strict Android test verification assistant. "
+                    f"You are a strict {getattr(device, 'platform', 'android')} test verification assistant. "
                     "You must be conservative — only confirm pass when you have clear evidence. "
                     "For static outcomes (a button is visible, a page opened), the screenshot alone "
                     "is sufficient. For dynamic changes (a value increased, an item was added), "

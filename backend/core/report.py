@@ -21,7 +21,8 @@ from types import SimpleNamespace
 
 from sqlalchemy import select
 
-from core.i18n import current_language, report_labels
+from core.i18n import report_labels
+from core.settings_store import load_settings, resolve_language
 from core.step_tree import NodeRow, chain_to_node
 from db.database import AsyncSessionLocal
 from db.models import StepNode, TestCase, TestResult, TestRun, TestStepLog, TestSuite
@@ -224,7 +225,10 @@ async def generate_html_report(run_id: str) -> str:
         </tr>"""
 
     # ── Summary cards ────────────────────────────────────────────────────────
-    L = report_labels(current_language())
+    account_lang = "zh"
+    if run.account_id:
+        account_lang = resolve_language(await load_settings(run.account_id))
+    L = report_labels(account_lang)
     stat_cards = f"""
     <div style="display:flex;gap:12px;flex-wrap:wrap;margin-bottom:24px;">
       <div style="background:#d1fae5;border-radius:8px;padding:12px 20px;text-align:center;">

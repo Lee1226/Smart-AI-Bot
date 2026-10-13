@@ -28,11 +28,39 @@ from core.run_recorder import RunRecorder
 from core.step_tree import NodeRow, RunTarget, backtrack_plan, chain_to_node, dfs_run_targets, flatten_chain, resolve_links
 from core.test_agent import CaseResult, TestCaseAgent
 from core.test_parser import Step, TestCaseData
+from agent.verifier import LLMVerifier
 from db.database import AsyncSessionLocal
 from db.models import StepNode, TestCase, TestResult, TestRun, TestStepLog
+from core.settings_store import (
+    apply_aws_env,
+    build_fallback_chain,
+    load_settings,
+    resolve_api_base,
+    resolve_api_key,
+    resolve_language,
+    resolve_verifier,
+)
 from ws.portal_ws import connected_devices
 
 logger = logging.getLogger(__name__)
+
+
+def _missing_key(provider: str, api_key: str) -> bool:
+    """True when a run would send an empty key (ollama is the only keyless provider)."""
+    return not api_key and (provider or "").lower() != "ollama"
+
+
+async def _mark_error(run_id: str, reason: str) -> None:
+    async with AsyncSessionLocal() as session:
+        await session.execute(
+            update(TestRun).where(TestRun.id == run_id)
+            .values(status="error", finished_at=datetime.utcnow())
+        )
+        await session.execute(
+            update(TestResult).where(TestResult.run_id == run_id, TestResult.status == "pending")
+            .values(status="error", reason=reason, finished_at=datetime.utcnow())
+        )
+        await session.commit()
 
 
 # ── RunState ─────────────────────────────────────────────────────────────────
@@ -44,18 +72,24 @@ class RunState:
     history starting from log[0], then follows new lines live.
     """
 
-    def __init__(self) -> None:
+    def __init__(self, run_id: str = "") -> None:
+        self.run_id = run_id
+        self.redact = lambda value: value
         self.logs: List[str] = []
         self.done: bool = False
         self.task: Optional[asyncio.Task] = None
         self.cond: asyncio.Condition = asyncio.Condition()
 
     async def emit(self, msg: str) -> None:
+        msg = self.redact(msg)
         async with self.cond:
             self.logs.append(msg)
             self.cond.notify_all()
 
     async def finish(self) -> None:
+        if self.run_id:
+            from core.test_accounts import release_run_account
+            await release_run_account(self.run_id)
         async with self.cond:
             self.done = True
             self.cond.notify_all()
@@ -84,37 +118,55 @@ active_runs: dict[str, RunState] = {}
 
 # ── Project Profile KB ─────────────────────────────────────────────────────────
 
-async def _suite_app_package(suite_id: str) -> str:
+async def _suite_app_package(suite_id: str, platform: str = "android") -> str:
+    from core.projects import target_for_suite
+    from db.models import TestSuite
+    from auth.access import operator_account_id
+    async with AsyncSessionLocal() as session:
+        suite = await session.get(TestSuite, suite_id)
+        if not suite:
+            return ""
+        if suite.account_id != await operator_account_id(session):
+            if suite.project_id:
+                raise ValueError("当前账号不能使用实例项目")
+            if suite.app_package and platform != "android":
+                raise ValueError("旧版包名仅适用于 Android，请配置对应平台的项目应用标识")
+            return suite.app_package or ""
+        return target_for_suite(suite, platform)
+
+
+async def _operator_project_app_package(suite_id: str) -> str:
+    """Global project profiles are installation-level and never cross tenants."""
     try:
+        from auth.access import operator_account_id
         from db.models import TestSuite
         async with AsyncSessionLocal() as session:
             suite = await session.get(TestSuite, suite_id)
-        return suite.app_package if suite else ""
+            if not suite or suite.account_id != await operator_account_id(session):
+                return ""
+            return suite.project_id or suite.app_package or ""
     except Exception:
         return ""
 
 
 async def _force_stop_app_after_run(device, package: str, emit) -> None:
-    """Force-stop the app under test once a run finishes, so the next run starts
-    from a clean cold state instead of leaving the app on whatever screen the
-    last case ended on (or relying on the agent to navigate back to home).
+    """Force-stop the tested app once a run finishes, without blind gestures.
 
-    Best-effort: no-op when the suite has no configured app_package, and a
-    failure here never affects the run's result. Uses the Portal's `app/stop`
-    (am force-stop) via WebSocketDevice.stop_app."""
-    if not package:
-        return
+    The configured suite package wins: a permission dialog or external handoff
+    must not make cleanup stop a system package instead of the app under test.
+    Best-effort cleanup never changes the already-computed run result.
+    """
     try:
-        # The Portal's app/stop uses ActivityManager.killBackgroundProcesses,
-        # which only evicts BACKGROUND processes — but the app under test is
-        # still in the FOREGROUND when the run ends, so the kill would no-op.
-        # Press Home first to background it, give the system a beat, then kill.
-        await device.global_action("home")
-        await asyncio.sleep(0.8)
-        await device.stop_app(package)
-        await emit(f"🛑 Force-stopped {package}")
+        current_package = await device.current_package()
+        target_package = package or current_package
+        if not target_package:
+            await emit("(could not force-stop app: target package is unknown)")
+            return
+        result = await device.stop_app(target_package)
+        await emit(f"🛑 {result}")
     except Exception as exc:
-        await emit(f"(could not force-stop {package}: {exc})")
+        label = package or "current app"
+        await emit(f"(could not force-stop {label}: {exc})")
 
 
 async def _project_kb_roots(suite_id: str) -> list:
@@ -124,7 +176,7 @@ async def _project_kb_roots(suite_id: str) -> list:
     profile's kb_path is missing — so runs behave exactly as before."""
     try:
         from core.projects import kb_roots_for
-        return kb_roots_for(await _suite_app_package(suite_id))
+        return kb_roots_for(await _operator_project_app_package(suite_id))
     except Exception:
         return []
 
@@ -133,7 +185,7 @@ async def _project_source_root(suite_id: str) -> str:
     """App source root from the matched Project Profile ('' when none/missing)."""
     try:
         from core.projects import source_root_for
-        return source_root_for(await _suite_app_package(suite_id))
+        return source_root_for(await _operator_project_app_package(suite_id))
     except Exception:
         return ""
 
@@ -142,21 +194,24 @@ async def _project_kb_search_cmd(suite_id: str) -> str:
     """Knowledge-search CLI from the matched Project Profile ('' when none)."""
     try:
         from core.projects import kb_search_cmd_for
-        return kb_search_cmd_for(await _suite_app_package(suite_id))
+        return kb_search_cmd_for(await _operator_project_app_package(suite_id))
     except Exception:
         return ""
 
 
 # ── Public API ────────────────────────────────────────────────────────────────
 
-async def start_run(run_id: str, max_steps: int = 20, step_delay: float = 1.0, max_retries: int = 0) -> None:
-    """Register a RunState and launch execute_run as a background task."""
-    state = RunState()
-    active_runs[run_id] = state
-    task = asyncio.create_task(
-        execute_run(run_id, state, max_steps=max_steps, step_delay=step_delay, max_retries=max_retries)
-    )
-    state.task = task
+async def start_run(run_id: str, max_steps: int = 20, step_delay: float = 1.0,
+                    max_retries: int = 0, mode: str = "ai") -> None:
+    """Register a RunState and launch the run as a background task.
+
+    mode: "ai" (default, LLM drives each step) or "replay" (deterministic
+    playback of recorded actions, single AI verification at the end).
+    """
+    state = RunState(run_id)
+    executor = execute_replay_run if mode == "replay" else execute_run
+    from core.device_scheduler import enqueue
+    await enqueue(run_id, state, lambda: executor(run_id, state, max_steps=max_steps, step_delay=step_delay, max_retries=max_retries))
 
 
 # ── Folder batch run (one session, many checks) ──────────────────────────────
@@ -178,10 +233,9 @@ def _strip_prefix(path: str, base: str) -> str:
 
 
 async def start_batch_run(run_id: str, base_path: str, case_ids: list, max_steps: int = 20) -> None:
-    state = RunState()
-    active_runs[run_id] = state
-    task = asyncio.create_task(execute_batch_run(run_id, state, base_path, list(case_ids), max_steps))
-    state.task = task
+    state = RunState(run_id)
+    from core.device_scheduler import enqueue
+    await enqueue(run_id, state, lambda: execute_batch_run(run_id, state, base_path, list(case_ids), max_steps))
 
 
 async def execute_batch_run(run_id: str, state: "RunState", base_path: str,
@@ -190,6 +244,7 @@ async def execute_batch_run(run_id: str, state: "RunState", base_path: str,
     each leaf in turn (returning to base between, using the page stack), recording
     a per-leaf pass/fail. Destructive checks (logout, …) run last."""
     async def emit(msg: str) -> None:
+        msg = state.redact(msg)
         logger.info("[batch:%s] %s", run_id, msg)
         await state.emit(msg)
 
@@ -201,16 +256,24 @@ async def execute_batch_run(run_id: str, state: "RunState", base_path: str,
             if not run_row:
                 await emit("ERROR: run not found"); return
             device_id, provider, model = run_row.device_id, run_row.provider, run_row.model
+            account_id = run_row.account_id
             suite_id = run_row.suite_id
             res = await session.execute(select(TestResult).where(TestResult.run_id == run_id))
             result_rows = {r.case_id: r for r in res.scalars().all()}
             cres = await session.execute(select(TestCase).where(TestCase.id.in_(case_ids)))
             case_map = {c.id: c for c in cres.scalars().all()}
 
+        from core.test_accounts import context_for_run
+        login_context = await context_for_run(run_id)
+        if login_context:
+            state.redact = login_context.redact
+            await emit(f"测试账号: {login_context.name} · 环境: {login_context.environment}")
         project_kb_roots = await _project_kb_roots(suite_id)
         project_source_root = await _project_source_root(suite_id)
         project_kb_search_cmd = await _project_kb_search_cmd(suite_id)
-        project_app_package = await _suite_app_package(suite_id)
+        project_app_package = await _suite_app_package(suite_id, WebSocketDevice(device_id).platform)
+        if project_app_package:
+            await emit(f"目标应用: {project_app_package} · 平台: {WebSocketDevice(device_id).platform}")
 
         ordered = [cid for cid in case_ids if cid in case_map]
         safe = [cid for cid in ordered if not _is_destructive(f"{case_map[cid].path} {case_map[cid].expected}")]
@@ -220,10 +283,17 @@ async def execute_batch_run(run_id: str, state: "RunState", base_path: str,
         if conn is None or not conn.is_connected:
             await emit(f"ERROR: Device {device_id} is not connected"); return
         device = WebSocketDevice(device_id)
-        _apply_aws_env()
-        api_key, api_base = _load_api_key(provider), _load_api_base(provider)
-        v_provider, v_model, v_key, v_base = _load_verifier_settings()
-        fallbacks = _load_fallback_chain(provider, model)
+        settings = await load_settings(account_id)
+        apply_aws_env(settings)
+        api_key = resolve_api_key(settings, provider)
+        api_base = resolve_api_base(settings, provider)
+        v_provider, v_model, v_key, v_base = resolve_verifier(settings)
+        fallbacks = build_fallback_chain(settings, provider, model)
+        language = resolve_language(settings)
+        if _missing_key(provider, api_key):
+            await _mark_error(run_id, "当前账号未配置 API Key，请到设置页配置后再运行")
+            await emit("ERROR: 当前账号未配置 API Key，请到设置页配置后再运行")
+            return
 
         async with AsyncSessionLocal() as session:
             await session.execute(update(TestRun).where(TestRun.id == run_id).values(status="running"))
@@ -297,6 +367,8 @@ async def execute_batch_run(run_id: str, state: "RunState", base_path: str,
                 project_kb_roots=project_kb_roots, source_root=project_source_root,
                 kb_search_cmd=project_kb_search_cmd,
                 target_package=project_app_package,
+                login_context=login_context,
+                language=language,
             )
             try:
                 case_result = await agent.run(case_data)
@@ -362,8 +434,12 @@ async def execute_batch_run(run_id: str, state: "RunState", base_path: str,
             await session.commit()
     finally:
         await recorder.stop()
-        await state.finish()
-        active_runs.pop(run_id, None)
+        from core.test_accounts import release_run_account
+        await release_run_account(run_id)
+        from core.device_scheduler import jobs
+        if run_id not in jobs:
+            await state.finish()
+            active_runs.pop(run_id, None)
 
 
 async def resolved_nodes_for_suite(session, suite_id: str) -> list:
@@ -403,9 +479,9 @@ async def node_targets_for_suite(session, suite_id: str, only_node_id: str = Non
 
 
 async def start_tree_run(run_id: str, max_steps: int = 20, only_node_id: str = None) -> None:
-    state = RunState()
-    active_runs[run_id] = state
-    state.task = asyncio.create_task(execute_tree_run(run_id, state, max_steps, only_node_id))
+    state = RunState(run_id)
+    from core.device_scheduler import enqueue
+    await enqueue(run_id, state, lambda: execute_tree_run(run_id, state, max_steps, only_node_id))
 
 
 async def execute_tree_run(run_id: str, state: "RunState", max_steps: int = 20,
@@ -418,6 +494,7 @@ async def execute_tree_run(run_id: str, state: "RunState", max_steps: int = 20,
     set, a single node's root→node chain is run instead of the whole tree.
     """
     async def emit(msg: str) -> None:
+        msg = state.redact(msg)
         logger.info("[tree:%s] %s", run_id, msg)
         await state.emit(msg)
 
@@ -429,6 +506,7 @@ async def execute_tree_run(run_id: str, state: "RunState", max_steps: int = 20,
             if not run_row:
                 await emit("ERROR: run not found"); return
             device_id, provider, model = run_row.device_id, run_row.provider, run_row.model
+            account_id = run_row.account_id
             suite_id = run_row.suite_id
             targets = await node_targets_for_suite(session, suite_id, only_node_id)
             # Resolved node rows (links expanded, incl. reversible) for backtrack planning.
@@ -436,19 +514,33 @@ async def execute_tree_run(run_id: str, state: "RunState", max_steps: int = 20,
             res = await session.execute(select(TestResult).where(TestResult.run_id == run_id))
             result_rows = {r.case_id: r for r in res.scalars().all()}
 
+        from core.test_accounts import context_for_run
+        login_context = await context_for_run(run_id)
+        if login_context:
+            state.redact = login_context.redact
+            await emit(f"测试账号: {login_context.name} · 环境: {login_context.environment}")
         project_kb_roots = await _project_kb_roots(suite_id)
         project_source_root = await _project_source_root(suite_id)
         project_kb_search_cmd = await _project_kb_search_cmd(suite_id)
-        project_app_package = await _suite_app_package(suite_id)
+        project_app_package = await _suite_app_package(suite_id, WebSocketDevice(device_id).platform)
+        if project_app_package:
+            await emit(f"目标应用: {project_app_package} · 平台: {WebSocketDevice(device_id).platform}")
 
         conn = connected_devices.get(device_id)
         if conn is None or not conn.is_connected:
             await emit(f"ERROR: Device {device_id} is not connected"); return
         device = WebSocketDevice(device_id)
-        _apply_aws_env()
-        api_key, api_base = _load_api_key(provider), _load_api_base(provider)
-        v_provider, v_model, v_key, v_base = _load_verifier_settings()
-        fallbacks = _load_fallback_chain(provider, model)
+        settings = await load_settings(account_id)
+        apply_aws_env(settings)
+        api_key = resolve_api_key(settings, provider)
+        api_base = resolve_api_base(settings, provider)
+        v_provider, v_model, v_key, v_base = resolve_verifier(settings)
+        fallbacks = build_fallback_chain(settings, provider, model)
+        language = resolve_language(settings)
+        if _missing_key(provider, api_key):
+            await _mark_error(run_id, "当前账号未配置 API Key，请到设置页配置后再运行")
+            await emit("ERROR: 当前账号未配置 API Key，请到设置页配置后再运行")
+            return
 
         async with AsyncSessionLocal() as session:
             await session.execute(update(TestRun).where(TestRun.id == run_id).values(status="running"))
@@ -535,6 +627,8 @@ async def execute_tree_run(run_id: str, state: "RunState", max_steps: int = 20,
                 project_kb_roots=project_kb_roots, source_root=project_source_root,
                 kb_search_cmd=project_kb_search_cmd,
                 target_package=project_app_package,
+                login_context=login_context,
+                language=language,
             )
             try:
                 case_result = await agent.run(case_data)
@@ -590,17 +684,18 @@ async def execute_tree_run(run_id: str, state: "RunState", max_steps: int = 20,
             await session.commit()
     finally:
         await recorder.stop()
-        await state.finish()
-        active_runs.pop(run_id, None)
+        from core.test_accounts import release_run_account
+        await release_run_account(run_id)
+        from core.device_scheduler import jobs
+        if run_id not in jobs:
+            await state.finish()
+            active_runs.pop(run_id, None)
 
 
 async def cancel_run(run_id: str) -> bool:
     """Cancel an active run. Returns True if the run was found and cancelled."""
-    state = active_runs.get(run_id)
-    if state is None or state.task is None:
-        return False
-    state.task.cancel()
-    return True
+    from core.device_scheduler import cancel
+    return await cancel(run_id)
 
 
 async def run_log_stream(run_id: str) -> AsyncGenerator[str, None]:
@@ -615,6 +710,211 @@ async def run_log_stream(run_id: str) -> AsyncGenerator[str, None]:
 
 # ── Background task ───────────────────────────────────────────────────────────
 
+async def _replay_step(device: WebSocketDevice, step: dict, emit) -> str:
+    """Execute one recorded step verbatim. Returns a short description."""
+    kind = step.get("kind")
+    if kind == "tap":
+        # Prefer element matching (id > text > class) so a minor UI shift doesn't
+        # break the run; fall back to recorded coordinates last.
+        if step.get("resourceId"):
+            try:
+                return await device.tap_element_by_id(step["resourceId"])
+            except Exception:
+                pass
+        if step.get("text"):
+            try:
+                return await device.tap_element_by_text(step["text"])
+            except Exception:
+                pass
+        if step.get("className"):
+            try:
+                return await device.tap_element_by_class(step["className"])
+            except Exception:
+                pass
+        if step.get("x") is not None and step.get("y") is not None:
+            await device.tap(step["x"], step["y"])
+            return f"tap ({step['x']},{step['y']})"
+        return "tap (no target)"
+    if kind == "tap_element":
+        await device.tap_element(step.get("index", 0))
+        return f"tap_element[{step.get('index')}]"
+    if kind == "scroll":
+        # Older Portal builds may not record a direction (TYPE_VIEW_SCROLLED
+        # doesn't expose it directly). Fall back to "down" rather than crash.
+        direction = step.get("direction") or "down"
+        await device.scroll(direction)
+        return f"scroll {direction}"
+    if kind == "swipe":
+        await device.swipe(step.get("x1"), step.get("y1"), step.get("x2"), step.get("y2"),
+                           step.get("duration_ms", 500))
+        return "swipe"
+    if kind == "input_test_credential":
+        raise ValueError("凭据填写不能回放，请使用 AI 模式并选择测试账号")
+    if kind == "input_text":
+        await device.input_text(step.get("text", ""), step.get("clear", False))
+        return f"input {str(step.get('text',''))[:20]}"
+    if kind == "global_action":
+        await device.global_action(step.get("action", ""))
+        return f"global {step.get('action')}"
+    if kind == "press_key":
+        await device.press_key(step.get("key", ""))
+        return f"key {step.get('key')}"
+    if kind == "start_app":
+        await device.start_app(step.get("package", ""))
+        return f"start {step.get('package')}"
+    return f"unknown {kind}"
+
+
+async def execute_replay_run(
+    run_id: str,
+    state: RunState,
+    max_steps: int = 20,
+    step_delay: float = 1.0,
+    max_retries: int = 0,
+) -> None:
+    """Deterministic replay: execute recorded actions verbatim (coordinates +
+    timing) with NO per-step AI decisions, then verify ONCE at the end."""
+    async def emit(msg: str) -> None:
+        msg = state.redact(msg)
+        logger.info("[replay:%s] %s", run_id, msg)
+        await state.emit(msg)
+
+    recorder = RunRecorder(run_id)
+    try:
+        async with AsyncSessionLocal() as session:
+            run_row = await session.get(TestRun, run_id)
+            if not run_row:
+                await emit(f"ERROR: run {run_id} not found")
+                return
+            device_id = run_row.device_id
+            provider = run_row.provider
+            model = run_row.model
+            account_id = run_row.account_id
+            cases = (await session.execute(
+                select(TestCase).where(TestCase.suite_id == run_row.suite_id).order_by(TestCase.order)
+            )).scalars().all()
+            result_rows = {r.case_id: r for r in (await session.execute(
+                select(TestResult).where(TestResult.run_id == run_id)
+            )).scalars().all()}
+
+        conn = connected_devices.get(device_id)
+        if conn is None or not conn.is_connected:
+            async with AsyncSessionLocal() as session:
+                await session.execute(update(TestRun).where(TestRun.id == run_id)
+                                     .values(status="error", finished_at=datetime.utcnow()))
+                await session.commit()
+            await emit(f"ERROR: Device {device_id} is not connected")
+            return
+
+        device = WebSocketDevice(device_id)
+        settings = await load_settings(account_id)
+        apply_aws_env(settings)
+        api_key = resolve_api_key(settings, provider)
+        api_base = resolve_api_base(settings, provider)
+        v_provider, v_model, v_key, v_base = resolve_verifier(settings)
+        fallbacks = build_fallback_chain(settings, provider, model)
+        language = resolve_language(settings)
+        if _missing_key(provider, api_key):
+            await _mark_error(run_id, "当前账号未配置 API Key，请到设置页配置后再运行")
+            await emit("ERROR: 当前账号未配置 API Key，请到设置页配置后再运行")
+            return
+
+        async with AsyncSessionLocal() as session:
+            await session.execute(update(TestRun).where(TestRun.id == run_id).values(status="running"))
+            await session.commit()
+
+        await emit(f"Replay run: {len(cases)} case(s) · device={device_id} · deterministic (no per-step AI)")
+        if await recorder.start(device_id):
+            await emit("Screen recording started (ADB)")
+
+        verifier = LLMVerifier(v_provider, v_model, v_key, v_base, fallbacks=fallbacks, language=language)
+
+        passed = failed = errored = skipped = 0
+        for case in cases:
+            result_row = result_rows.get(case.id)
+            if result_row:
+                async with AsyncSessionLocal() as session:
+                    await session.execute(update(TestResult).where(TestResult.id == result_row.id)
+                                         .values(status="running", started_at=datetime.utcnow()))
+                    await session.commit()
+
+            await emit(f"\n[{case.path[:60]}]")
+            try:
+                replay = json.loads(case.replay_steps or "[]")
+                if not replay:
+                    case_result = CaseResult(
+                        status="error", steps=0,
+                        reason="No replay steps recorded — record first, or run in AI mode",
+                    )
+                else:
+                    action_history: list = []
+                    for i, step in enumerate(replay):
+                        delay_ms = int(step.get("delay_ms", 0))
+                        if delay_ms > 0:
+                            await asyncio.sleep(delay_ms / 1000)
+                        desc = await _replay_step(device, step, emit)
+                        action_history.append(f"Step {i + 1}: {desc}")
+                        await emit(f"  [{i + 1}/{len(replay)}] {desc}")
+
+                    await emit("  Verifying expected result (single AI check)…")
+                    confirmed, reason, shot, _gap = await verifier.verify(
+                        device, case.expected, log=emit,
+                        action_history=action_history, agent_reason="replay",
+                    )
+                    status = "pass" if confirmed else "fail"
+                    case_result = CaseResult(
+                        status=status, reason=reason, steps=len(replay), screenshot_b64=shot,
+                    )
+            except asyncio.CancelledError:
+                if result_row:
+                    async with AsyncSessionLocal() as session:
+                        await session.execute(update(TestResult).where(TestResult.id == result_row.id)
+                                             .values(status="error", reason="Run cancelled", finished_at=datetime.utcnow()))
+                        await session.commit()
+                raise
+            except Exception as e:
+                case_result = CaseResult(status="error", reason=str(e), steps=0)
+
+            if result_row:
+                async with AsyncSessionLocal() as session:
+                    await session.execute(update(TestResult).where(TestResult.id == result_row.id).values(
+                        status=case_result.status, reason=case_result.reason, steps=case_result.steps,
+                        screenshot_b64=case_result.screenshot_b64, finished_at=datetime.utcnow(),
+                    ))
+                    await session.commit()
+
+            if case_result.status == "pass":
+                passed += 1
+            elif case_result.status == "fail":
+                failed += 1
+            elif case_result.status == "error":
+                errored += 1
+            else:
+                skipped += 1
+            await emit(f"  → {case_result.status}")
+
+        async with AsyncSessionLocal() as session:
+            await session.execute(update(TestRun).where(TestRun.id == run_id)
+                                 .values(status="done", finished_at=datetime.utcnow()))
+            await session.commit()
+        await emit(f"\nReplay complete: {passed} passed, {failed} failed, {errored} error(s), {skipped} skipped")
+
+    except asyncio.CancelledError:
+        await emit("⛔ Replay cancelled")
+        async with AsyncSessionLocal() as session:
+            await session.execute(update(TestRun).where(TestRun.id == run_id)
+                                 .values(status="cancelled", finished_at=datetime.utcnow()))
+            await session.commit()
+    finally:
+        await recorder.stop()
+        from core.test_accounts import release_run_account
+        await release_run_account(run_id)
+        from core.device_scheduler import jobs
+        if run_id not in jobs:
+            await state.finish()
+            active_runs.pop(run_id, None)
+
+
 async def execute_run(
     run_id: str,
     state: RunState,
@@ -625,6 +925,7 @@ async def execute_run(
     """Main run loop. Called as an asyncio task via start_run()."""
 
     async def emit(msg: str) -> None:
+        msg = state.redact(msg)
         logger.info("[run:%s] %s", run_id, msg)
         await state.emit(msg)
 
@@ -639,6 +940,7 @@ async def execute_run(
             device_id = run_row.device_id
             provider = run_row.provider
             model = run_row.model
+            account_id = run_row.account_id
 
             result = await session.execute(
                 select(TestCase)
@@ -665,17 +967,30 @@ async def execute_run(
             return
 
         device = WebSocketDevice(device_id)
-        _apply_aws_env()  # export AWS creds so litellm/boto3 can reach Bedrock
-        api_key = _load_api_key(provider)
-        api_base = _load_api_base(provider)
-        v_provider, v_model, v_key, v_base = _load_verifier_settings()
-        fallbacks = _load_fallback_chain(provider, model)
+        settings = await load_settings(account_id)
+        apply_aws_env(settings)  # export AWS creds so litellm/boto3 can reach Bedrock
+        api_key = resolve_api_key(settings, provider)
+        api_base = resolve_api_base(settings, provider)
+        v_provider, v_model, v_key, v_base = resolve_verifier(settings)
+        fallbacks = build_fallback_chain(settings, provider, model)
+        language = resolve_language(settings)
+        if _missing_key(provider, api_key):
+            await _mark_error(run_id, "当前账号未配置 API Key，请到设置页配置后再运行")
+            await emit("ERROR: 当前账号未配置 API Key，请到设置页配置后再运行")
+            return
         if fallbacks:
             await emit(f"Fallback models: {', '.join(t.label() for t in fallbacks)}")
+        from core.test_accounts import context_for_run
+        login_context = await context_for_run(run_id)
+        if login_context:
+            state.redact = login_context.redact
+            await emit(f"测试账号: {login_context.name} · 环境: {login_context.environment}")
         project_kb_roots = await _project_kb_roots(run_row.suite_id)
         project_source_root = await _project_source_root(run_row.suite_id)
         project_kb_search_cmd = await _project_kb_search_cmd(run_row.suite_id)
-        project_app_package = await _suite_app_package(run_row.suite_id)
+        project_app_package = await _suite_app_package(run_row.suite_id, device.platform)
+        if project_app_package:
+            await emit(f"目标应用: {project_app_package} · 平台: {device.platform}")
 
         # Mark run as running
         async with AsyncSessionLocal() as session:
@@ -810,6 +1125,8 @@ async def execute_run(
                 project_kb_roots=project_kb_roots, source_root=project_source_root,
                 kb_search_cmd=project_kb_search_cmd,
                 target_package=project_app_package,
+                login_context=login_context,
+                language=language,
             )
 
             case_result: Optional[CaseResult] = None
@@ -848,8 +1165,10 @@ async def execute_run(
                         reference_examples=reference_examples or None,
                         fallbacks=fallbacks,
                         project_kb_roots=project_kb_roots, source_root=project_source_root,
-                kb_search_cmd=project_kb_search_cmd,
-                target_package=project_app_package,
+                        kb_search_cmd=project_kb_search_cmd,
+                        target_package=project_app_package,
+                        login_context=login_context,
+                        language=language,
                     )
                     continue
                 break  # pass or no retries left
@@ -931,16 +1250,19 @@ async def execute_run(
         try:
             from core.webhook import send_run_notification
             suite_name = ""
+            run_webhook_url = ""
             async with AsyncSessionLocal() as session:
                 from db.models import TestSuite
                 run_row2 = await session.get(TestRun, run_id)
                 if run_row2:
                     suite_obj = await session.get(TestSuite, run_row2.suite_id)
                     suite_name = suite_obj.name if suite_obj else ""
+                    run_webhook_url = run_row2.webhook_url or ""
             await send_run_notification(
                 run_id=run_id, suite_name=suite_name,
                 passed=passed, failed=failed, errored=errored,
                 total=len(cases), provider=provider, model=model,
+                webhook_url=run_webhook_url,
             )
         except Exception as wh_err:
             logger.warning("Webhook notification failed: %s", wh_err)
@@ -956,145 +1278,9 @@ async def execute_run(
 
     finally:
         await recorder.stop()
-        await state.finish()
-        active_runs.pop(run_id, None)
-
-
-# ── Helpers ───────────────────────────────────────────────────────────────────
-
-def _load_api_key(provider: str) -> str:
-    """Read API key from settings.json for the given provider."""
-    import json
-    from pathlib import Path
-
-    settings_path = Path(__file__).parent.parent / "data" / "settings.json"
-    if not settings_path.exists():
-        return ""
-    try:
-        data = json.loads(settings_path.read_text())
-        key_map = {
-            "openai": "openai_api_key",
-            "anthropic": "anthropic_api_key",
-            "google": "gemini_api_key",
-            "gemini": "gemini_api_key",
-            "zhipuai": "zhipu_api_key",
-            "zhipu": "zhipu_api_key",
-            "groq": "groq_api_key",
-            "ollama": "",  # no key needed
-        }
-        field = key_map.get(provider.lower(), f"{provider.lower()}_api_key")
-        return data.get(field, "")
-    except Exception:
-        return ""
-
-
-def _load_api_base(provider: str) -> str:
-    """Read provider-specific base URL from settings.json."""
-    import json
-    from pathlib import Path
-
-    settings_path = Path(__file__).parent.parent / "data" / "settings.json"
-    if not settings_path.exists():
-        return ""
-    try:
-        data = json.loads(settings_path.read_text())
-        base_map = {
-            "anthropic": data.get("anthropic_base_url", ""),
-            "ollama": data.get("ollama_base_url", "http://localhost:11434"),
-        }
-        return base_map.get(provider.lower(), "")
-    except Exception:
-        return ""
-
-
-def _apply_aws_env() -> None:
-    """Export AWS Bedrock credentials from settings.json into the process env.
-
-    litellm/boto3 read AWS_ACCESS_KEY_ID / AWS_SECRET_ACCESS_KEY / region from the
-    environment. We set them at run start so a 'bedrock' provider just works
-    without threading creds through every completion call.
-    """
-    import os
-    import json
-    from pathlib import Path
-
-    settings_path = Path(__file__).parent.parent / "data" / "settings.json"
-    if not settings_path.exists():
-        return
-    try:
-        data = json.loads(settings_path.read_text())
-    except Exception:
-        return
-    ak = data.get("aws_access_key_id", "") or ""
-    sk = data.get("aws_secret_access_key", "") or ""
-    region = data.get("aws_region_name", "") or "us-east-1"
-    if ak and sk:
-        os.environ["AWS_ACCESS_KEY_ID"] = ak
-        os.environ["AWS_SECRET_ACCESS_KEY"] = sk
-        os.environ["AWS_REGION_NAME"] = region
-        os.environ["AWS_DEFAULT_REGION"] = region
-        os.environ["AWS_REGION"] = region
-
-
-def _load_fallback_chain(primary_provider: str, primary_model: str) -> list:
-    """Build an ordered list of ModelTarget fallbacks from settings.json.
-
-    Any provider that has an API key configured (other than the primary) becomes
-    a fallback, so a flaky/rate-limited primary provider auto-degrades to a
-    working backup instead of failing the whole run. Ollama (local, keyless) is
-    included if a base URL is set.
-    """
-    import json
-    from pathlib import Path
-    from agent.llm import ModelTarget
-
-    settings_path = Path(__file__).parent.parent / "data" / "settings.json"
-    if not settings_path.exists():
-        return []
-    try:
-        data = json.loads(settings_path.read_text())
-    except Exception:
-        return []
-
-    # Provider → (settings key field, default fallback model) in priority order.
-    candidates = [
-        ("openai", "openai_api_key", "gpt-4o"),
-        ("anthropic", "anthropic_api_key", "claude-3-5-sonnet-20241022"),
-        ("gemini", "gemini_api_key", "gemini-1.5-pro"),
-        ("zhipuai", "zhipu_api_key", "glm-4v"),
-        ("groq", "groq_api_key", "llama-3.2-90b-vision-preview"),
-    ]
-    chain: list = []
-    for provider, key_field, default_model in candidates:
-        if provider.lower() == primary_provider.lower():
-            continue
-        key = data.get(key_field, "")
-        if not key:
-            continue
-        chain.append(ModelTarget(
-            provider=provider, model=default_model,
-            api_key=key, api_base=_load_api_base(provider),
-        ))
-    return chain
-
-
-def _load_verifier_settings() -> tuple:
-    """Return (verifier_provider, verifier_model, verifier_api_key, verifier_api_base).
-
-    Empty strings mean "use the same model as the agent".
-    """
-    import json
-    from pathlib import Path
-
-    settings_path = Path(__file__).parent.parent / "data" / "settings.json"
-    if not settings_path.exists():
-        return "", "", "", ""
-    try:
-        data = json.loads(settings_path.read_text())
-        v_provider = data.get("verifier_provider", "")
-        v_model = data.get("verifier_model", "")
-        v_key = _load_api_key(v_provider) if v_provider else ""
-        v_base = _load_api_base(v_provider) if v_provider else ""
-        return v_provider, v_model, v_key, v_base
-    except Exception:
-        return "", "", "", ""
+        from core.test_accounts import release_run_account
+        await release_run_account(run_id)
+        from core.device_scheduler import jobs
+        if run_id not in jobs:
+            await state.finish()
+            active_runs.pop(run_id, None)

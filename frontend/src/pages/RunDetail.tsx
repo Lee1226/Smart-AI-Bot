@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
-import { fetchRun, fetchResults, fetchSteps, cancelRun, runTree, starResult, fetchDevices, TestResult, StepLog } from '../lib/api'
+import { fetchRun, fetchResults, fetchSteps, cancelRun, runTree, starResult, fetchDevices, TestResult, StepLog, getToken } from '../lib/api'
 import StepTreeResultView from '../components/StepTreeResultView'
 import LivePanel from '../components/LivePanel'
 import ScreenshotReplay from '../components/ScreenshotReplay'
@@ -17,7 +17,7 @@ const STATUS_COLOR: Record<string, string> = {
   cancelled: 'bg-primary-soft text-primary-deep',
 }
 
-const TERMINAL = new Set(['done', 'error', 'cancelled'])
+const TERMINAL = new Set(['done', 'error', 'cancelled', 'interrupted'])
 
 export default function RunDetail() {
   const t = useT()
@@ -57,7 +57,9 @@ export default function RunDetail() {
     if (!runId) return
     setLogs([])
     setLogsDone(false)
-    const es = new EventSource(`/api/runs/${runId}/logs`)
+    const token = getToken()
+    const qs = token ? `?token=${encodeURIComponent(token)}` : ''
+    const es = new EventSource(`/api/runs/${runId}/logs${qs}`)
     es.onmessage = (e) => {
       if (e.data === '[done]') {
         setLogsDone(true)
@@ -89,6 +91,7 @@ export default function RunDetail() {
       provider: run!.provider,
       model: run!.model,
       max_steps: 20,
+      test_account_id: run!.test_account_id || undefined,
     }),
     onSuccess: (newRun) => {
       queryClient.invalidateQueries({ queryKey: ['runs'] })
@@ -138,6 +141,7 @@ export default function RunDetail() {
           <h1 className="text-xl font-bold">Run</h1>
           {statusBadge(run.status)}
           <span className="text-sm text-gray-500">{run.provider}/{run.model}</span>
+          {run.test_account_name && <span className="text-sm text-gray-500">测试账号：{run.test_account_name}</span>}
           <span className="text-sm text-gray-400">{new Date(run.created_at).toLocaleString()}</span>
           <div className="flex gap-3 text-sm ml-auto items-center">
             <span className="text-ok font-medium">{run.passed} pass</span>
@@ -165,7 +169,7 @@ export default function RunDetail() {
                   {rerunMut.isPending ? 'Starting…' : '↩ Run Again'}
                 </button>
                 <a
-                  href={`/api/runs/${runId}/report?download=true`}
+                  href={`/api/runs/${runId}/report?download=true&token=${encodeURIComponent(getToken() || '')}`}
                   target="_blank"
                   rel="noreferrer"
                   className="ml-2 px-3 py-1 border border-primary text-primary-deep text-xs rounded hover:bg-primary-soft"

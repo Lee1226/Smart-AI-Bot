@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef, useMemo, useSyncExternalStore } from 'react'
 import { useQuery } from '@tanstack/react-query'
-import { fetchDeviceCapabilities, Device } from '../lib/api'
+import { fetchDeviceCapabilities, Device, getToken } from '../lib/api'
 import { useT } from '../lib/i18n'
 import H264Canvas from './H264Canvas'
 import H264Player from './H264Player'
@@ -13,10 +13,11 @@ import { websocketH264Source } from '../lib/h264Stream'
 const CAN_WEBCODECS =
   typeof window !== 'undefined' && window.isSecureContext && 'VideoDecoder' in window
 
-type Mode = 'auto' | 'screenshot' | 'off'
+type Mode = 'auto' | 'video' | 'screenshot' | 'off'
 
 const MODES: { key: Mode; label: string; labelEn: string }[] = [
   { key: 'auto', label: '自动', labelEn: 'Auto' },
+  { key: 'video', label: '视频流', labelEn: 'Video' },
   { key: 'screenshot', label: '截图', labelEn: 'Screenshot' },
   { key: 'off', label: '关', labelEn: 'Off' },
 ]
@@ -24,40 +25,69 @@ const MODES: { key: Mode; label: string; labelEn: string }[] = [
 // H.264 screenrecord stream over WebSocket (under /v1 — already ws-proxied).
 function h264WsUrl(id: string): string {
   const proto = location.protocol === 'https:' ? 'wss:' : 'ws:'
-  return `${proto}//${location.host}/v1/devices/${id}/live?source=auto`
+  const token = getToken()
+  const source = 'device'
+  const qs = `?source=${source}${token ? `&token=${encodeURIComponent(token)}` : ''}`
+  return `${proto}//${location.host}/v1/devices/${id}/live${qs}`
 }
 
 // Screenshot mode: poll single JPEG frames (chained on load/error) instead of a
 // long-lived MJPEG stream — short requests that complete cleanly, so they never
 // hog the browser's per-origin connection pool (which froze the whole UI).
-function ScreenshotView({ deviceId, source }: { deviceId: string; source: 'screenshot' | 'auto' }) {
+export function ScreenshotView({ deviceId, source }: { deviceId: string; source: 'screenshot' | 'auto' }) {
   const imgRef = useRef<HTMLImageElement>(null)
+  const [status, setStatus] = useState<'loading' | 'ready' | 'error'>('loading')
   useEffect(() => {
     let alive = true
-    let timer: number
+    let timer: number | undefined
+    let visible = true
+    let pending = false
     const img = imgRef.current
     if (!img) return
+    setStatus('loading')
     const load = () => {
-      if (alive) img.src = `/api/devices/${deviceId}/screenshot.jpg?source=${source}&t=${Date.now()}`
+      clearTimeout(timer)
+      if (!alive || !visible || document.hidden || pending) return
+      pending = true
+      const token = getToken()
+      const qs = token ? `&token=${encodeURIComponent(token)}` : ''
+      img.src = `/api/devices/${deviceId}/screenshot.jpg?source=${source}${qs}&t=${Date.now()}`
     }
-    const next = () => { if (alive) timer = window.setTimeout(load, 700) }
+    const next = (event: Event) => {
+      pending = false
+      if (!alive) return
+      setStatus(event.type === 'load' ? 'ready' : 'error')
+      timer = window.setTimeout(load, event.type === 'load' ? 1000 : 3000)
+    }
+    const observer = new IntersectionObserver(entries => {
+      visible = entries[0].isIntersecting
+      if (visible) load()
+      else clearTimeout(timer)
+    })
+    observer.observe(img)
+    document.addEventListener('visibilitychange', load)
     img.addEventListener('load', next)
     img.addEventListener('error', next)
     load()
     return () => {
       alive = false
       clearTimeout(timer)
+      observer.disconnect()
+      document.removeEventListener('visibilitychange', load)
       img.removeEventListener('load', next)
       img.removeEventListener('error', next)
     }
   }, [deviceId, source])
-  return <img ref={imgRef} alt="device screen" className="absolute inset-0 w-full h-full object-contain" />
+  return <>
+    <img ref={imgRef} alt="device screen" className={`absolute inset-0 w-full h-full object-contain ${status === 'ready' ? '' : 'invisible'}`} />
+    {status !== 'ready' && <Placeholder text={status === 'loading' ? '正在获取画面…' : '画面暂不可用，正在重试…'} />}
+  </>
 }
 
-export default function LivePanel({ device }: { device: Device | null }) {
+export default function LivePanel({ device, defaultMode = 'off', storageKey = 'live-mode' }: { device: Device | null; defaultMode?: Mode; storageKey?: string }) {
   const t = useT()
   const [mode, setMode] = useState<Mode>(
-    () => (localStorage.getItem('live-mode') as Mode) || 'off',
+    () => { const saved = localStorage.getItem(storageKey); return MODES.some(m => m.key === saved) ? saved as Mode : defaultMode },
   )
   const [reloadKey, setReloadKey] = useState(0)
   const [adbFailed, setAdbFailed] = useState(false)
@@ -72,38 +102,43 @@ export default function LivePanel({ device }: { device: Device | null }) {
     refetchInterval: 5000,
   })
 
-  // Reset the ADB-failed fallback whenever the device or mode changes.
+  // Reset the video fallback whenever the device or mode changes.
   useEffect(() => { setAdbFailed(false); setStreamError('') }, [device?.id, mode, localUsb, reloadKey])
 
   const pick = (m: Mode) => {
     setMode(m)
-    localStorage.setItem('live-mode', m)
+    localStorage.setItem(storageKey, m)
     setReloadKey(k => k + 1) // force the stream to reconnect
   }
 
   const online = device?.status === 'online' || localUsb
-  // Backend auto-picks ADB only when exactly one adb device is attached.
-  const usingAdb = mode === 'auto' && caps?.adb_serials?.length === 1 && !adbFailed
-  const usingUsb = mode === 'auto' && localUsb && !adbFailed
+  const harmony = device?.connection_type === 'hdc_bridge'
+  const wantsVideo = !harmony && (mode === 'auto' || mode === 'video')
+  const remoteVideo = !!caps?.video_available
+  const usingUsb = wantsVideo && localUsb && !adbFailed
+  const usingRemote = wantsVideo && remoteVideo && !localUsb && !adbFailed
+  const videoUnavailable = !harmony && mode === 'video' && !(usingUsb || usingRemote)
   const videoSource = useMemo(() => device
     ? localUsb ? browserUsbH264Source(device.id) : websocketH264Source(h264WsUrl(device.id))
-    : undefined, [device?.id, localUsb, reloadKey])
+    : undefined, [device?.id, localUsb, remoteVideo, mode, reloadKey])
   const videoFailed = (message: string) => { setStreamError(message); setAdbFailed(true) }
-  const canStream = !!device && mode !== 'off' && (online || usingAdb)
+  const canStream = !!device && mode !== 'off' && online
 
   return (
     <div className="bg-white border rounded-lg p-3 lg:sticky lg:top-6">
-      <div className="flex items-center justify-between mb-3">
+      <div className="flex flex-wrap gap-2 items-center justify-between mb-3">
         <span className="text-sm font-semibold">{t('实时画面', 'Live screen')}</span>
         <div className="flex rounded-md border overflow-hidden text-xs">
           {MODES.map(m => (
             <button
               key={m.key}
               onClick={() => pick(m.key)}
+              disabled={harmony && m.key === 'video'}
+              title={harmony && m.key === 'video' ? '鸿蒙 HDC 当前使用截图刷新' : undefined}
               className={`px-2.5 py-1 transition-colors ${
                 mode === m.key
                   ? 'bg-primary text-white'
-                  : 'bg-white text-ink-mute hover:bg-gray-50'
+                  : 'bg-white text-ink-mute hover:bg-gray-50 disabled:opacity-40'
               }`}
             >
               {t(m.label, m.labelEn)}
@@ -111,6 +146,8 @@ export default function LivePanel({ device }: { device: Device | null }) {
           ))}
         </div>
       </div>
+
+      {device && <p className="text-sm font-medium mb-3 truncate" title={device.name}>{device.name}</p>}
 
       {/* Portrait phone frame */}
       <div
@@ -120,10 +157,12 @@ export default function LivePanel({ device }: { device: Device | null }) {
         {!device ? (
           <Placeholder text={t('选择左侧一台设备', 'Select a device on the left')} />
         ) : mode === 'off' ? (
-          <Placeholder text={t('已关闭 — 选「自动」或「截图」开启', 'Off — choose "Auto" or "Screenshot" to start')} />
+          <Placeholder text={t('已关闭 — 选择视频流或截图开启', 'Off — choose Video or Screenshot to start')} />
         ) : !canStream ? (
           <Placeholder text={t('设备离线，无法取流', 'Device offline, cannot stream')} />
-        ) : (usingUsb || usingAdb) && videoSource ? (
+        ) : videoUnavailable ? (
+          <Placeholder text={streamError || t('视频未就绪。远程 App 请先在手机开启远程视频并授权录屏；也可切换截图。', 'Video not ready. Enable remote video and authorize screen capture in the phone app, or select Screenshot.')} />
+        ) : (usingUsb || usingRemote) && videoSource ? (
           CAN_WEBCODECS ? (
             <H264Canvas
               key={`${device.id}-h264-${reloadKey}`}
@@ -151,13 +190,12 @@ export default function LivePanel({ device }: { device: Device | null }) {
         {device && mode !== 'off' && canStream
           ? usingUsb
             ? t('本地 USB · 实时录屏 H.264', 'Local USB · live recording H.264')
-            : usingAdb
-            ? t('ADB · 实时录屏 H.264', 'ADB · live recording H.264')
-            : t('截图 · ~1 fps', 'Screenshot · ~1 fps')
-          : caps && !caps.adb_available && mode === 'auto'
-            ? t('无 ADB，自动回落截图', 'No ADB, falling back to screenshots')
+            : usingRemote
+            ? t('远程设备 · H.264 视频流', 'Remote device · H.264 video')
+            : videoUnavailable ? t('视频流未就绪', 'Video not ready') : harmony ? t('鸿蒙 HDC · 截图刷新', 'Harmony HDC · screenshot refresh') : t('截图 · ~1 fps', 'Screenshot · ~1 fps')
             : ' '}
       </div>
+      {device?.connection_type === 'portal' && !remoteVideo && wantsVideo && <p className="mt-1 text-center text-xs text-ink-mute">{t('远程视频需要新版 App，并在手机点击「开启远程视频」授权录屏。', 'Remote video requires the updated app and screen capture authorization on the phone.')}</p>}
       {streamError && mode === 'auto' && <p className="mt-1 text-center text-xs text-amber-600">{t('视频不可用，已回落截图；重试请再次点「自动」。', 'Video unavailable; using screenshots. Select Auto again to retry.')}</p>}
     </div>
   )

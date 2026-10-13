@@ -45,7 +45,7 @@ export default function ScreenshotReplay({
   return (
     <div className="bg-white border rounded-lg p-3">
       <div className="flex items-center justify-between mb-3">
-        <span className="text-sm font-semibold">{t('录屏回放', 'Recording replay')}</span>
+        <span className="text-sm font-semibold">{showVideo ? t('录屏回放', 'Recording replay') : t('步骤截图回放', 'Step screenshot replay')}</span>
         {videoUrl ? (
           <div className="flex rounded-md border overflow-hidden text-xs">
             {(['video', 'shots'] as const).map(tabKey => (

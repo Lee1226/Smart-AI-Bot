@@ -246,6 +246,7 @@ async def detect_elements_vlm(
     api_key: str = "",
     api_base: str = "",
     fallbacks: Optional[list] = None,
+    platform: str = "android",
 ) -> Tuple[str, List[Dict]]:
     """Detect interactive elements using VLM when a11y tree is empty.
 
@@ -259,7 +260,7 @@ async def detect_elements_vlm(
             primary=ModelTarget(provider, model, api_key, api_base),
             base_kwargs={
                 "messages": [
-                    {"role": "system", "content": _VLM_DETECT_PROMPT},
+                    {"role": "system", "content": _VLM_DETECT_PROMPT.replace("Android", "HarmonyOS") if platform == "harmony" else _VLM_DETECT_PROMPT},
                     {"role": "user", "content": [
                         {"type": "image_url", "image_url": {"url": f"data:image/png;base64,{img_b64}"}},
                         {"type": "text", "text": f"Image: {img_width}x{img_height}px. Detect all interactive elements."},

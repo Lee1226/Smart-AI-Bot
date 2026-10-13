@@ -5,7 +5,8 @@ import {
   fetchDevices, createDevice, deleteDevice, renameDevice, fetchAppInfo, fetchServerInfo, Device,
 } from '../lib/api'
 import { connectUsb, disconnectUsb, usbSnapshot, subscribeUsb, usbSupported } from '../lib/browserUsb'
-import LivePanel from '../components/LivePanel'
+import DeviceWall from '../components/DeviceWall'
+import AdbBridgeSetup from '../components/AdbBridgeSetup'
 import { useT } from '../lib/i18n'
 
 // The phone-reachable host:port for the pairing QR. A phone can't reach the
@@ -76,8 +77,6 @@ export default function Devices() {
     if (usb.deviceId) setSelectedId(usb.deviceId)
   }, [usb.phase, usb.deviceId, qc])
 
-  const selectedDevice = devices.find(d => d.id === selectedId) ?? null
-
   const { data: appInfo } = useQuery({ queryKey: ['app-info'], queryFn: fetchAppInfo })
   const { data: serverInfo } = useQuery({ queryKey: ['server-info'], queryFn: fetchServerInfo })
   const lanIp = serverInfo?.lan_ip
@@ -134,6 +133,7 @@ export default function Devices() {
 
   return (
     <div>
+      <DeviceWall devices={devices} selectedId={selectedId} onSelect={setSelectedId} />
       <div className="bg-white border rounded-lg p-4 mb-5">
         <div className="flex items-center justify-between gap-4">
           <div>
@@ -146,6 +146,8 @@ export default function Devices() {
         <p className="text-sm mt-2" role="status">{usb.message || (!usbSupported() ? t('当前浏览器或地址不支持，请用 Chrome/Edge 在 HTTPS 或 localhost 打开。', 'Use Chrome/Edge on HTTPS or localhost.') : t('手机打开 USB 调试，连接后保持此网页打开；切换测试页面不影响连接。', 'Enable USB debugging and keep this tab open. Navigation preserves the connection.'))}</p>
         <p className="text-xs text-gray-400 mt-1">{t('试用版：支持实时画面、截图、UI 树、点击滑动、按键和启动应用。中文/清空输入、录像保存、APK 安装暂不支持。以下 App 配对方式继续可用。', 'Preview: live video, screenshots, UI tree, tap/swipe, keys and app launch. Unicode/clear input, video saving and APK installation are not supported. App pairing remains available below.')}</p>
       </div>
+      <AdbBridgeSetup devices={devices} server={import.meta.env.DEV ? `${location.protocol}//${location.hostname}:${backendPort || 8000}` : location.origin} />
+      <AdbBridgeSetup transport="hdc" devices={devices} server={import.meta.env.DEV ? `${location.protocol}//${location.hostname}:${backendPort || 8000}` : location.origin} />
       <div className="flex items-center justify-between mb-6">
         <h1 className="text-2xl font-bold">{t('远程模式 · App 配对', 'Remote mode · App pairing')}</h1>
         <div className="flex gap-2">
@@ -197,11 +199,11 @@ export default function Devices() {
             <li>
               <strong>{t('配对设备', 'Pair the device')}</strong>
               {t('：点右上', ' — tap')} <strong>+ Generate Token</strong> {t('生成一台设备，再点它的', 'to create a device, then tap')} <strong>Show QR</strong>
-              {t('，在 Portal app 里点「扫码连接」扫一下即可。', ' on it and scan it from "Scan QR" in the Portal app.')}
+              {t('，在 Portal app 里点「扫码连接」扫一下即可。视频预览需在手机点击「开启远程视频」并授权录屏。', ' on it and scan it from "Scan QR" in the Portal app. For video, enable remote video and authorize screen capture on the phone.')}
             </li>
             <li>
               <strong>{t('跑第一个测试', 'Run your first test')}</strong>
-              {t('：连上后到', ' — once connected, go to')} <strong>Test Suites</strong>
+              {t('：连上后到', ' — once connected, go to')} <strong>{t('用例套件', 'Case Suites')}</strong>
               {t('新建用例 → 选设备和模型 → 点 Run 🎉', ', add a case, pick a device + model, and hit Run 🎉')}
             </li>
           </ol>
@@ -227,7 +229,7 @@ export default function Devices() {
       )}
 
       {devices.length > 0 && (
-        <div className="lg:grid lg:grid-cols-[1fr_320px] lg:gap-6 lg:items-start">
+        <div>
           {/* Left — device list + pairing hint */}
           <div>
             <div className="grid gap-4">
@@ -286,11 +288,11 @@ export default function Devices() {
                       ID: {d.id}
                     </div>
                     <div className="text-xs text-gray-400 font-mono truncate">
-                      {d.connection_type === 'browser_usb' ? '本地 USB · 无需 App 配对' : `远程 App · Token: ${d.token.slice(0, 20)}…`}
+                      {d.connection_type === 'hdc_bridge' ? '鸿蒙 · HDC 本地桥接 · 截图刷新' : d.connection_type === 'adb_bridge' ? '本机 ADB 桥接 · 多设备' : d.connection_type === 'browser_usb' ? '本地 USB · 无需 App 配对' : `远程 App · Token: ${d.token.slice(0, 20)}…`}
                     </div>
                   </div>
                   <div className="flex gap-2">
-                    {d.connection_type === 'browser_usb' ? <button className="text-xs px-3 py-1.5 border rounded disabled:opacity-50" disabled={usb.phase !== 'idle'} onClick={e => { e.stopPropagation(); void connectUsb(d.id) }}>连接 USB</button> : <>
+                    {['adb_bridge', 'hdc_bridge'].includes(d.connection_type) ? <button className="text-xs px-3 py-1.5 border rounded" onClick={e => { e.stopPropagation(); copyToken(d) }}>{copiedId === d.id ? '✓ Copied' : 'Copy Token'}</button> : d.connection_type === 'browser_usb' ? <button className="text-xs px-3 py-1.5 border rounded disabled:opacity-50" disabled={usb.phase !== 'idle'} onClick={e => { e.stopPropagation(); void connectUsb(d.id) }}>连接 USB</button> : <>
                     <button
                       className="text-xs px-3 py-1.5 border border-primary text-primary rounded hover:bg-primary-soft"
                       onClick={e => { e.stopPropagation(); setQrDevice(d) }}
@@ -363,10 +365,6 @@ export default function Devices() {
             </details>
           </div>
 
-          {/* Right — live screen */}
-          <div className="mt-4 lg:mt-0">
-            <LivePanel device={selectedDevice} />
-          </div>
         </div>
       )}
 

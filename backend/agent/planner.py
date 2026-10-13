@@ -68,6 +68,11 @@ Rules:
 - Each sub-goal should describe a milestone, NOT a single tap/scroll.
   Good: "Navigate to the Settings > About Phone page"
   Bad: "Tap the Settings icon" (too granular)
+- ⚠️ Tool calls are NOT UI navigation. If the task involves calling a function \
+tool (install_apk, start_app, list_packages, etc.), describe that tool call as \
+ONE sub-goal directly (e.g. "Call install_apk with the URL"). Do NOT decompose it \
+into "open a chat/assistant UI and type the command" — tools are called directly, \
+no UI is needed.
 - Include a success_criteria for each sub-goal — what should be visible on \
 screen when this sub-goal is complete.
 - The last sub-goal should verify the final expected result.
@@ -106,6 +111,7 @@ async def generate_plan(
     fallbacks: Optional[list] = None,
     kb_context: str = "",
     language: str = "",
+    platform: str = "android",
 ) -> Optional[str]:
     """Generate a text execution plan (Phase 1 — injected as pinned message).
 
@@ -129,7 +135,7 @@ async def generate_plan(
             primary=ModelTarget(provider, model, api_key, api_base),
             base_kwargs={
                 "messages": [
-                    {"role": "system", "content": PLANNER_PROMPT + _lang(language)},
+                    {"role": "system", "content": (PLANNER_PROMPT.replace("Android", "HarmonyOS") if platform == "harmony" else PLANNER_PROMPT) + _lang(language)},
                     {"role": "user", "content": task_description},
                 ],
                 "temperature": 0.3,
@@ -166,6 +172,7 @@ async def generate_subgoals(
     api_base: str = "",
     fallbacks: Optional[list] = None,
     language: str = "",
+    platform: str = "android",
 ) -> Optional[List[SubGoal]]:
     """Decompose a complex task into SubGoal objects for subagent execution.
 
@@ -182,7 +189,7 @@ async def generate_subgoals(
             primary=ModelTarget(provider, model, api_key, api_base),
             base_kwargs={
                 "messages": [
-                    {"role": "system", "content": SUBGOAL_PROMPT + _lang(language)},
+                    {"role": "system", "content": (SUBGOAL_PROMPT.replace("Android", "HarmonyOS") if platform == "harmony" else SUBGOAL_PROMPT) + _lang(language)},
                     {"role": "user", "content": task_description},
                 ],
                 "temperature": 0.3,

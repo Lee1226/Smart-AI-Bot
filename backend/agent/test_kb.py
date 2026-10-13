@@ -10,6 +10,7 @@ import logging
 import re
 from pathlib import Path
 from typing import Optional
+from core.kb_platform import allows_document
 
 logger = logging.getLogger(__name__)
 
@@ -17,7 +18,6 @@ logger = logging.getLogger(__name__)
 
 KB_ROOT = Path(__file__).resolve().parent.parent.parent / "test_knowledge"
 FEATURES_DIR = KB_ROOT / "features"
-INDEX_MD = KB_ROOT / "INDEX.md"
 CONFIG_FILE = KB_ROOT / "config.yml"
 
 
@@ -138,12 +138,14 @@ def _score_match(query: str, entry: dict) -> int:
             query_tokens.add(w)
 
     score = 0
-    # Exact keyword match is strong signal
+    # Keyword match: exact token match is the strong signal. A substring match
+    # on a long keyword is weaker. Short keywords (len<3, e.g. "入口") are NOT
+    # substring-matched — otherwise "设置页面入口" wrongly hits a "修仙入口" note.
     for kw in entry["keywords"]:
-        if kw in query_lower:
-            score += 10
         if kw in query_tokens:
-            score += 5
+            score += 10
+        elif len(kw) >= 3 and kw in query_lower:
+            score += 4
 
     # Title word match is also strong
     title_lower = entry["title"].lower()
@@ -161,7 +163,8 @@ def _score_match(query: str, entry: dict) -> int:
 
 
 def search_feature(query: str, extra_roots: Optional[list[str]] = None,
-                   matches_out: Optional[list] = None, char_budget: int = 6000) -> str:
+                   matches_out: Optional[list] = None, char_budget: int = 6000,
+                   platform: str = "") -> str:
     """Search the test KB and return the most relevant entries as markdown.
 
     Local feature docs, an imported project's KB dirs, and the user's dictated
@@ -186,8 +189,14 @@ def search_feature(query: str, extra_roots: Optional[list[str]] = None,
         except Exception:
             continue
 
-    candidates = feature_entries + _index_notes()
-    ranked = sorted(((_score_match(query, e), e) for e in candidates), key=lambda x: -x[0])
+    # 笔记（口述/LLM 组织，质量参差）与功能文档分开计分：笔记得分打 6 折，
+    # 避免「修仙入口」这类随手笔记抢占正经功能文档的位置。
+    candidates = [(_score_match(query, e), e) for e in feature_entries
+                  if allows_document(platform, str(e.get("path") or ""), e["title"], e["content"])]
+    for e in _index_notes():
+        if allows_document(platform, title=e["title"], content=e["content"]):
+            candidates.append((int(_score_match(query, e) * 0.6), e))
+    ranked = sorted(candidates, key=lambda x: -x[0])
     ranked = [(s, e) for s, e in ranked if s >= 10]
     if not ranked:
         return ""
@@ -199,7 +208,11 @@ def search_feature(query: str, extra_roots: Optional[list[str]] = None,
         # Notes are already tidy prose; features get section extraction.
         extracted = entry["content"] if is_note else _extract_agent_relevant(entry["content"])
         head = "Note" if is_note else "Test KB"
-        block = f"# {head}: {entry['title']}\n\n{extracted}"
+        source_path = str(entry.get("path") or "")
+        block = f"# {head}: {entry['title']}\n"
+        if source_path:
+            block += f"Source: {source_path}\n"
+        block += f"\n{extracted}"
         # Always keep the single best match; afterwards, stop once the budget
         # is spent rather than dumping every weak hit.
         if parts and used + len(block) > char_budget:
@@ -212,6 +225,7 @@ def search_feature(query: str, extra_roots: Optional[list[str]] = None,
             matches_out.append({
                 "title": entry["title"], "slug": entry["slug"],
                 "source": entry.get("source", "local"), "score": score,
+                "path": source_path,
             })
 
     return "\n\n---\n\n".join(parts)

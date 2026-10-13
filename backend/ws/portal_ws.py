@@ -4,6 +4,7 @@ Portal → Server: Bearer token auth, then sends JSON-RPC responses.
 Server → Portal: JSON-RPC requests to control the device.
 """
 import asyncio
+import anyio
 import json
 import logging
 import uuid
@@ -31,6 +32,11 @@ class DeviceConnection:
     connection_type: str = "portal"
     pending: Dict[str, asyncio.Future] = field(default_factory=dict)
     is_connected: bool = True
+    video_available: bool = False
+
+    @property
+    def platform(self):
+        return "harmony" if self.connection_type == "hdc_bridge" else "android"
 
 
 def _header_utf8(value: str) -> str:
@@ -91,6 +97,34 @@ async def browser_usb_websocket_endpoint(websocket: WebSocket):
         await websocket.close(code=4001, reason="Unauthorized")
         return
     await serve_device_connection(websocket, device_row, token, device_row.name, browser=True)
+
+
+async def adb_bridge_websocket_endpoint(websocket: WebSocket):
+    authorization = websocket.headers.get("authorization", "")
+    token = authorization.removeprefix("Bearer ").strip() if authorization.startswith("Bearer ") else ""
+    async with AsyncSessionLocal() as session:
+        device = (await session.execute(select(Device).where(
+            Device.token == token, Device.connection_type == "adb_bridge"
+        ))).scalar_one_or_none() if token else None
+    await websocket.accept()
+    if device is None:
+        await websocket.close(code=4001, reason="Unauthorized")
+        return
+    await serve_device_connection(websocket, device, token, device.name, browser=True)
+
+
+async def hdc_bridge_websocket_endpoint(websocket: WebSocket):
+    authorization = websocket.headers.get("authorization", "")
+    token = authorization.removeprefix("Bearer ").strip() if authorization.startswith("Bearer ") else ""
+    async with AsyncSessionLocal() as session:
+        device = (await session.execute(select(Device).where(
+            Device.token == token, Device.connection_type == "hdc_bridge"
+        ))).scalar_one_or_none() if token else None
+    await websocket.accept()
+    if device is None:
+        await websocket.close(code=4001, reason="Unauthorized")
+        return
+    await serve_device_connection(websocket, device, token, device.name, browser=True)
 
 
 async def serve_device_connection(websocket: WebSocket, device_row: Device,
@@ -174,13 +208,14 @@ async def serve_device_connection(websocket: WebSocket, device_row: Device,
             if not fut.done():
                 fut.set_exception(RuntimeError("Device disconnected"))
         conn.pending.clear()
-        if is_current:
-            async with AsyncSessionLocal() as session:
-                await session.execute(
-                    update(Device).where(Device.token == token)
-                    .values(status="offline", last_seen=datetime.utcnow())
-                )
-                await session.commit()
+        with anyio.CancelScope(shield=True):
+            if is_current:
+                async with AsyncSessionLocal() as session:
+                    await session.execute(
+                        update(Device).where(Device.token == token)
+                        .values(status="offline", last_seen=datetime.utcnow())
+                    )
+                    await session.commit()
         logger.info("Device disconnected: %s", db_device_id)
 
 
@@ -191,6 +226,21 @@ def _handle_message(conn: DeviceConnection, raw: str):
         return
 
     if not isinstance(msg, dict):
+        return
+
+    # Optional capability announcement; old clients remain screenshot-only.
+    if msg.get("type") == "capabilities":
+        conn.video_available = msg.get("video") is True
+        return
+    # Record-event push from the Portal (NOT a JSON-RPC response — no "id").
+    # The app streams real user interactions (tap/scroll/input + coordinates)
+    # while the recorder is active; route them to the recorder session.
+    if msg.get("type") == "record_event":
+        try:
+            from routers.recorder import handle_record_event
+            handle_record_event(conn.device_id, msg.get("event") or {})
+        except Exception as e:
+            logger.warning("record_event handler failed: %s", e)
         return
 
     msg_id = str(msg.get("id", ""))

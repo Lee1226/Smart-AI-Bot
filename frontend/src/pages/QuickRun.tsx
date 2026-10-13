@@ -3,18 +3,8 @@ import { useNavigate } from 'react-router-dom'
 import { useQuery, useMutation } from '@tanstack/react-query'
 import { fetchDevices, fetchSettings, fetchProjects, quickRun } from '../lib/api'
 import { useT } from '../lib/i18n'
-
-const PROVIDERS = ['openai', 'anthropic', 'bedrock', 'google', 'zhipuai', 'groq', 'ollama']
-
-const DEFAULT_MODELS: Record<string, string> = {
-  openai: 'gpt-4o',
-  anthropic: 'claude-sonnet-4-6',
-  bedrock: 'us.anthropic.claude-sonnet-4-6',
-  google: 'gemini-1.5-pro',
-  zhipuai: 'glm-4v',
-  groq: 'llama-3.1-70b-versatile',
-  ollama: 'llama3',
-}
+import TestAccountSelect from '../components/TestAccountSelect'
+import { PROVIDERS, DEFAULT_MODEL } from '../lib/providerConfig'
 
 export default function QuickRun() {
   const navigate = useNavigate()
@@ -26,7 +16,8 @@ export default function QuickRun() {
   const [provider, setProvider] = useState('openai')
   const [model, setModel] = useState('gpt-4o')
   const [maxSteps, setMaxSteps] = useState(20)
-  const [appPackage, setAppPackage] = useState('')
+  const [projectId, setProjectId] = useState('')
+  const [testAccountId, setTestAccountId] = useState('')
   const settingsInitialized = useRef(false)
 
   const { data: devices = [] } = useQuery({ queryKey: ['devices'], queryFn: fetchDevices, refetchInterval: 5000 })
@@ -50,7 +41,7 @@ export default function QuickRun() {
     if (settings && p === settings.default_provider && settings.default_model) {
       setModel(settings.default_model)
     } else {
-      setModel(DEFAULT_MODELS[p] || '')
+      setModel(DEFAULT_MODEL[p] || '')
     }
   }
 
@@ -62,7 +53,8 @@ export default function QuickRun() {
       provider,
       model,
       max_steps: maxSteps,
-      app_package: appPackage,
+      project_id: projectId,
+      test_account_id: testAccountId,
     }),
     onSuccess: run => navigate(`/runs/${run.id}`),
     onError: (e: unknown) => {
@@ -107,20 +99,22 @@ export default function QuickRun() {
         {projects.length > 0 && (
           <div>
             <label className="block text-sm font-medium mb-1">
-              {t('项目知识库', 'Project knowledge')} <span className="text-gray-400 font-normal">{t('（可选，导入对应项目档案的 KB）', '(optional, imports the KB of the matching project profile)')}</span>
+              {t('所属项目', 'Project')} <span className="text-gray-400 font-normal">{t('（按设备平台选择应用，共用项目知识库）', '(app selected by device platform, shared project knowledge)')}</span>
             </label>
             <select
               className="w-full border rounded px-2 py-1.5 text-sm"
-              value={appPackage}
-              onChange={e => setAppPackage(e.target.value)}
+              value={projectId}
+              onChange={e => setProjectId(e.target.value)}
             >
               <option value="">— {t('不使用', 'None')} —</option>
               {projects.map(p => (
-                <option key={p.id} value={p.app_package}>{p.name}（{p.app_package}）</option>
+                <option key={p.id} value={p.id}>{p.name}</option>
               ))}
             </select>
           </div>
         )}
+
+        <TestAccountSelect projectId={projectId} value={testAccountId} onChange={setTestAccountId} platform={devices.find(d => d.id === deviceId)?.platform} />
 
         <div className="grid grid-cols-2 gap-4">
           <div>
@@ -135,7 +129,7 @@ export default function QuickRun() {
               >
                 <option value="">— {t('选择设备', 'Select device')} —</option>
                 {onlineDevices.map(d => (
-                  <option key={d.id} value={d.id}>{d.name}</option>
+                  <option key={d.id} value={d.id}>{d.name}{d.connection_type === 'hdc_bridge' ? ' · 鸿蒙' : ''}</option>
                 ))}
               </select>
             )}

@@ -1,23 +1,45 @@
 """Test run management — trigger runs, stream logs via SSE, fetch results."""
 import asyncio
+import json
 from datetime import datetime
+from pathlib import Path
 from typing import List, Optional
 
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from fastapi.responses import FileResponse, HTMLResponse, StreamingResponse
 from pydantic import BaseModel
 from sqlalchemy import delete, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from auth.access import require_device, require_node, require_run, require_suite
 from core.report import generate_html_report
 from core.run_recorder import has_recording, recording_path
+from core.settings_store import load_settings, resolve_provider_model
 from core.test_runner import active_runs, cancel_run, run_log_stream, start_run, start_batch_run
 from db.database import AsyncSessionLocal
 from core.step_tree import NodeRow, chain_to_node
-from db.models import LessonLearned, StepNode, TestCase, TestResult, TestRun, TestStepLog, TestSuite
+from db.models import (
+    QUICK_SUITE_FORMAT,
+    QUICK_SUITE_PREFIX,
+    LessonLearned,
+    StepNode,
+    TestCase,
+    TestResult,
+    TestRun,
+    TestStepLog,
+    TestSuite,
+)
 from ws.portal_ws import connected_devices
 
 router = APIRouter(prefix="/api/runs", tags=["runs"])
+
+
+async def _default_provider_model(account_id: str) -> tuple[str, str]:
+    """Fall back to the account's configured default provider/model when a run
+    request doesn't specify one (so CLI / API callers get the configured LLM,
+    not the hard-coded placeholder)."""
+    settings = await load_settings(account_id)
+    return resolve_provider_model(settings)
 
 
 async def get_db():
@@ -28,44 +50,55 @@ async def get_db():
 # ── Request / Response models ────────────────────────────────────────────────
 
 class StartRunRequest(BaseModel):
+    test_account_id: str = ""  # empty=project default; -=no login account
     suite_id: str
     device_id: str
-    provider: str = "openai"
-    model: str = "gpt-4o"
+    provider: str = ""
+    model: str = ""
     max_steps: int = 20
     step_delay: float = 1.0
     max_retries: int = 0
     # Default: run the suite as one tree-aware session (shared navigation runs
     # once). Set true to run each case cold + isolated (max isolation, slower).
     isolated: bool = False
+    webhook_url: str = ""   # optional — POST structured result here on completion
+    mode: str = "ai"        # "ai" (LLM drives each step) | "replay" (deterministic playback)
 
 
 class StartBatchRunRequest(BaseModel):
+    test_account_id: str = ""  # empty=project default; -=no login account
     suite_id: str
     device_id: str
-    provider: str = "openai"
-    model: str = "gpt-4o"
+    provider: str = ""
+    model: str = ""
     max_steps: int = 20
     base_path: str = ""          # the shared navigation prefix to enter once
     case_ids: List[str]          # the leaf cases to verify in one session
+    webhook_url: str = ""
 
 
 class QuickRunRequest(BaseModel):
+    test_account_id: str = ""  # empty=project default; -=no login account
     goal: str
     expected: str = "任务完成"
     device_id: str
-    provider: str = "openai"
-    model: str = "gpt-4o"
+    provider: str = ""
+    model: str = ""
     max_steps: int = 20
     step_delay: float = 1.0
     max_retries: int = 0
+    project_id: str = ""
     app_package: str = ""  # optional — match a Project Profile to load its KB
+    webhook_url: str = ""
+    mode: str = "ai"       # "ai" | "replay"
 
 
 class RunOut(BaseModel):
     id: str
     suite_id: str
     suite_name: Optional[str] = None
+    test_account_name: str = ""
+    test_account_id: str = ""
     device_id: str
     status: str
     provider: str
@@ -129,6 +162,8 @@ async def _run_out(run: TestRun, db: AsyncSession) -> RunOut:
         id=run.id,
         suite_id=run.suite_id,
         suite_name=suite.name if suite else None,
+        test_account_name=run.test_account_name or "",
+        test_account_id=run.test_account_id or "",
         device_id=run.device_id,
         status=run.status,
         provider=run.provider,
@@ -145,10 +180,33 @@ async def _run_out(run: TestRun, db: AsyncSession) -> RunOut:
     )
 
 
+async def _validate_project_target(db, suite_id, device_id):
+    from core.test_runner import _suite_app_package
+    conn = connected_devices.get(device_id)
+    if conn:
+        try:
+            await _suite_app_package(suite_id, conn.platform)
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail=str(exc))
+
+
+async def _attach_test_account(db, run, req):
+    from core.test_accounts import select_run_account
+    conn = connected_devices.get(req.device_id)
+    if getattr(req, "mode", "ai") == "replay":
+        if req.test_account_id and req.test_account_id != '-':
+            raise HTTPException(400, '测试账号自动登录仅支持 AI 模式，回放不注入凭据')
+        return
+    await select_run_account(db, run, req.test_account_id, conn.platform)
+
+
 # ── Endpoints ────────────────────────────────────────────────────────────────
 
 @router.post("", response_model=RunOut, status_code=201)
-async def create_run(req: StartRunRequest, db: AsyncSession = Depends(get_db)):
+async def create_run(req: StartRunRequest, request: Request, db: AsyncSession = Depends(get_db)):
+    await require_device(request, db, req.device_id)
+    await require_suite(request, db, req.suite_id)
+    await _validate_project_target(db, req.suite_id, req.device_id)
     # Validate device is connected
     conn = connected_devices.get(req.device_id)
     if conn is None or not conn.is_connected:
@@ -165,19 +223,24 @@ async def create_run(req: StartRunRequest, db: AsyncSession = Depends(get_db)):
         raise HTTPException(status_code=404, detail="Suite not found or has no test cases")
 
     # Create run row
+    account_id = request.state.account_id
+    def_provider, def_model = await _default_provider_model(account_id)
     run = TestRun(
         suite_id=req.suite_id,
         device_id=req.device_id,
-        provider=req.provider,
-        model=req.model,
+        provider=req.provider or def_provider,
+        model=req.model or def_model,
         status="pending",
+        account_id=account_id,
+        webhook_url=req.webhook_url,
     )
     db.add(run)
     await db.flush()
+    await _attach_test_account(db, run, req)
 
     # Pre-create result rows
     for case in cases:
-        db.add(TestResult(run_id=run.id, case_id=case.id, status="pending"))
+        db.add(TestResult(run_id=run.id, case_id=case.id, status="pending", account_id=account_id))
 
     await db.commit()
     await db.refresh(run)
@@ -185,8 +248,11 @@ async def create_run(req: StartRunRequest, db: AsyncSession = Depends(get_db)):
     # Launch background task. Default = tree-aware single session (cases already
     # ordered by TestCase.order, i.e. xmind depth-first order, so siblings are
     # adjacent → minimal re-navigation). isolated = legacy cold-run-each.
-    if req.isolated:
-        await start_run(run.id, max_steps=req.max_steps, step_delay=req.step_delay, max_retries=req.max_retries)
+    if req.isolated or req.mode == "replay":
+        # isolated = legacy cold-run-each; replay = deterministic playback
+        # (batch/tree runs are AI-driven, so replay falls back to per-case runs).
+        await start_run(run.id, max_steps=req.max_steps, step_delay=req.step_delay,
+                        max_retries=req.max_retries, mode=req.mode)
     else:
         await start_batch_run(run.id, base_path="", case_ids=[c.id for c in cases], max_steps=req.max_steps)
 
@@ -194,9 +260,12 @@ async def create_run(req: StartRunRequest, db: AsyncSession = Depends(get_db)):
 
 
 @router.post("/batch", response_model=RunOut, status_code=201)
-async def create_batch_run(req: StartBatchRunRequest, db: AsyncSession = Depends(get_db)):
+async def create_batch_run(req: StartBatchRunRequest, request: Request, db: AsyncSession = Depends(get_db)):
     """Run a subset of cases (a tree folder's leaves) as ONE session — navigate to
     the shared base path once, then verify each leaf, with per-leaf results."""
+    await require_device(request, db, req.device_id)
+    await require_suite(request, db, req.suite_id)
+    await _validate_project_target(db, req.suite_id, req.device_id)
     conn = connected_devices.get(req.device_id)
     if conn is None or not conn.is_connected:
         raise HTTPException(status_code=400, detail=f"Device {req.device_id} is not connected")
@@ -211,14 +280,17 @@ async def create_batch_run(req: StartBatchRunRequest, db: AsyncSession = Depends
     if not ordered_ids:
         raise HTTPException(status_code=404, detail="None of the selected cases were found")
 
+    def_provider, def_model = await _default_provider_model(request.state.account_id)
     run = TestRun(
         suite_id=req.suite_id, device_id=req.device_id,
-        provider=req.provider, model=req.model, status="pending",
+        provider=req.provider or def_provider, model=req.model or def_model, status="pending",
+        account_id=request.state.account_id, webhook_url=req.webhook_url,
     )
     db.add(run)
     await db.flush()
+    await _attach_test_account(db, run, req)
     for cid in ordered_ids:
-        db.add(TestResult(run_id=run.id, case_id=cid, status="pending"))
+        db.add(TestResult(run_id=run.id, case_id=cid, status="pending", account_id=request.state.account_id))
     await db.commit()
     await db.refresh(run)
 
@@ -228,54 +300,84 @@ async def create_batch_run(req: StartBatchRunRequest, db: AsyncSession = Depends
 
 @router.get("", response_model=List[RunOut])
 async def list_runs(
+    request: Request,
     suite_id: Optional[str] = None,
     db: AsyncSession = Depends(get_db),
 ):
     q = select(TestRun).order_by(TestRun.created_at.desc())
     if suite_id:
         q = q.where(TestRun.suite_id == suite_id)
+    # Filter by account when authenticated
+    if request.state.account_id:
+        q = q.where(TestRun.account_id == request.state.account_id)
     res = await db.execute(q)
     runs = res.scalars().all()
     return [await _run_out(r, db) for r in runs]
 
 
 @router.post("/quick", response_model=RunOut, status_code=201)
-async def quick_run(req: QuickRunRequest, db: AsyncSession = Depends(get_db)):
-    """Create a single-case temporary suite and start a run immediately."""
+async def quick_run(req: QuickRunRequest, request: Request, db: AsyncSession = Depends(get_db)):
+    """Create an internal single-case container and start a run immediately.
+
+    The container preserves run history/report foreign keys, but is marked as
+    internal and never appears in the user's Test Suites library.
+    """
+    await require_device(request, db, req.device_id)
     conn = connected_devices.get(req.device_id)
     if conn is None or not conn.is_connected:
         raise HTTPException(status_code=400, detail=f"Device {req.device_id} is not connected")
 
-    suite = TestSuite(name=f"快速任务: {req.goal[:60]}", source_format="manual",
-                      app_package=req.app_package or "")
+    account_id = request.state.account_id
+    suite = TestSuite(name=f"{QUICK_SUITE_PREFIX} {req.goal[:60]}", source_format=QUICK_SUITE_FORMAT,
+                      app_package=req.app_package or "", project_id=req.project_id, account_id=account_id)
+    from auth.access import require_operator, operator_account_id
+    from core.projects import target_for_suite
+    if req.project_id:
+        await require_operator(request, db)
+    try:
+        if account_id == await operator_account_id(db):
+            target_for_suite(suite, conn.platform)
+        elif req.app_package and conn.platform != "android":
+            raise ValueError("旧版包名仅适用于 Android")
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
     db.add(suite)
     await db.flush()
 
-    case = TestCase(suite_id=suite.id, path=req.goal, expected=req.expected, order=0)
+    case = TestCase(suite_id=suite.id, path=req.goal, expected=req.expected, order=0,
+                    account_id=account_id)
     db.add(case)
     await db.flush()
 
+    def_provider, def_model = await _default_provider_model(account_id)
     run = TestRun(
         suite_id=suite.id,
         device_id=req.device_id,
-        provider=req.provider,
-        model=req.model,
+        provider=req.provider or def_provider,
+        model=req.model or def_model,
         status="pending",
+        account_id=account_id,
+        webhook_url=req.webhook_url,
     )
     db.add(run)
     await db.flush()
+    await _attach_test_account(db, run, req)
 
-    db.add(TestResult(run_id=run.id, case_id=case.id, status="pending"))
+    db.add(TestResult(run_id=run.id, case_id=case.id, status="pending", account_id=account_id))
     await db.commit()
     await db.refresh(run)
 
-    await start_run(run.id, max_steps=req.max_steps, step_delay=req.step_delay, max_retries=req.max_retries)
+    await start_run(run.id, max_steps=req.max_steps, step_delay=req.step_delay,
+                    max_retries=req.max_retries, mode=req.mode)
     return await _run_out(run, db)
 
 
 @router.post("/tree", response_model=RunOut, status_code=201)
-async def create_tree_run(req: StartRunRequest, db: AsyncSession = Depends(get_db)):
+async def create_tree_run(req: StartRunRequest, request: Request, db: AsyncSession = Depends(get_db)):
     """Run a suite's step-tree as a DFS over its leaf cases."""
+    await require_device(request, db, req.device_id)
+    await require_suite(request, db, req.suite_id)
+    await _validate_project_target(db, req.suite_id, req.device_id)
     conn = connected_devices.get(req.device_id)
     if conn is None or not conn.is_connected:
         raise HTTPException(status_code=400, detail=f"Device {req.device_id} is not connected")
@@ -283,28 +385,39 @@ async def create_tree_run(req: StartRunRequest, db: AsyncSession = Depends(get_d
     targets = await node_targets_for_suite(db, req.suite_id)
     if not targets:
         raise HTTPException(status_code=404, detail="Suite has no step-tree nodes")
+    def_provider, def_model = await _default_provider_model(request.state.account_id)
     run = TestRun(suite_id=req.suite_id, device_id=req.device_id,
-                  provider=req.provider, model=req.model, status="pending")
+                  provider=req.provider or def_provider, model=req.model or def_model, status="pending",
+                  account_id=request.state.account_id, webhook_url=req.webhook_url)
     db.add(run); await db.flush()
+    await _attach_test_account(db, run, req)
     for t in targets:
-        db.add(TestResult(run_id=run.id, case_id=t.node_id, status="pending"))
+        db.add(TestResult(run_id=run.id, case_id=t.node_id, status="pending", account_id=request.state.account_id))
     await db.commit(); await db.refresh(run)
     await start_tree_run(run.id, max_steps=req.max_steps)
     return await _run_out(run, db)
 
 
 class NodeRunRequest(BaseModel):
+    test_account_id: str = ""  # empty=project default; -=no login account
     suite_id: str
     device_id: str
     node_id: str
-    provider: str = "openai"
-    model: str = "gpt-4o"
+    provider: str = ""
+    model: str = ""
     max_steps: int = 20
+    webhook_url: str = ""
 
 
 @router.post("/node", response_model=RunOut, status_code=201)
-async def create_node_run(req: NodeRunRequest, db: AsyncSession = Depends(get_db)):
+async def create_node_run(req: NodeRunRequest, request: Request, db: AsyncSession = Depends(get_db)):
     """Run a single step-tree node: execute its root→node chain."""
+    await require_device(request, db, req.device_id)
+    await require_suite(request, db, req.suite_id)
+    await _validate_project_target(db, req.suite_id, req.device_id)
+    node = await require_node(request, db, req.node_id)
+    if node.suite_id != req.suite_id:
+        raise HTTPException(status_code=404, detail="Node not found in suite")
     conn = connected_devices.get(req.device_id)
     if conn is None or not conn.is_connected:
         raise HTTPException(status_code=400, detail=f"Device {req.device_id} is not connected")
@@ -312,10 +425,13 @@ async def create_node_run(req: NodeRunRequest, db: AsyncSession = Depends(get_db
     targets = await node_targets_for_suite(db, req.suite_id, req.node_id)
     if not targets:
         raise HTTPException(status_code=404, detail="Node not found in this suite's step-tree")
+    def_provider, def_model = await _default_provider_model(request.state.account_id)
     run = TestRun(suite_id=req.suite_id, device_id=req.device_id,
-                  provider=req.provider, model=req.model, status="pending")
+                  provider=req.provider or def_provider, model=req.model or def_model, status="pending",
+                  account_id=request.state.account_id, webhook_url=req.webhook_url)
     db.add(run); await db.flush()
-    db.add(TestResult(run_id=run.id, case_id=req.node_id, status="pending"))
+    await _attach_test_account(db, run, req)
+    db.add(TestResult(run_id=run.id, case_id=req.node_id, status="pending", account_id=request.state.account_id))
     await db.commit(); await db.refresh(run)
     await start_tree_run(run.id, max_steps=req.max_steps, only_node_id=req.node_id)
     return await _run_out(run, db)
@@ -344,15 +460,14 @@ class CompareOut(BaseModel):
 
 @router.get("/compare", response_model=CompareOut)
 async def compare_runs(
+    request: Request,
     a: str = Query(..., description="Run A id"),
     b: str = Query(..., description="Run B id"),
     db: AsyncSession = Depends(get_db),
 ):
     """Compare results of two runs that share the same suite."""
-    run_a = await db.get(TestRun, a)
-    run_b = await db.get(TestRun, b)
-    if not run_a or not run_b:
-        raise HTTPException(status_code=404, detail="One or both runs not found")
+    run_a = await require_run(request, db, a)
+    run_b = await require_run(request, db, b)
 
     async def _results_by_case(run_id: str):
         res = await db.execute(
@@ -403,20 +518,24 @@ async def compare_runs(
 
 
 @router.get("/{run_id}", response_model=RunOut)
-async def get_run(run_id: str, db: AsyncSession = Depends(get_db)):
+async def get_run(run_id: str, request: Request, db: AsyncSession = Depends(get_db)):
     run = await db.get(TestRun, run_id)
     if not run:
+        raise HTTPException(status_code=404, detail="Run not found")
+    if request.state.account_id and run.account_id and run.account_id != request.state.account_id:
         raise HTTPException(status_code=404, detail="Run not found")
     return await _run_out(run, db)
 
 
 @router.delete("/{run_id}", status_code=204)
-async def delete_run(run_id: str, db: AsyncSession = Depends(get_db)):
+async def delete_run(run_id: str, request: Request, db: AsyncSession = Depends(get_db)):
     """Delete an entire run record and everything derived from it: its per-case
     results, their step logs, and the lessons distilled from this run (so the
     agent's memory is cleaned too). Active runs are cancelled first."""
     run = await db.get(TestRun, run_id)
     if not run:
+        raise HTTPException(status_code=404, detail="Run not found")
+    if request.state.account_id and run.account_id and run.account_id != request.state.account_id:
         raise HTTPException(status_code=404, detail="Run not found")
 
     # Stop the live task if this run is still in flight.
@@ -448,7 +567,7 @@ async def cancel_run_endpoint(run_id: str, db: AsyncSession = Depends(get_db)):
     run = await db.get(TestRun, run_id)
     if not run:
         raise HTTPException(status_code=404, detail="Run not found")
-    if run.status not in ("pending", "running"):
+    if run.status not in ("pending", "queued", "preparing", "running"):
         raise HTTPException(status_code=400, detail=f"Run is already {run.status}")
 
     # Kill the live task if it is still running (best-effort)

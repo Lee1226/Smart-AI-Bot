@@ -279,3 +279,7 @@ Android 设备 (Portal App)
 ## License
 
 MIT
+
+## 项目与多平台回归
+
+[首次使用与同步说明](docs/open-source-sync.zh-CN.md) · [鸿蒙 HDC](docs/hdc-bridge.zh-CN.md) · [项目与测试账号](docs/projects.zh-CN.md) · [回归与 CI](docs/regression.zh-CN.md)

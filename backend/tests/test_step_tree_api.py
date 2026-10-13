@@ -20,13 +20,13 @@ async def session():
 
 @pytest.mark.asyncio
 async def test_stepnode_parent_child(session):
-    suite = TestSuite(name="s", source_format="manual")
+    suite = TestSuite(account_id='fixture-account', name="s", source_format="manual")
     session.add(suite)
     await session.flush()
-    root = StepNode(suite_id=suite.id, parent_id=None, action="打开B站", order=0)
+    root = StepNode(account_id='fixture-account', suite_id=suite.id, parent_id=None, action="打开B站", order=0)
     session.add(root)
     await session.flush()
-    child = StepNode(suite_id=suite.id, parent_id=root.id, action="登录", order=0)
+    child = StepNode(account_id='fixture-account', suite_id=suite.id, parent_id=root.id, action="登录", order=0)
     session.add(child)
     await session.commit()
 
@@ -45,13 +45,13 @@ from db.migrate_step_tree import migrate_suite_to_step_tree
 
 @pytest.mark.asyncio
 async def test_migrate_flat_cases_to_tree(session):
-    suite = TestSuite(name="s", source_format="manual")
+    suite = TestSuite(account_id='fixture-account', name="s", source_format="manual")
     session.add(suite); await session.flush()
-    c1 = TestCase(suite_id=suite.id, path="登录 > 答题", expected="完成", order=0)
-    c2 = TestCase(suite_id=suite.id, path="登录 > 设置", expected="打开", order=1)
+    c1 = TestCase(account_id='fixture-account', suite_id=suite.id, path="登录 > 答题", expected="完成", order=0)
+    c2 = TestCase(account_id='fixture-account', suite_id=suite.id, path="登录 > 设置", expected="打开", order=1)
     session.add_all([c1, c2]); await session.flush()
-    run = TestRun(suite_id=suite.id, device_id="d"); session.add(run); await session.flush()
-    res = TestResult(run_id=run.id, case_id=c1.id, status="pass")
+    run = TestRun(account_id='fixture-account', suite_id=suite.id, device_id="d"); session.add(run); await session.flush()
+    res = TestResult(account_id='fixture-account', run_id=run.id, case_id=c1.id, status="pass")
     session.add(res); await session.commit()
 
     created = await migrate_suite_to_step_tree(session, suite.id)
@@ -70,6 +70,10 @@ async def test_migrate_flat_cases_to_tree(session):
 import httpx
 from httpx import ASGITransport
 from main import app
+from unittest.mock import patch
+from contextlib import asynccontextmanager
+from db.models import Account, User
+from auth.jwt_handler import create_access_token
 from routers.testsuites import get_db
 from routers import testruns as _testruns
 
@@ -82,15 +86,25 @@ async def client(session):
     # endpoints (e.g. /runs/.../results) hit the in-memory session too.
     app.dependency_overrides[get_db] = _override
     app.dependency_overrides[_testruns.get_db] = _override
+    account=Account(id='fixture-account', name='fixture', is_operator=True)
+    user=User(id='fixture-user', account_id=account.id, email='fixture@example.test', name='fixture', password_hash='', role='owner')
+    session.add_all([account,user]);await session.commit()
+    token=create_access_token({'account_id':account.id,'user_id':user.id,'role':'owner'})
+    @asynccontextmanager
+    async def middleware_session():
+        yield session
     transport = ASGITransport(app=app)
-    async with httpx.AsyncClient(transport=transport, base_url="http://t") as c:
-        yield c
-    app.dependency_overrides.clear()
+    try:
+        with patch('auth.middleware.AsyncSessionLocal', middleware_session):
+            async with httpx.AsyncClient(transport=transport, base_url="http://t", headers={'Authorization':'Bearer '+token}) as c:
+                yield c
+    finally:
+        app.dependency_overrides.clear()
 
 
 @pytest_asyncio.fixture
 async def suite_id(session):
-    suite = TestSuite(name="s", source_format="manual")
+    suite = TestSuite(account_id='fixture-account', name="s", source_format="manual")
     session.add(suite); await session.commit()
     return suite.id
 
@@ -137,8 +151,8 @@ async def test_node_move_and_cycle_guard(client, suite_id):
 @pytest.mark.asyncio
 async def test_list_nodes_self_heals_unmigrated_suite(client, session):
     # A suite with legacy cases but no StepNode rows (e.g. created after startup).
-    suite = TestSuite(name="late", source_format="manual"); session.add(suite); await session.flush()
-    session.add(TestCase(suite_id=suite.id, path="登录 > 答题", expected="完成", order=0))
+    suite = TestSuite(account_id='fixture-account', name="late", source_format="manual"); session.add(suite); await session.flush()
+    session.add(TestCase(account_id='fixture-account', suite_id=suite.id, path="登录 > 答题", expected="完成", order=0))
     await session.commit()
 
     nodes = (await client.get(f"/api/suites/{suite.id}/nodes")).json()
@@ -147,10 +161,10 @@ async def test_list_nodes_self_heals_unmigrated_suite(client, session):
 
 @pytest.mark.asyncio
 async def test_node_results_history(client, session):
-    suite = TestSuite(name="s", source_format="manual"); session.add(suite); await session.flush()
-    node = StepNode(suite_id=suite.id, parent_id=None, action="登录", order=0); session.add(node); await session.flush()
-    run = TestRun(suite_id=suite.id, device_id="d", provider="p", model="m"); session.add(run); await session.flush()
-    r = TestResult(run_id=run.id, case_id=node.id, status="pass", steps=3, total_tokens=42)
+    suite = TestSuite(account_id='fixture-account', name="s", source_format="manual"); session.add(suite); await session.flush()
+    node = StepNode(account_id='fixture-account', suite_id=suite.id, parent_id=None, action="登录", order=0); session.add(node); await session.flush()
+    run = TestRun(account_id='fixture-account', suite_id=suite.id, device_id="d", provider="p", model="m"); session.add(run); await session.flush()
+    r = TestResult(account_id='fixture-account', run_id=run.id, case_id=node.id, status="pass", steps=3, total_tokens=42)
     session.add(r); await session.commit()
 
     results = (await client.get(f"/api/nodes/{node.id}/results")).json()
@@ -166,12 +180,12 @@ async def test_node_results_history(client, session):
 async def test_run_results_resolve_node_ids(client, session):
     # Tree-run results key TestResult.case_id to a node id — the run detail must
     # still resolve path/expected (regression: inner-join to test_cases gave [] ).
-    suite = TestSuite(name="s", source_format="manual"); session.add(suite); await session.flush()
-    n1 = StepNode(suite_id=suite.id, parent_id=None, action="登录", order=0); session.add(n1); await session.flush()
-    n2 = StepNode(suite_id=suite.id, parent_id=n1.id, action="点击空间", expected="个人信息页", order=0)
+    suite = TestSuite(account_id='fixture-account', name="s", source_format="manual"); session.add(suite); await session.flush()
+    n1 = StepNode(account_id='fixture-account', suite_id=suite.id, parent_id=None, action="登录", order=0); session.add(n1); await session.flush()
+    n2 = StepNode(account_id='fixture-account', suite_id=suite.id, parent_id=n1.id, action="点击空间", expected="个人信息页", order=0)
     session.add(n2); await session.flush()
-    run = TestRun(suite_id=suite.id, device_id="d", provider="p", model="m"); session.add(run); await session.flush()
-    session.add(TestResult(run_id=run.id, case_id=n2.id, status="pass", steps=5))
+    run = TestRun(account_id='fixture-account', suite_id=suite.id, device_id="d", provider="p", model="m"); session.add(run); await session.flush()
+    session.add(TestResult(account_id='fixture-account', run_id=run.id, case_id=n2.id, status="pass", steps=5))
     await session.commit()
 
     results = (await client.get(f"/api/runs/{run.id}/results")).json()
@@ -183,11 +197,11 @@ async def test_run_results_resolve_node_ids(client, session):
 
 @pytest.mark.asyncio
 async def test_nodes_all_and_context(client, session):
-    suite = TestSuite(name="s", source_format="manual"); session.add(suite); await session.flush()
-    n1 = StepNode(suite_id=suite.id, parent_id=None, action="登录", order=0); session.add(n1); await session.flush()
-    n2 = StepNode(suite_id=suite.id, parent_id=n1.id, action="进入语音页", expected="到达", order=0); session.add(n2); await session.flush()
+    suite = TestSuite(account_id='fixture-account', name="s", source_format="manual"); session.add(suite); await session.flush()
+    n1 = StepNode(account_id='fixture-account', suite_id=suite.id, parent_id=None, action="登录", order=0); session.add(n1); await session.flush()
+    n2 = StepNode(account_id='fixture-account', suite_id=suite.id, parent_id=n1.id, action="进入语音页", expected="到达", order=0); session.add(n2); await session.flush()
     # a link referencing n2 (so n2 has a referrer)
-    session.add(StepNode(suite_id=suite.id, parent_id=None, action="🔗", order=1, ref_id=n2.id))
+    session.add(StepNode(account_id='fixture-account', suite_id=suite.id, parent_id=None, action="🔗", order=1, ref_id=n2.id))
     await session.commit()
 
     page = (await client.get("/api/nodes/all", params={"q": "语音"})).json()
@@ -204,11 +218,11 @@ async def test_nodes_all_and_context(client, session):
 
 @pytest.mark.asyncio
 async def test_node_usage_stats(client, session):
-    suite = TestSuite(name="s", source_format="manual"); session.add(suite); await session.flush()
-    src = StepNode(suite_id=suite.id, parent_id=None, action="登录", order=0); session.add(src); await session.flush()
+    suite = TestSuite(account_id='fixture-account', name="s", source_format="manual"); session.add(suite); await session.flush()
+    src = StepNode(account_id='fixture-account', suite_id=suite.id, parent_id=None, action="登录", order=0); session.add(src); await session.flush()
     # one live link + one snapshot copy referencing src
-    session.add(StepNode(suite_id=suite.id, parent_id=None, action="🔗", order=1, ref_id=src.id))
-    session.add(StepNode(suite_id=suite.id, parent_id=None, action="登录(copy)", order=2, source_id=src.id))
+    session.add(StepNode(account_id='fixture-account', suite_id=suite.id, parent_id=None, action="🔗", order=1, ref_id=src.id))
+    session.add(StepNode(account_id='fixture-account', suite_id=suite.id, parent_id=None, action="登录(copy)", order=2, source_id=src.id))
     await session.commit()
 
     counts = (await client.get("/api/nodes/usage")).json()
@@ -221,11 +235,11 @@ async def test_node_usage_stats(client, session):
 
 @pytest.mark.asyncio
 async def test_node_search_across_suites(client, session):
-    s1 = TestSuite(name="A", source_format="manual"); s2 = TestSuite(name="B", source_format="manual")
+    s1 = TestSuite(account_id='fixture-account', name="A", source_format="manual"); s2 = TestSuite(account_id='fixture-account', name="B", source_format="manual")
     session.add_all([s1, s2]); await session.flush()
-    n1 = StepNode(suite_id=s1.id, parent_id=None, action="登录", order=0); session.add(n1); await session.flush()
-    n2 = StepNode(suite_id=s1.id, parent_id=n1.id, action="进入语音页面", order=0); session.add(n2)
-    other = StepNode(suite_id=s2.id, parent_id=None, action="设置", order=0); session.add(other)
+    n1 = StepNode(account_id='fixture-account', suite_id=s1.id, parent_id=None, action="登录", order=0); session.add(n1); await session.flush()
+    n2 = StepNode(account_id='fixture-account', suite_id=s1.id, parent_id=n1.id, action="进入语音页面", order=0); session.add(n2)
+    other = StepNode(account_id='fixture-account', suite_id=s2.id, parent_id=None, action="设置", order=0); session.add(other)
     await session.commit()
 
     hits = (await client.get("/api/nodes/search", params={"q": "语音"})).json()
@@ -235,11 +249,11 @@ async def test_node_search_across_suites(client, session):
 
 @pytest.mark.asyncio
 async def test_copy_chain_into_suite(client, session):
-    src = TestSuite(name="src", source_format="manual"); dst = TestSuite(name="dst", source_format="manual")
+    src = TestSuite(account_id='fixture-account', name="src", source_format="manual"); dst = TestSuite(account_id='fixture-account', name="dst", source_format="manual")
     session.add_all([src, dst]); await session.flush()
-    a = StepNode(suite_id=src.id, parent_id=None, action="登录", order=0); session.add(a); await session.flush()
-    b = StepNode(suite_id=src.id, parent_id=a.id, action="语音", expected="进入语音页", order=0); session.add(b)
-    root = StepNode(suite_id=dst.id, parent_id=None, action="首页", order=0); session.add(root)
+    a = StepNode(account_id='fixture-account', suite_id=src.id, parent_id=None, action="登录", order=0); session.add(a); await session.flush()
+    b = StepNode(account_id='fixture-account', suite_id=src.id, parent_id=a.id, action="语音", expected="进入语音页", order=0); session.add(b)
+    root = StepNode(account_id='fixture-account', suite_id=dst.id, parent_id=None, action="首页", order=0); session.add(root)
     await session.commit()
 
     created = (await client.post(f"/api/suites/{dst.id}/nodes/copy",

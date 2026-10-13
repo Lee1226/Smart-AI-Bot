@@ -2,11 +2,35 @@ import { useState, useEffect, useRef } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import {
-  fetchSuite, fetchDevices, fetchSettings, fetchTrends, runTree, runNode,
-  TrendPoint, fetchRuns, deleteRun, Run, setSuiteAppPackage,
+  fetchSuite, fetchDevices, fetchSettings, fetchTrends, runTree, runNode, startRun,
+  TrendPoint, fetchRuns, deleteRun, Run, setSuiteAppPackage, fetchProjects, setSuiteProject,
 } from '../lib/api'
+import TestAccountSelect from '../components/TestAccountSelect'
 import StepTreeEditor from '../components/StepTreeEditor'
+import AISuiteImport, { SuiteOrganizationInfo } from '../components/AISuiteImport'
 import { useT } from '../lib/i18n'
+import { PROVIDERS, DEFAULT_MODEL } from '../lib/providerConfig'
+
+function SuiteProject({ suiteId, value, legacyPackage }: { suiteId: string; value: string; legacyPackage: string }) {
+  const t = useT()
+  const qc = useQueryClient()
+  const { data: projects = [] } = useQuery({ queryKey: ['projects'], queryFn: fetchProjects })
+  const mut = useMutation({
+    mutationFn: (id: string) => setSuiteProject(suiteId, id),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['suite', suiteId] }),
+  })
+  return <div className="flex items-center gap-2 text-xs">
+    <label>{t('所属项目', 'Project')}</label>
+    <select className="border rounded px-2 py-1" value={value} disabled={mut.isPending}
+      onChange={e => mut.mutate(e.target.value)}>
+      <option value="">{t('未关联项目', 'No project')}</option>
+      {value && !projects.some(p => p.id === value) && <option value={value}>{t('项目不可用，请重新选择', 'Project unavailable')}</option>}
+      {projects.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
+    </select>
+    {!value && <SuiteAppPackage suiteId={suiteId} value={legacyPackage} />}
+    {mut.isError && <span className="text-red-500">{t('保存失败', 'Save failed')}</span>}
+  </div>
+}
 
 function SuiteAppPackage({ suiteId, value }: { suiteId: string; value: string }) {
   const t = useT()
@@ -35,15 +59,12 @@ function SuiteAppPackage({ suiteId, value }: { suiteId: string; value: string })
     <button
       className="text-xs text-ink-faint hover:text-primary"
       onClick={() => setEditing(true)}
-      title={t('设置目标应用包名（用于匹配「设置」里的项目档案，导入其知识库）', 'Set the target app package (used to match a project profile in Settings and import its knowledge base)')}
+      title={t('旧版 Android 包名；多端测试请选择所属项目', 'Legacy Android package; select a project for multiple platforms')}
     >
       {t('目标应用', 'Target app')}: <span className="font-mono">{value || t('未设置', 'not set')}</span> ✎
     </button>
   )
 }
-
-const PROVIDERS = ['openai', 'anthropic', 'bedrock', 'google', 'zhipuai', 'groq', 'ollama']
-
 
 function TrendChart({ trends }: { trends: TrendPoint[] }) {
   const tr = useT()
@@ -186,20 +207,12 @@ export default function SuiteDetail() {
   const navigate = useNavigate()
 
   const [deviceId, setDeviceId] = useState('')
+  const [testAccountId, setTestAccountId] = useState('')
   const [provider, setProvider] = useState('openai')
   const [model, setModel] = useState('gpt-4o')
   const [maxSteps, setMaxSteps] = useState(20)
+  const [mode, setMode] = useState<'ai' | 'replay'>('ai')
   const settingsInitialized = useRef(false)
-
-  const DEFAULT_MODELS: Record<string, string> = {
-    openai: 'gpt-4o',
-    anthropic: 'claude-sonnet-4-6',
-    bedrock: 'us.anthropic.claude-sonnet-4-6',
-    google: 'gemini-1.5-pro',
-    zhipuai: 'glm-4v',
-    groq: 'llama-3.1-70b-versatile',
-    ollama: 'llama3',
-  }
 
   const { data: suite } = useQuery({ queryKey: ['suite', suiteId], queryFn: () => fetchSuite(suiteId!) })
   const { data: devices = [] } = useQuery({ queryKey: ['devices'], queryFn: fetchDevices, refetchInterval: 5000 })
@@ -227,12 +240,12 @@ export default function SuiteDetail() {
     if (settings && p === settings.default_provider && settings.default_model) {
       setModel(settings.default_model)
     } else {
-      setModel(DEFAULT_MODELS[p] || '')
+      setModel(DEFAULT_MODEL[p] || '')
     }
   }
 
   const treeRunMut = useMutation({
-    mutationFn: () => runTree({ suite_id: suiteId!, device_id: deviceId, provider, model, max_steps: maxSteps }),
+    mutationFn: () => runTree({ suite_id: suiteId!, device_id: deviceId, provider, model, max_steps: maxSteps, test_account_id: testAccountId }),
     onSuccess: run => navigate(`/runs/${run.id}`),
     onError: (e: unknown) => {
       const msg = (e as { response?: { data?: { detail?: string } } })?.response?.data?.detail || String(e)
@@ -241,7 +254,7 @@ export default function SuiteDetail() {
   })
 
   const nodeRunMut = useMutation({
-    mutationFn: (nodeId: string) => runNode({ suite_id: suiteId!, device_id: deviceId, node_id: nodeId, provider, model, max_steps: maxSteps }),
+    mutationFn: (nodeId: string) => runNode({ suite_id: suiteId!, device_id: deviceId, node_id: nodeId, provider, model, max_steps: maxSteps, test_account_id: testAccountId }),
     onSuccess: run => navigate(`/runs/${run.id}`),
     onError: (e: unknown) => {
       const msg = (e as { response?: { data?: { detail?: string } } })?.response?.data?.detail || String(e)
@@ -253,6 +266,16 @@ export default function SuiteDetail() {
     nodeRunMut.mutate(nodeId)
   }
 
+  // Deterministic replay run — executes recorded actions verbatim (no per-step AI).
+  const replayRunMut = useMutation({
+    mutationFn: () => startRun({ suite_id: suiteId!, device_id: deviceId, provider, model, max_steps: maxSteps, mode: 'replay' }),
+    onSuccess: run => navigate(`/runs/${run.id}`),
+    onError: (e: unknown) => {
+      const msg = (e as { response?: { data?: { detail?: string } } })?.response?.data?.detail || String(e)
+      alert(`${t('回放启动失败', 'Failed to start replay')}: ${msg}`)
+    },
+  })
+
   return (
     <div>
       <button className="text-sm text-primary hover:underline mb-4 block" onClick={() => navigate('/suites')}>
@@ -262,12 +285,16 @@ export default function SuiteDetail() {
       <div className="flex items-start gap-8">
         {/* Left: test case list */}
         <div className="flex-1 min-w-0">
-          <h1 className="text-2xl font-bold mb-1">{(suite?.name || '').replace(/\.xmind$/i, '')}</h1>
+          <div className="flex justify-between items-center gap-3 mb-1">
+            <h1 className="text-2xl font-bold">{(suite?.name || '').replace(/\.xmind$/i, '')}</h1>
+            <AISuiteImport suiteId={suiteId!} />
+          </div>
           <div className="flex items-center gap-3 mb-3">
             <p className="text-sm text-gray-500">{t('步骤树 · 拖动节点改挂 · 悬停行可编辑 · 可运行单节点或整树', 'Step tree · drag nodes to re-parent · hover a row to edit · run a single node or the whole tree')}</p>
-            <SuiteAppPackage suiteId={suiteId!} value={suite?.app_package || ''} />
+            <SuiteProject suiteId={suiteId!} value={suite?.project_id || ''} legacyPackage={suite?.app_package || ''} />
           </div>
 
+          {suite?.source_format === 'ai_organized' && <SuiteOrganizationInfo suiteId={suiteId!} />}
           <StepTreeEditor suiteId={suiteId!} onRunNode={onRunNode} />
 
           {/* Pass rate trend chart */}
@@ -305,11 +332,12 @@ export default function SuiteDetail() {
               >
                 <option value="">{t('— 选择设备 —', '— Select device —')}</option>
                 {onlineDevices.map(d => (
-                  <option key={d.id} value={d.id}>{d.name}</option>
+                  <option key={d.id} value={d.id}>{d.name}{d.connection_type === 'hdc_bridge' ? ' · 鸿蒙' : ''}</option>
                 ))}
               </select>
             )}
 
+            <div className="mb-3"><TestAccountSelect projectId={suite?.project_id} value={testAccountId} onChange={setTestAccountId} platform={devices.find(d => d.id === deviceId)?.platform} /></div>
             <label className="block text-sm font-medium mb-1">Provider</label>
             <select
               className="w-full border rounded px-2 py-1.5 text-sm mb-3"
@@ -336,14 +364,52 @@ export default function SuiteDetail() {
               max={100}
             />
 
-            <button
-              className="w-full bg-primary text-white py-2 rounded font-medium hover:bg-primary-deep disabled:opacity-50"
-              disabled={!deviceId || treeRunMut.isPending}
-              onClick={() => treeRunMut.mutate()}
-              title={t('按步骤树做一次深度优先遍历，逐个叶子用例运行；共享前缀只导航一次', 'Run a depth-first traversal of the step tree, running each leaf case one by one; shared prefixes are navigated only once')}
-            >
-              {treeRunMut.isPending ? t('启动中…', 'Starting…') : t('▶ 运行步骤树（DFS）', '▶ Run step tree (DFS)')}
-            </button>
+            {/* Run mode — only recorded suites support replay */}
+            {suite?.source_format === 'recorded' && (
+              <>
+                <label className="block text-sm font-medium mb-1">{t('运行模式', 'Run mode')}</label>
+                <div className="flex gap-2 mb-3">
+                  <button
+                    type="button"
+                    className={`flex-1 px-3 py-1.5 text-sm rounded border ${mode === 'ai' ? 'bg-primary text-white border-transparent' : 'border-gray-300 text-gray-600 hover:bg-gray-50'}`}
+                    onClick={() => setMode('ai')}
+                  >
+                    {t('AI 执行', 'AI')}
+                  </button>
+                  <button
+                    type="button"
+                    className={`flex-1 px-3 py-1.5 text-sm rounded border ${mode === 'replay' ? 'bg-primary text-white border-transparent' : 'border-gray-300 text-gray-600 hover:bg-gray-50'}`}
+                    onClick={() => setMode('replay')}
+                  >
+                    {t('回放', 'Replay')}
+                  </button>
+                </div>
+                {mode === 'replay' && (
+                  <p className="mb-3 text-xs text-amber-600">
+                    {t('回放：按录制时的坐标和间隔直接执行，不经过 AI 逐步决策，最后 AI 验证一次。', 'Replay: execute recorded actions verbatim, then verify once.')}
+                  </p>
+                )}
+              </>
+            )}
+
+            {suite?.source_format === 'recorded' && mode === 'replay' ? (
+              <button
+                className="w-full bg-primary text-white py-2 rounded font-medium hover:bg-primary-deep disabled:opacity-50"
+                disabled={!deviceId || replayRunMut.isPending}
+                onClick={() => replayRunMut.mutate()}
+              >
+                {replayRunMut.isPending ? t('启动中…', 'Starting…') : t('▶ 回放', '▶ Replay')}
+              </button>
+            ) : (
+              <button
+                className="w-full bg-primary text-white py-2 rounded font-medium hover:bg-primary-deep disabled:opacity-50"
+                disabled={!deviceId || treeRunMut.isPending}
+                onClick={() => treeRunMut.mutate()}
+                title={t('按步骤树做一次深度优先遍历，逐个叶子用例运行；共享前缀只导航一次', 'Run a depth-first traversal of the step tree, running each leaf case one by one; shared prefixes are navigated only once')}
+              >
+                {treeRunMut.isPending ? t('启动中…', 'Starting…') : t('▶ 运行步骤树（DFS）', '▶ Run step tree (DFS)')}
+              </button>
+            )}
             <p className="mt-2 text-xs text-ink-faint">
               {t('单独跑某个节点：在左侧树里 hover 该节点 → 点「▶ 运行」。', 'To run a single node: hover that node in the tree on the left → click "▶ Run".')}
             </p>

@@ -20,10 +20,12 @@ import urllib.request
 from pathlib import Path
 from typing import Optional
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, File, HTTPException, Request, UploadFile
 from fastapi.responses import FileResponse
 from pydantic import BaseModel
 
+from auth.access import require_operator
+from db.database import AsyncSessionLocal
 logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/api/app", tags=["app"])
@@ -122,4 +124,69 @@ async def download_app():
         path=str(apk),
         media_type="application/vnd.android.package-archive",
         filename=apk.name,
+    )
+
+
+class UploadResult(BaseModel):
+    filename: str
+    size: int
+    apk_url: str
+
+
+@router.post("/upload", response_model=UploadResult, status_code=201)
+async def upload_apk(request: Request, file: UploadFile = File(...)):
+    """Upload an APK for programmatic install. Returns a URL the device's
+    install RPC can fetch from (the Portal downloads it directly)."""
+    async with AsyncSessionLocal() as db:
+        await require_operator(request, db)
+    filename = (file.filename or "upload.apk").rsplit("/", 1)[-1]
+    if not filename.lower().endswith(".apk"):
+        filename += ".apk"
+
+    # Sanitise: keep a plain basename so it can be addressed by /download/<name>.
+    import re
+    safe = re.sub(r"[^A-Za-z0-9._-]", "_", filename) or "upload.apk"
+
+    content = await file.read()
+    APK_DIR.mkdir(parents=True, exist_ok=True)
+    dest = APK_DIR / safe
+    dest.write_bytes(content)
+
+    return UploadResult(
+        filename=safe,
+        size=len(content),
+        apk_url=f"/api/app/download/{safe}",
+    )
+
+
+@router.get("/download/{filename}")
+async def download_named_app(filename: str):
+    """Serve a specific uploaded APK by filename."""
+    safe = Path(filename).name  # strip any path traversal
+    path = APK_DIR / safe
+    if not path.exists() or not path.is_file():
+        raise HTTPException(status_code=404, detail="APK not found")
+    return FileResponse(
+        path=str(path),
+        media_type="application/vnd.android.package-archive",
+        filename=safe,
+    )
+
+
+CLI_PATH = Path(__file__).parent.parent / "cli" / "sab"
+
+
+@router.get("/cli/download")
+async def download_cli():
+    """Serve the `sab` CLI script for download (single-file, no dependencies).
+
+    The address is dynamic — clients use their own origin (window.location.origin)
+    to build the URL, so it follows whatever host/port the server is deployed on.
+    """
+    if not CLI_PATH.exists():
+        raise HTTPException(status_code=404, detail="CLI not available in this build")
+    return FileResponse(
+        path=str(CLI_PATH),
+        media_type="text/plain",
+        filename="sab",
     )

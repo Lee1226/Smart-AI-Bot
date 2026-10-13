@@ -2,6 +2,25 @@ import axios from 'axios'
 
 export const api = axios.create({ baseURL: '/api' })
 
+// ── 401 interceptor: auto-redirect to login ──────────────────────────────────
+
+api.interceptors.response.use(
+  (response) => response,
+  (error) => {
+    if (error.response?.status === 401) {
+      // Clear stale token and redirect to login
+      localStorage.removeItem('sab_token')
+      delete api.defaults.headers.common['Authorization']
+      // Only redirect if not already on login/register page
+      if (!window.location.pathname.startsWith('/login') &&
+          !window.location.pathname.startsWith('/register')) {
+        window.location.href = '/login'
+      }
+    }
+    return Promise.reject(error)
+  }
+)
+
 // ── Types ────────────────────────────────────────────────────────────────────
 
 export interface Device {
@@ -10,7 +29,8 @@ export interface Device {
   token: string
   status: 'online' | 'offline'
   last_seen: string
-  connection_type: 'portal' | 'browser_usb'
+  platform?: 'android' | 'harmony' | 'ios'
+  connection_type: 'portal' | 'browser_usb' | 'adb_bridge' | 'hdc_bridge'
 }
 
 export interface Suite {
@@ -20,9 +40,19 @@ export interface Suite {
   case_count: number
   created_at: string
   app_package?: string
+  project_id?: string
+  tag?: string
+}
+
+export interface SuiteListPage {
+  total: number
+  items: Suite[]
+  tags: string[]
 }
 
 export interface Run {
+  test_account_id?: string
+  test_account_name?: string
   id: string
   suite_id: string
   suite_name: string | null
@@ -82,6 +112,8 @@ export interface Settings {
   zhipu_api_key: string
   groq_api_key: string
   ollama_base_url: string
+  ark_api_key: string
+  ark_base_url: string
   aws_access_key_id: string
   aws_secret_access_key: string
   aws_region_name: string
@@ -92,7 +124,14 @@ export interface Settings {
   webhook_url: string
   webhook_type: string
   language: string
+  configured_secrets: string[]
 }
+
+export interface AuthConfig {
+  registration_enabled: boolean
+}
+
+export const fetchAuthConfig = () => api.get<AuthConfig>('/auth/config').then(r => r.data)
 
 // ── Devices ──────────────────────────────────────────────────────────────────
 
@@ -127,6 +166,7 @@ export interface DeviceCapabilities {
   online: boolean
   adb_available: boolean
   adb_serials: string[]
+  video_available?: boolean
 }
 
 export const fetchDeviceCapabilities = (id: string) =>
@@ -134,14 +174,46 @@ export const fetchDeviceCapabilities = (id: string) =>
 
 // ── Suites ───────────────────────────────────────────────────────────────────
 
-export const fetchSuites = () => api.get<Suite[]>('/suites').then(r => r.data)
+export const fetchSuites = (params?: { q?: string; tag?: string; page?: number; page_size?: number }) =>
+  api.get<SuiteListPage>('/suites', { params }).then(r => r.data)
 export const fetchSuite = (id: string) => api.get<Suite>(`/suites/${id}`).then(r => r.data)
+export const createSuite = (data: { name: string; app_package: string; project_id?: string; tag: string }) =>
+  api.post<Suite>('/suites/manual', data).then(r => r.data)
 export const uploadSuite = (file: File) => {
   const form = new FormData()
   form.append('file', file)
   return api.post<Suite>('/suites', form).then(r => r.data)
 }
 export const deleteSuite = (id: string) => api.delete(`/suites/${id}`)
+export const importSuite = (data: any) =>
+  api.post<Suite>('/suites/import', data).then(r => r.data)
+
+export interface SuiteImportDraft {
+  name: string
+  platform: 'android' | 'ios' | 'harmony'
+  project_id?: string
+  app_package: string
+  model: string
+  sources: { id: string; path: string; expected: string; steps: { action: string; expected: string }[] }[]
+  cases: { title: string; preconditions: string[]; steps: { action: string; assertions: { text: string; source_ids: string[] }[] }[] }[]
+  changes: string[]
+  review_notes: string[]
+}
+export const previewSuiteImport = (file: File, platform: string) => {
+  const form = new FormData()
+  form.append('file', file)
+  form.append('platform', platform)
+  return api.post<SuiteImportDraft>('/suites/import/ai-preview', form, { timeout: 150000 }).then(r => r.data)
+}
+export const previewSuiteOrganization = (suiteId: string, platform: string) =>
+  api.post<SuiteImportDraft>(`/suites/${suiteId}/organize/preview`, { platform }, { timeout: 150000 }).then(r => r.data)
+export const confirmSuiteImport = (draft: SuiteImportDraft) =>
+  api.post<Suite>('/suites/import/ai-confirm', draft).then(r => r.data)
+export const fetchSuiteImportMetadata = (suiteId: string) =>
+  api.get<{ parameters: string }[]>(`/suites/${suiteId}/cases`).then(r => {
+    const parsed = JSON.parse(r.data[0]?.parameters || '{}')
+    return parsed as { source_cases?: SuiteImportDraft['sources']; changes?: string[]; review_notes?: string[]; platform?: string }
+  })
 
 export interface TrendPoint {
   run_id: string
@@ -170,9 +242,11 @@ export const startRun = (body: {
   device_id: string
   provider: string
   model: string
+  test_account_id?: string
   max_steps?: number
   max_retries?: number
   isolated?: boolean
+  mode?: string
 }) => api.post<Run>('/runs', body).then(r => r.data)
 export const quickRun = (body: {
   goal: string
@@ -180,8 +254,11 @@ export const quickRun = (body: {
   device_id: string
   provider: string
   model: string
+  test_account_id?: string
   max_steps?: number
   app_package?: string
+  project_id?: string
+  mode?: string
 }) => api.post<Run>('/runs/quick', body).then(r => r.data)
 export const cancelRun = (id: string) => api.post(`/runs/${id}/cancel`)
 export const deleteRun = (id: string) => api.delete(`/runs/${id}`)
@@ -265,10 +342,10 @@ export const moveNode = (suiteId: string, nodeId: string, newParentId: string | 
 export const deleteNode = (suiteId: string, nodeId: string) =>
   api.delete(`/suites/${suiteId}/nodes/${nodeId}`)
 
-export const runTree = (data: { suite_id: string; device_id: string; provider: string; model: string; max_steps: number }) =>
+export const runTree = (data: { suite_id: string; device_id: string; provider: string; model: string; max_steps: number; test_account_id?: string }) =>
   api.post<Run>('/runs/tree', data).then(r => r.data)
 
-export const runNode = (data: { suite_id: string; device_id: string; node_id: string; provider: string; model: string; max_steps: number }) =>
+export const runNode = (data: { suite_id: string; device_id: string; node_id: string; provider: string; model: string; max_steps: number; test_account_id?: string }) =>
   api.post<Run>('/runs/node', data).then(r => r.data)
 
 export interface NodeSearchHit {
@@ -342,7 +419,7 @@ export const fetchNodeContext = (nodeId: string) =>
 // ── Settings ─────────────────────────────────────────────────────────────────
 
 export const fetchSettings = () => api.get<Settings>('/settings').then(r => r.data)
-export const saveSettings = (data: Partial<Settings>) =>
+export const saveSettings = (data: Partial<Settings> & { clear_secrets?: string[] }) =>
   api.put<Settings>('/settings', data).then(r => r.data)
 
 // ── Project Profiles (external KB / skills / source) ──────────────────────────
@@ -351,6 +428,7 @@ export interface Project {
   id: string
   name: string
   app_package: string
+  app_ids: Record<string, string>
   kb_path: string
   source_root: string
   kb_search_cmd: string
@@ -365,6 +443,9 @@ export const deleteProject = (id: string) => api.delete(`/projects/${id}`)
 
 export const setSuiteAppPackage = (suiteId: string, app_package: string) =>
   api.patch<Suite>(`/suites/${suiteId}`, { app_package }).then(r => r.data)
+
+export const setSuiteTag = (suiteId: string, tag: string) =>
+  api.patch<Suite>(`/suites/${suiteId}`, { tag }).then(r => r.data)
 
 // ── Self knowledge base (dictated notes, LLM-organized) ──────────────────────
 
@@ -388,3 +469,121 @@ export const updateKnowledge = (
   data: Partial<Pick<KnowledgeNote, 'title' | 'body' | 'keywords' | 'aliases'>>,
 ) => api.put<KnowledgeNote>(`/knowledge/${id}`, data).then(r => r.data)
 export const deleteKnowledge = (id: string) => api.delete(`/knowledge/${id}`)
+
+// ── Auth ──────────────────────────────────────────────────────────────────────
+
+export interface AuthUser {
+  id: string
+  email: string
+  name: string
+  account_id: string
+  account_name: string
+  role: string
+}
+
+export interface AuthResponse {
+  access_token: string
+  token_type: string
+  user: AuthUser
+}
+
+export interface MeResponse {
+  user_id: string
+  email: string
+  name: string
+  account_id: string
+  account_name: string
+  role: string
+}
+
+export interface ApiKeyInfo {
+  id: string
+  name: string
+  key_prefix: string
+  created_at: string
+  last_used_at: string | null
+}
+
+export interface CreateApiKeyResponse {
+  api_key: ApiKeyInfo
+  full_key: string
+}
+
+export interface UserInfo {
+  id: string
+  email: string
+  name: string
+  role: string
+  created_at: string
+  last_login_at: string | null
+}
+
+export function getToken(): string | null {
+  return localStorage.getItem('sab_token')
+}
+
+export function setToken(token: string) {
+  localStorage.setItem('sab_token', token)
+  api.defaults.headers.common['Authorization'] = `Bearer ${token}`
+}
+
+export function clearToken() {
+  localStorage.removeItem('sab_token')
+  delete api.defaults.headers.common['Authorization']
+}
+
+// Initialize auth header from stored token
+const storedToken = getToken()
+if (storedToken) {
+  api.defaults.headers.common['Authorization'] = `Bearer ${storedToken}`
+}
+
+export const register = (data: { account_name: string; email: string; password: string; name: string }) =>
+  api.post<AuthResponse>('/auth/register', data).then(r => r.data)
+
+export const login = (data: { email: string; password: string }) =>
+  api.post<AuthResponse>('/auth/login', data).then(r => r.data)
+
+export const fetchMe = () =>
+  api.get<MeResponse>('/auth/me').then(r => r.data)
+
+export const fetchApiKeys = () =>
+  api.get<ApiKeyInfo[]>('/account/api-keys').then(r => r.data)
+
+export const createApiKey = (name: string) =>
+  api.post<CreateApiKeyResponse>('/account/api-keys', { name }).then(r => r.data)
+
+export const deleteApiKey = (id: string) =>
+  api.delete(`/account/api-keys/${id}`)
+
+export const fetchAccountUsers = () =>
+  api.get<UserInfo[]>('/account/users').then(r => r.data)
+
+export const createAccountUser = (data: { email: string; password: string; name: string; role: string }) =>
+  api.post<UserInfo>('/account/users', data).then(r => r.data)
+
+export const deleteAccountUser = (id: string) =>
+  api.delete(`/account/users/${id}`)
+
+export const setSuiteProject = (suiteId: string, project_id: string) =>
+  api.patch<Suite>(`/suites/${suiteId}`, { project_id }).then(r => r.data)
+
+export interface ProjectTestAccount {
+  id: string
+  project_id: string
+  name: string
+  environment: string
+  platforms: string[]
+  login_mode: 'phone' | 'email' | 'manual' | 'password'
+  username_masked: string
+  password_configured: boolean
+  verification_code_configured: boolean
+  notes: string
+  is_default: boolean
+}
+export type TestAccountInput = Pick<ProjectTestAccount, 'name' | 'environment' | 'platforms' | 'notes' | 'is_default'> & { login_mode: 'phone' | 'email' | 'password'; username?: string; password?: string; verification_code?: string }
+export const fetchTestAccounts = (projectId: string) => api.get<ProjectTestAccount[]>(`/projects/${projectId}/test-accounts`).then(r => r.data)
+export const saveTestAccount = (projectId: string, body: TestAccountInput, id?: string) => id
+  ? api.put<ProjectTestAccount>(`/projects/${projectId}/test-accounts/${id}`, body).then(r => r.data)
+  : api.post<ProjectTestAccount>(`/projects/${projectId}/test-accounts`, body).then(r => r.data)
+export const deleteTestAccount = (projectId: string, id: string) => api.delete(`/projects/${projectId}/test-accounts/${id}`)

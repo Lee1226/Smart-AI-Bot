@@ -9,3 +9,6 @@ Pillow==11.3.0
 httpx==0.28.1
 PyYAML==6.0.3
 boto3==1.42.97
+bcrypt==4.2.1
+PyJWT==2.10.1
+cryptography==46.0.3

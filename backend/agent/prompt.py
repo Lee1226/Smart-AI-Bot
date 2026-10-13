@@ -125,3 +125,14 @@ installed. Call list_packages() immediately to get all installed packages, find 
 by searching for a keyword (e.g. "undercover", "wechat"), then retry start_app(). \
 If the app is not found in the package list, call mark_done(status="fail", reason="App not installed").
 """
+
+
+def system_prompt_for_platform(platform: str) -> str:
+    if platform != 'harmony':
+        return SYSTEM_PROMPT
+    return SYSTEM_PROMPT.replace('Android', 'HarmonyOS').replace('Activity class name', 'Ability name') + (
+        '\nThe device uses a local HDC bridge. Use Harmony bundle names and Ability names, not Android packages/Activities. '
+        'Screenshots, UI tree, tap/swipe, back/home/enter/del/tab, launch/stop and bundle listing are available. '
+        'Only printable ASCII text with clear=false is supported. Unicode/clear input, recent apps, notifications, '
+        'APK/HAP installation, recording and video are unavailable; report a limitation instead of retrying unsupported operations.\n'
+    )

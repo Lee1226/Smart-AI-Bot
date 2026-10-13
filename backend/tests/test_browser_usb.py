@@ -1,6 +1,8 @@
 """Browser transport contract/security tests; not real USB acceptance."""
 import unittest
+import uuid
 import sqlite3
+import os
 from db.database import DB_PATH
 from unittest.mock import patch, AsyncMock
 
@@ -16,21 +18,34 @@ class BrowserUsbTest(unittest.TestCase):
     def setUpClass(cls):
         cls.context = TestClient(app)
         cls.client = cls.context.__enter__()
-        cls.headers = {}
-        cls.created_devices = set()
+        registration = os.environ.get('SAB_ALLOW_PUBLIC_REGISTRATION')
+        os.environ['SAB_ALLOW_PUBLIC_REGISTRATION'] = 'true'
+        result = cls.client.post('/api/auth/register', json={
+            'account_name': 'usb-test', 'name': 'USB Test',
+            'email': f'usb-{uuid.uuid4()}@example.test', 'password': 'usb-test-password',
+        })
+        if registration is None:
+            os.environ.pop('SAB_ALLOW_PUBLIC_REGISTRATION', None)
+        else:
+            os.environ['SAB_ALLOW_PUBLIC_REGISTRATION'] = registration
+        assert result.status_code == 201, result.text
+        cls.account_id = result.json()['user']['account_id']
+        cls.headers = {'Authorization': f"Bearer {result.json()['access_token']}"}
 
     @classmethod
     def tearDownClass(cls):
         cls.context.__exit__(None, None, None)
         with sqlite3.connect(DB_PATH) as db:
-            db.executemany('DELETE FROM devices WHERE id = ?', [(device_id,) for device_id in cls.created_devices])
+            db.execute('DELETE FROM devices WHERE account_id = ?', (cls.account_id,))
+            db.execute('DELETE FROM account_settings WHERE account_id = ?', (cls.account_id,))
+            db.execute('DELETE FROM users WHERE account_id = ?', (cls.account_id,))
+            db.execute('DELETE FROM accounts WHERE id = ?', (cls.account_id,))
             db.commit()
 
     def device(self, kind='browser_usb'):
         result = self.client.post('/api/devices', headers=self.headers,
                                   json={'name': 'USB 测试', 'connection_type': kind})
         self.assertEqual(201, result.status_code)
-        self.created_devices.add(result.json()["id"])
         return result.json()
 
     def test_auth_rejects_bad_credentials_and_remote_tokens(self):
@@ -101,7 +116,7 @@ class BrowserUsbTest(unittest.TestCase):
 
     def test_modes_are_validated_and_portal_default_is_preserved(self):
         result = self.client.post('/api/devices', headers=self.headers, json={'name': 'old client'})
-        self.created_devices.add(result.json()['id'])
         self.assertEqual('portal', result.json()['connection_type'])
         result = self.client.post('/api/devices', headers=self.headers, json={'connection_type': 'shell'})
         self.assertEqual(422, result.status_code)
+        self.assertEqual(401, self.client.post('/api/devices', json={'connection_type': 'browser_usb'}).status_code)

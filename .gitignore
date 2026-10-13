@@ -56,3 +56,9 @@ notes/
 # Don't bloat git history with 15MB+ binaries; keep on disk for local preview.
 assets/*.mp4
 assets/*.mov
+
+# Local device bridges and authentication material
+.venv-bridge/
+sab-*-bridge*.json
+.test_account_key
+.jwt_secret

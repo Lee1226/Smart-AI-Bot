@@ -30,9 +30,9 @@ from agent.memory import AgentMemory
 from agent.perception import detect_elements_vlm
 from agent.planner import generate_plan, generate_subgoals
 from ws.portal_ws import connected_devices
-from agent.prompt import SYSTEM_PROMPT
+from agent.prompt import SYSTEM_PROMPT, system_prompt_for_platform
 from core.i18n import current_language, lang_directive
-from agent.tools import TOOLS, SOURCE_TOOLS, KB_TOOLS, KB_READ_TOOLS
+from agent.tools import TOOLS, tools_for_platform, SOURCE_TOOLS, KB_TOOLS, KB_READ_TOOLS
 from agent.verifier import LLMVerifier
 from core.test_parser import TestCaseData
 
@@ -318,9 +318,12 @@ class TestCaseAgent:
         source_root: str = "",  # app source root for search_source/read_source tools
         kb_search_cmd: str = "",  # project KB search CLI from the profile (project-specific)
         language: str = "",  # AI output language; defaults to the global setting
+        login_context=None,
         target_package: str = "",  # the app under test — tell the agent which app to launch
     ):
+        self.login_context = login_context
         self.device = device
+        self.platform = getattr(device, "platform", "android")
         self.provider = provider
         self.project_kb_roots: list = project_kb_roots or []
         self.source_root: str = source_root or ""
@@ -328,11 +331,20 @@ class TestCaseAgent:
         self.target_package: str = target_package or ""
         self.language: str = language or current_language()
         # Conditionally expose extra tools based on the matched Project Profile.
-        self._tools = list(TOOLS)
+        self._tools = tools_for_platform(self.platform)
         if self.source_root:
             self._tools += SOURCE_TOOLS
         # search_knowledge is always available: it queries local features +
         # dictated notes (always present) and the project CLI when configured.
+        if login_context:
+            self._tools.append({"type": "function", "function": {
+                "name": "input_test_credential",
+                "description": "Fill the selected test account credential into the focused login field. Focus the field first. No raw credential is returned.",
+                "parameters": {"type": "object", "properties": {
+                    "field": {"type": "string", "enum": ["username", "password", "verification_code"]},
+                    "clear": {"type": "boolean", "default": False},
+                }, "required": ["field"]},
+            }})
         self._tools += KB_TOOLS
         if self.project_kb_roots:  # KB docs on disk → can read full docs
             self._tools += KB_READ_TOOLS
@@ -342,7 +354,7 @@ class TestCaseAgent:
         self.max_steps = max_steps
         self.step_delay = step_delay
         self.log_callback = log_callback
-        self.allow_subagents = allow_subagents
+        self.allow_subagents = allow_subagents and not login_context
         self.loop_task = loop_task
         self.fallbacks: list = fallbacks or []
         self._primary = ModelTarget(provider, model, api_key, api_base)
@@ -356,7 +368,12 @@ class TestCaseAgent:
         self._lessons_learned: list = lessons_learned or []
 
     async def _log(self, msg: str) -> None:
+        if self.login_context:
+            msg = self.login_context.redact(msg)
         logger.info(msg)
+        # Keep KB audit lines in the saved report as well as the live stream.
+        if msg.lstrip().startswith("📚 KB") and hasattr(self, "_kb_audit_logs"):
+            self._kb_audit_logs.append(msg)
         if self.log_callback:
             await self.log_callback(msg)
 
@@ -365,6 +382,8 @@ class TestCaseAgent:
 
         Uses the same LLM provider but with a lightweight prompt.
         """
+        if self.login_context:
+            text = self.login_context.redact(text)
         base_kwargs: dict[str, Any] = {
             "messages": [
                 {"role": "system", "content": (
@@ -387,13 +406,31 @@ class TestCaseAgent:
     def _build_llm_kwargs(self, messages: list) -> dict[str, Any]:
         """Model-agnostic completion kwargs (model/api_key injected per target)."""
         return {
-            "messages": messages,
+            "messages": self.login_context.redact(messages) if self.login_context else messages,
             "tools": self._tools,
             "tool_choice": "auto",
         }
 
     async def _dispatch(self, fn_name: str, args: dict) -> str:
         """Execute a tool call on the device. Does not handle mark_done."""
+        if fn_name == "input_test_credential":
+            if not self.login_context or args.get("field") not in {"username", "password", "verification_code"}:
+                return "ERROR: No selected credential available"
+            if not self.device.keyboard_visible:
+                return "ERROR: Focus the correct login field first"
+            if args["field"] == "password" and self.login_context.login_mode not in {"password", "email"}:
+                return "ERROR: Selected account uses verification-code login, not password login"
+            if args["field"] == "verification_code" and self.login_context.login_mode != "phone":
+                return "ERROR: Selected account does not use phone verification-code login"
+            value = getattr(self.login_context, args["field"])
+            if not value:
+                return "ERROR: Credential unavailable; configure a usable credential in project test accounts"
+            # Device response/errors may echo input; never let it enter model history.
+            try:
+                await self.device.input_text(value, args.get("clear", False))
+            except Exception as exc:
+                return self.login_context.redact(f"ERROR: Credential input failed: {exc}")
+            return f"Filled selected account {args['field']} (value hidden)"
         if fn_name == "tap_element":
             return await self.device.tap_element(args["index"])
         if fn_name == "tap":
@@ -418,6 +455,8 @@ class TestCaseAgent:
             return await self.device.scroll(args["direction"], args.get("distance", "medium"))
         if fn_name == "start_app":
             return await self.device.start_app(args["package"], args.get("activity", ""))
+        if fn_name == "install_apk":
+            return await self.device.install_apk(args["url"])
         if fn_name == "list_packages":
             packages = await self.device.list_packages()
             if not packages:
@@ -440,11 +479,15 @@ class TestCaseAgent:
             from core.source_search import glob_source
             return await asyncio.to_thread(glob_source, self.source_root, args.get("pattern", ""))
         if fn_name == "search_knowledge":
-            kb_raw, _ = await self._retrieve_kb(args.get("query", ""))
+            kb_raw, kb_log = await self._retrieve_kb(args.get("query", ""))
+            await self._log(f"  📚 KB search: {kb_log}")
             return kb_raw or "No knowledge found for that query."
         if fn_name == "read_knowledge":
             from core.kb_search import read_kb_doc
-            return await asyncio.to_thread(read_kb_doc, self.project_kb_roots, args.get("path", ""))
+            text = await asyncio.to_thread(read_kb_doc, self.project_kb_roots, args.get("path", ""), self.platform)
+            status = "excluded" if text.startswith("KB doc excluded:") else "read"
+            await self._log(f"  📚 KB {status} [platform={self.platform}]: {args.get('path', '')} ({len(text)} chars)")
+            return text
         if fn_name == "read_source":
             from core.source_search import read_source
             return await asyncio.to_thread(
@@ -454,34 +497,61 @@ class TestCaseAgent:
         return f"Unknown tool: {fn_name}"
 
     async def _retrieve_kb(self, query: str) -> tuple[str, str]:
-        """Retrieve test knowledge for a query, merging the project's search CLI
-        (if configured) with local feature docs + dictated notes. Returns
-        (text, source_log). Shared by the opening injection and the agent's
-        on-demand search_knowledge tool, so both see the same knowledge."""
+        """Retrieve knowledge with project-CLI preference and local fallback.
+
+        A successful project CLI result replaces direct scanning of the same
+        project's KB roots, avoiding duplicate context. Local test feature docs
+        and dictated notes still participate. If the CLI is unavailable or
+        returns an error, its diagnostic is discarded and project Markdown is
+        searched as a fallback.
+        """
         kb_parts: list[str] = []
-        kb_logs: list[str] = []
+        platform = getattr(self, "platform", "android")
+        kb_logs: list[str] = [f"platform={platform}, query={query}"]
+        project_cli_has_results = False
         if self.kb_search_cmd:
             try:
-                from core.kb_search import run_kb_search
-                proj_raw = await asyncio.to_thread(run_kb_search, self.kb_search_cmd, query, 5)
-                if proj_raw:
-                    kb_parts.append(proj_raw)
+                from core.kb_search import run_kb_search_result
+                project_result = await asyncio.to_thread(
+                    run_kb_search_result, self.kb_search_cmd, query, 10, platform
+                )
+                if project_result.excluded:
+                    kb_logs.append(f"排除其他平台 {project_result.excluded} 条")
+                if project_result.succeeded and project_result.text:
+                    kb_parts.append(project_result.text)
                     kb_logs.append(f"项目检索 `{self.kb_search_cmd}`")
-            except Exception:
-                pass
+                    kb_logs.extend(project_result.sources)
+                    project_cli_has_results = True
+                elif project_result.error:
+                    kb_logs.append(f"项目检索 `{self.kb_search_cmd}` 失败，已回退")
+                else:
+                    kb_logs.append(f"项目检索 `{self.kb_search_cmd}` 无结果，已回退")
+            except Exception as exc:
+                logger.warning("Project KB search failed; using Markdown fallback: %s", exc)
+                kb_logs.append(f"项目检索 `{self.kb_search_cmd}` 异常，已回退")
         try:
             from agent.test_kb import search_feature
             matches: list = []
-            local_raw = search_feature(query, extra_roots=self.project_kb_roots, matches_out=matches)
+            # The CLI already searched the project KB when it returned results;
+            # only scan those roots when the CLI failed or found nothing.
+            fallback_roots = [] if project_cli_has_results else self.project_kb_roots
+            local_raw = search_feature(query, extra_roots=fallback_roots, matches_out=matches, platform=platform)
             if local_raw and matches:
                 kb_parts.append(local_raw)
                 _src = {"project": "项目", "note": "笔记"}
-                kb_logs.append(", ".join(f"{m['title']}「{_src.get(m['source'], '本地')}」" for m in matches))
-        except Exception:
-            pass
+                kb_logs.append(", ".join(f"{m['title']}「{_src.get(m['source'], '本地')}」 {m.get('path', '')}" for m in matches))
+        except Exception as exc:
+            logger.warning("Local/project Markdown KB search failed: %s", exc)
+        if not kb_parts:
+            kb_logs.append("无匹配知识")
         return "\n\n---\n\n".join(kb_parts), " + ".join(kb_logs)
 
     async def run(self, case: TestCaseData) -> CaseResult:
+        result = await self._run(case)
+        return self.login_context.redact(result) if self.login_context else result
+
+    async def _run(self, case: TestCaseData) -> CaseResult:
+        self._kb_audit_logs = []
         goal = (
             f"Test context: {case.path}\n"
             f"Expected result to verify: {case.expected}"
@@ -544,6 +614,8 @@ class TestCaseAgent:
         await self._log(f"▶ Starting: {case.path} | expected: {case.expected}")
         if kb_message:
             await self._log(f"  📚 KB loaded ({len(kb_message)} chars): {kb_log}")
+        else:
+            await self._log(f"  📚 KB lookup: {kb_log}")
 
         # ── User-defined checkpoints (strict) ────────────────────────
         # When the test author provided explicit (action → expected) pairs
@@ -581,6 +653,7 @@ class TestCaseAgent:
                     self.api_key, self.api_base,
                     fallbacks=self.fallbacks,
                     language=self.language,
+                    platform=self.platform,
                 )
                 if self.allow_subagents else None
             )
@@ -600,6 +673,7 @@ class TestCaseAgent:
                 fallbacks=self.fallbacks,
                 kb_context=kb_raw,
                 language=self.language,
+                platform=self.platform,
             )
             if plan_text:
                 await self._log(f"  📋 Plan generated:\n{plan_text}")
@@ -608,9 +682,12 @@ class TestCaseAgent:
             await self._log(f"  Planner skipped: {e}")
 
         init_messages = [
-            {"role": "system", "content": SYSTEM_PROMPT + lang_directive(self.language)},
+            {"role": "system", "content": system_prompt_for_platform(self.platform) + lang_directive(self.language)},
             {"role": "user", "content": goal},
         ]
+        init_messages.append({"role": "user", "content":
+            f"[Device platform] {self.platform}. Use this platform's implementation and shared business rules; "
+            "do not follow another platform's navigation or native APIs."})
         connection = connected_devices.get(getattr(self.device, "device_id", ""))
         if connection and connection.connection_type == "browser_usb":
             init_messages.append({"role": "user", "content": (
@@ -630,6 +707,8 @@ class TestCaseAgent:
                 f"start_app(\"{self.target_package}\"). Do NOT guess the app from the "
                 f"installed-packages list — this package is authoritative."
             )})
+        if self.login_context:
+            init_messages.append({"role": "user", "content": self.login_context.prompt()})
         if kb_message:
             init_messages.append({"role": "user", "content": kb_message})
         if ref_message:
@@ -646,7 +725,8 @@ class TestCaseAgent:
         _MAX_NO_ACTION = 5
         last_screenshot_b64 = ""
         llm_img_b64 = ""
-        log_lines: list[str] = [goal]
+        log_lines: list[str] = [goal, *self._kb_audit_logs]
+        self._kb_audit_logs = log_lines
         step_logs_list: list[StepLog] = []
         _step_screenshot_b64 = ""   # screenshot sent to LLM this step
         _step_thought = ""          # LLM reasoning text this step
@@ -727,6 +807,7 @@ class TestCaseAgent:
                             self.provider, self.model,
                             self.api_key, self.api_base,
                             fallbacks=self.fallbacks,
+                            platform=self.platform,
                         )
                         if vlm_elements:
                             _ui_elements = vlm_elements
@@ -738,6 +819,9 @@ class TestCaseAgent:
                             await self._log(f"  👁 VLM detected {len(vlm_elements)} elements (no a11y tree)")
                     except Exception as vlm_e:
                         await self._log(f"  VLM fallback failed: {vlm_e}")
+
+                if self.login_context:
+                    ui_text = self.login_context.redact(ui_text)
 
                 # Annotate screenshot only when we'll send it to the LLM.
                 # For text-only steps, save the raw resized screenshot for replay only.
@@ -1021,6 +1105,8 @@ class TestCaseAgent:
                     log_lines.append(f"[{steps}] {fn_name}({args})")
 
                     if fn_name == "remember":
+                        if self.login_context:
+                            args = self.login_context.redact(args)
                         result_text = memory.remember(args.get("key", ""), args.get("value", ""))
                         await self._log(f"    📝 {result_text}")
                         tool_results.append({
