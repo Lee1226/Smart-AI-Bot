@@ -11,7 +11,7 @@ import litellm
 
 from db.database import init_db
 from routers import appdist, devices, knowledge, live, projects, recorder, serverinfo, settings, testsuites, testruns
-from ws.portal_ws import portal_websocket_endpoint
+from ws.portal_ws import portal_websocket_endpoint, browser_usb_websocket_endpoint
 
 # Drop provider-unsupported params (e.g. vector_store_ids leaking into Anthropic)
 litellm.drop_params = True
@@ -54,6 +54,7 @@ app.include_router(knowledge.router)
 
 # Portal reverse WebSocket
 app.add_api_websocket_route("/v1/providers/join", portal_websocket_endpoint)
+app.add_api_websocket_route("/v1/providers/browser-usb", browser_usb_websocket_endpoint)
 
 # Live H.264 screen stream (ADB screenrecord) — under /v1 so the WS proxy applies
 app.add_api_websocket_route("/v1/devices/{device_id}/live", live.stream_h264)

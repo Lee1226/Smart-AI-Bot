@@ -1,9 +1,10 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useSyncExternalStore } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { QRCodeSVG } from 'qrcode.react'
 import {
   fetchDevices, createDevice, deleteDevice, renameDevice, fetchAppInfo, fetchServerInfo, Device,
 } from '../lib/api'
+import { connectUsb, disconnectUsb, usbSnapshot, subscribeUsb, usbSupported } from '../lib/browserUsb'
 import LivePanel from '../components/LivePanel'
 import { useT } from '../lib/i18n'
 
@@ -44,6 +45,7 @@ function buildConnectUri(device: Device, lanIp?: string, backendPort?: number): 
 }
 
 export default function Devices() {
+  const usb = useSyncExternalStore(subscribeUsb, usbSnapshot)
   const qc = useQueryClient()
   const t = useT()
   const [newName, setNewName] = useState('')
@@ -68,6 +70,11 @@ export default function Devices() {
     const preferred = devices.find(d => d.status === 'online') ?? devices[0]
     setSelectedId(preferred?.id ?? null)
   }, [devices, selectedId])
+
+  useEffect(() => {
+    qc.invalidateQueries({ queryKey: ['devices'] })
+    if (usb.deviceId) setSelectedId(usb.deviceId)
+  }, [usb.phase, usb.deviceId, qc])
 
   const selectedDevice = devices.find(d => d.id === selectedId) ?? null
 
@@ -127,8 +134,20 @@ export default function Devices() {
 
   return (
     <div>
+      <div className="bg-white border rounded-lg p-4 mb-5">
+        <div className="flex items-center justify-between gap-4">
+          <div>
+            <h2 className="font-semibold">{t('本地模式 · USB 连接', 'Local mode · USB')}</h2>
+            <p className="text-sm text-gray-500 mt-1">{t('电脑 Chrome/Edge + USB 调试，无需安装辅助 App。AI 仍由 SAB 服务端执行。', 'Desktop Chrome/Edge + USB debugging. No helper app. SAB server still runs AI.')}</p>
+          </div>
+          {usb.phase === 'idle' ? <button className="bg-primary text-white rounded px-4 py-2 text-sm shrink-0 disabled:opacity-50" disabled={!usbSupported()} onClick={() => void connectUsb()}>{t('连接 USB 手机', 'Connect USB phone')}</button>
+            : <button className="border rounded px-4 py-2 text-sm shrink-0" onClick={() => disconnectUsb()}>{t('断开 USB', 'Disconnect USB')}</button>}
+        </div>
+        <p className="text-sm mt-2" role="status">{usb.message || (!usbSupported() ? t('当前浏览器或地址不支持，请用 Chrome/Edge 在 HTTPS 或 localhost 打开。', 'Use Chrome/Edge on HTTPS or localhost.') : t('手机打开 USB 调试，连接后保持此网页打开；切换测试页面不影响连接。', 'Enable USB debugging and keep this tab open. Navigation preserves the connection.'))}</p>
+        <p className="text-xs text-gray-400 mt-1">{t('试用版：支持实时画面、截图、UI 树、点击滑动、按键和启动应用。中文/清空输入、录像保存、APK 安装暂不支持。以下 App 配对方式继续可用。', 'Preview: live video, screenshots, UI tree, tap/swipe, keys and app launch. Unicode/clear input, video saving and APK installation are not supported. App pairing remains available below.')}</p>
+      </div>
       <div className="flex items-center justify-between mb-6">
-        <h1 className="text-2xl font-bold">Devices</h1>
+        <h1 className="text-2xl font-bold">{t('远程模式 · App 配对', 'Remote mode · App pairing')}</h1>
         <div className="flex gap-2">
           <button
             className="border border-primary text-primary px-4 py-1.5 rounded text-sm hover:bg-primary-soft"
@@ -162,7 +181,7 @@ export default function Devices() {
           onToggle={e => setGuideOpen((e.target as HTMLDetailsElement).open)}
         >
           <summary className="cursor-pointer font-semibold text-primary-deep select-none">
-            📖 {t('如何连接设备并跑第一个测试', 'How to connect a device & run your first test')}
+            📖 {t('如何通过 App 连接设备', 'How to connect through the App')}
           </summary>
           <ol className="list-decimal ml-5 mt-3 space-y-2 text-gray-700">
             <li>
@@ -203,7 +222,7 @@ export default function Devices() {
       {devices.length === 0 && !isLoading && (
         <div className="text-center py-16 text-gray-400">
           <p className="text-lg">{t('还没有设备', 'No devices yet')}</p>
-          <p className="text-sm mt-1">{t('按上方「如何连接设备」三步连上你的第一台手机。', 'Follow the 3 steps above to connect your first phone.')}</p>
+          <p className="text-sm mt-1">{t('使用上方 USB 本地模式，或通过 App 配对连接手机。', 'Follow the 3 steps above to connect your first phone.')}</p>
         </div>
       )}
 
@@ -267,10 +286,11 @@ export default function Devices() {
                       ID: {d.id}
                     </div>
                     <div className="text-xs text-gray-400 font-mono truncate">
-                      Token: {d.token.slice(0, 20)}…
+                      {d.connection_type === 'browser_usb' ? '本地 USB · 无需 App 配对' : `远程 App · Token: ${d.token.slice(0, 20)}…`}
                     </div>
                   </div>
                   <div className="flex gap-2">
+                    {d.connection_type === 'browser_usb' ? <button className="text-xs px-3 py-1.5 border rounded disabled:opacity-50" disabled={usb.phase !== 'idle'} onClick={e => { e.stopPropagation(); void connectUsb(d.id) }}>连接 USB</button> : <>
                     <button
                       className="text-xs px-3 py-1.5 border border-primary text-primary rounded hover:bg-primary-soft"
                       onClick={e => { e.stopPropagation(); setQrDevice(d) }}
@@ -283,11 +303,12 @@ export default function Devices() {
                     >
                       {copiedId === d.id ? '✓ Copied' : 'Copy Token'}
                     </button>
+                    </>}
                     <button
                       className="text-xs px-3 py-1.5 border border-red-200 text-red-600 rounded hover:bg-red-50"
                       onClick={e => {
                         e.stopPropagation()
-                        if (confirm(`Delete device "${d.name}"?`)) deleteMut.mutate(d.id)
+                        if (confirm(`Delete device "${d.name}"?`)) { if (usb.deviceId === d.id) disconnectUsb(); deleteMut.mutate(d.id) }
                       }}
                     >
                       Delete

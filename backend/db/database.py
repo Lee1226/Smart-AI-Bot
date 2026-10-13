@@ -1,9 +1,11 @@
+import os
 from pathlib import Path
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import create_async_engine, AsyncSession, async_sessionmaker
 from sqlalchemy.orm import DeclarativeBase
 
-DB_PATH = Path(__file__).parent.parent / "data" / "db.sqlite3"
+_DEFAULT_DATA_DIR = Path(__file__).parent.parent / "data"
+DB_PATH = Path(os.getenv("SAB_DB_PATH", str(Path(os.getenv("SAB_DATA_DIR", str(_DEFAULT_DATA_DIR))) / "db.sqlite3")))
 DB_PATH.parent.mkdir(exist_ok=True)
 
 engine = create_async_engine(f"sqlite+aiosqlite:///{DB_PATH}", echo=False)
@@ -34,6 +36,8 @@ async def init_db():
             for col, ddl in columns.items():
                 if col not in existing:
                     await conn.execute(text(f"ALTER TABLE {table} ADD COLUMN {col} {ddl}"))
+
+        await _ensure_columns("devices", {"connection_type": "VARCHAR DEFAULT 'portal'"})
 
         await _ensure_columns("test_results", {
             "is_starred": "BOOLEAN DEFAULT 0",

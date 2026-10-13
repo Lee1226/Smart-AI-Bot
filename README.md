@@ -14,6 +14,8 @@
 
 ---
 
+For a phone connected to your computer, try [browser USB local mode](docs/browser-usb-local-mode.md): no helper APK, with live H.264 preview in desktop Chrome/Edge on HTTPS or localhost.
+
 ## Demo
 
 <video src="https://github.com/user-attachments/assets/f5869888-be0e-4166-9d7a-806d05afe24d" controls width="100%"></video>

@@ -1,9 +1,11 @@
-import { useState, useEffect, useRef } from 'react'
+import { useState, useEffect, useRef, useMemo, useSyncExternalStore } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { fetchDeviceCapabilities, Device } from '../lib/api'
 import { useT } from '../lib/i18n'
 import H264Canvas from './H264Canvas'
 import H264Player from './H264Player'
+import { browserUsbH264Source, subscribeUsb, usbSnapshot } from '../lib/browserUsb'
+import { websocketH264Source } from '../lib/h264Stream'
 
 // WebCodecs (the smooth canvas path) only exists in a secure context
 // (HTTPS / localhost). On plain http://<lan-ip> we fall back to the MSE/jmuxer
@@ -59,6 +61,9 @@ export default function LivePanel({ device }: { device: Device | null }) {
   )
   const [reloadKey, setReloadKey] = useState(0)
   const [adbFailed, setAdbFailed] = useState(false)
+  const [streamError, setStreamError] = useState('')
+  const usb = useSyncExternalStore(subscribeUsb, usbSnapshot)
+  const localUsb = device?.connection_type === 'browser_usb' && usb.phase === 'online' && usb.deviceId === device.id
 
   const { data: caps } = useQuery({
     queryKey: ['device-caps', device?.id],
@@ -68,7 +73,7 @@ export default function LivePanel({ device }: { device: Device | null }) {
   })
 
   // Reset the ADB-failed fallback whenever the device or mode changes.
-  useEffect(() => { setAdbFailed(false) }, [device?.id, mode])
+  useEffect(() => { setAdbFailed(false); setStreamError('') }, [device?.id, mode, localUsb, reloadKey])
 
   const pick = (m: Mode) => {
     setMode(m)
@@ -76,9 +81,14 @@ export default function LivePanel({ device }: { device: Device | null }) {
     setReloadKey(k => k + 1) // force the stream to reconnect
   }
 
-  const online = device?.status === 'online'
+  const online = device?.status === 'online' || localUsb
   // Backend auto-picks ADB only when exactly one adb device is attached.
   const usingAdb = mode === 'auto' && caps?.adb_serials?.length === 1 && !adbFailed
+  const usingUsb = mode === 'auto' && localUsb && !adbFailed
+  const videoSource = useMemo(() => device
+    ? localUsb ? browserUsbH264Source(device.id) : websocketH264Source(h264WsUrl(device.id))
+    : undefined, [device?.id, localUsb, reloadKey])
+  const videoFailed = (message: string) => { setStreamError(message); setAdbFailed(true) }
   const canStream = !!device && mode !== 'off' && (online || usingAdb)
 
   return (
@@ -113,18 +123,18 @@ export default function LivePanel({ device }: { device: Device | null }) {
           <Placeholder text={t('已关闭 — 选「自动」或「截图」开启', 'Off — choose "Auto" or "Screenshot" to start')} />
         ) : !canStream ? (
           <Placeholder text={t('设备离线，无法取流', 'Device offline, cannot stream')} />
-        ) : usingAdb ? (
+        ) : (usingUsb || usingAdb) && videoSource ? (
           CAN_WEBCODECS ? (
             <H264Canvas
               key={`${device.id}-h264-${reloadKey}`}
-              wsUrl={h264WsUrl(device.id)}
-              onFail={() => setAdbFailed(true)}
+              source={videoSource}
+              onFail={videoFailed}
             />
           ) : (
             <H264Player
               key={`${device.id}-h264-${reloadKey}`}
-              wsUrl={h264WsUrl(device.id)}
-              onFail={() => setAdbFailed(true)}
+              source={videoSource}
+              onFail={videoFailed}
             />
           )
         ) : (
@@ -139,13 +149,16 @@ export default function LivePanel({ device }: { device: Device | null }) {
       {/* Status line */}
       <div className="mt-2 text-center text-xs text-gray-400 font-mono">
         {device && mode !== 'off' && canStream
-          ? usingAdb
+          ? usingUsb
+            ? t('本地 USB · 实时录屏 H.264', 'Local USB · live recording H.264')
+            : usingAdb
             ? t('ADB · 实时录屏 H.264', 'ADB · live recording H.264')
             : t('截图 · ~1 fps', 'Screenshot · ~1 fps')
           : caps && !caps.adb_available && mode === 'auto'
             ? t('无 ADB，自动回落截图', 'No ADB, falling back to screenshots')
             : ' '}
       </div>
+      {streamError && mode === 'auto' && <p className="mt-1 text-center text-xs text-amber-600">{t('视频不可用，已回落截图；重试请再次点「自动」。', 'Video unavailable; using screenshots. Select Auto again to retry.')}</p>}
     </div>
   )
 }

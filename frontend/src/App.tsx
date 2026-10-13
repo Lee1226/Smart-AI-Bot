@@ -1,3 +1,5 @@
+import { useEffect } from 'react'
+import { disconnectUsb } from './lib/browserUsb'
 import { BrowserRouter, NavLink, Route, Routes } from 'react-router-dom'
 import { useT } from './lib/i18n'
 import Devices from './pages/Devices'
@@ -25,6 +27,11 @@ const NAV_LINKS = [
 ]
 
 export default function App() {
+  useEffect(() => {
+    const close = () => disconnectUsb()
+    window.addEventListener('pagehide', close)
+    return () => { window.removeEventListener('pagehide', close); close() }
+  }, [])
   const t = useT()
   return (
     <BrowserRouter>

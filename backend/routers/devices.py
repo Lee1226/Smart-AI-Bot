@@ -1,6 +1,6 @@
 """Device management — list connected devices, generate tokens, delete."""
 import secrets
-from typing import List
+from typing import List, Literal
 
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
@@ -25,6 +25,7 @@ class DeviceOut(BaseModel):
     token: str
     status: str
     last_seen: str
+    connection_type: str = "portal"
 
     class Config:
         from_attributes = True
@@ -32,6 +33,7 @@ class DeviceOut(BaseModel):
 
 class TokenCreateRequest(BaseModel):
     name: str = "New Device"
+    connection_type: Literal["portal", "browser_usb"] = "portal"
 
 
 @router.get("", response_model=List[DeviceOut])
@@ -44,6 +46,7 @@ async def list_devices(db: AsyncSession = Depends(get_db)):
         status = "online" if d.id in connected_devices and connected_devices[d.id].is_connected else "offline"
         out.append(DeviceOut(
             id=d.id,
+            connection_type=d.connection_type,
             name=d.name,
             token=d.token,
             status=status,
@@ -55,12 +58,13 @@ async def list_devices(db: AsyncSession = Depends(get_db)):
 @router.post("", response_model=DeviceOut, status_code=201)
 async def create_device(req: TokenCreateRequest, db: AsyncSession = Depends(get_db)):
     token = secrets.token_urlsafe(32)
-    device = Device(name=req.name, token=token, status="offline")
+    device = Device(name=req.name, connection_type=req.connection_type, token=token, status="offline")
     db.add(device)
     await db.commit()
     await db.refresh(device)
     return DeviceOut(
         id=device.id,
+        connection_type=device.connection_type,
         name=device.name,
         token=device.token,
         status="offline",
@@ -88,6 +92,7 @@ async def rename_device(device_id: str, req: DeviceRenameRequest, db: AsyncSessi
     status = "online" if device.id in connected_devices and connected_devices[device.id].is_connected else "offline"
     return DeviceOut(
         id=device.id,
+        connection_type=device.connection_type,
         name=device.name,
         token=device.token,
         status=status,
@@ -100,5 +105,8 @@ async def delete_device(device_id: str, db: AsyncSession = Depends(get_db)):
     device = await db.get(Device, device_id)
     if device is None:
         raise HTTPException(status_code=404, detail="Device not found")
+    conn = connected_devices.get(device_id)
+    if conn:
+        await conn.ws.close(code=4000, reason="Device deleted")
     await db.delete(device)
     await db.commit()

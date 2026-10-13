@@ -14,6 +14,8 @@
 
 ---
 
+手机通过 USB 接在电脑上时，可使用[浏览器 USB 本地模式](docs/browser-usb-local-mode.md)：无需辅助 APK，支持实时 H.264 画面；需要桌面 Chrome/Edge 和 HTTPS 或 localhost。
+
 ## 演示视频
 
 <video src="https://github.com/user-attachments/assets/f5869888-be0e-4166-9d7a-806d05afe24d" controls width="100%"></video>

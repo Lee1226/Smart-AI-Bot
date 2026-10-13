@@ -28,6 +28,7 @@ class DeviceConnection:
     device_id: str
     device_name: str
     token: str
+    connection_type: str = "portal"
     pending: Dict[str, asyncio.Future] = field(default_factory=dict)
     is_connected: bool = True
 
@@ -60,35 +61,73 @@ async def portal_websocket_endpoint(websocket: WebSocket):
         result = await session.execute(select(Device).where(Device.token == token))
         device_row = result.scalar_one_or_none()
 
-    if device_row is None:
+    if device_row is None or device_row.connection_type != "portal":
         await websocket.accept()
         await websocket.close(code=4001, reason="Unauthorized")
         return
 
-    db_device_id = device_row.id
     await websocket.accept()
+    await serve_device_connection(websocket, device_row, token, device_name)
 
+
+async def browser_usb_websocket_endpoint(websocket: WebSocket):
+    # Browser cannot send Authorization headers. Authenticate in the first frame,
+    # never put a persistent device credential in URLs/logs.
+    await websocket.accept()
+    try:
+        hello = json.loads(await asyncio.wait_for(websocket.receive_text(), timeout=10))
+        if not isinstance(hello, dict) or hello.get("type") != "auth":
+            raise ValueError("Invalid handshake")
+        token = hello.get("token")
+        if not isinstance(token, str) or not token:
+            raise ValueError("Missing token")
+        async with AsyncSessionLocal() as session:
+            device_row = (await session.execute(select(Device).where(
+                Device.token == token, Device.connection_type == "browser_usb"
+            ))).scalar_one_or_none()
+        if device_row is None:
+            raise ValueError("Unauthorized")
+    except (ValueError, asyncio.TimeoutError, WebSocketDisconnect):
+        await websocket.close(code=4001, reason="Unauthorized")
+        return
+    await serve_device_connection(websocket, device_row, token, device_row.name, browser=True)
+
+
+async def serve_device_connection(websocket: WebSocket, device_row: Device,
+                                  token: str, device_name: str, browser: bool = False):
+    db_device_id = device_row.id
+    previous = connected_devices.get(db_device_id)
+    if previous:
+        if browser:
+            await websocket.close(code=4009, reason="Device already connected")
+            return
+        # Preserve Portal reconnect semantics, but explicitly close the old
+        # transport so its outstanding actions cannot linger.
+        connected_devices.pop(db_device_id, None)
+        await previous.ws.close(code=4000, reason="Reconnected")
     conn = DeviceConnection(ws=websocket, device_id=db_device_id,
-                            device_name=device_name, token=token)
+                            device_name=device_name, token=token, connection_type=device_row.connection_type)
     connected_devices[db_device_id] = conn
-
-    # The device name is owned by the backend (set when the device is created /
-    # renamed in the web UI). Never overwrite a real DB name with the header
-    # value — it travels over latin-1 HTTP headers and mangles non-ASCII names
-    # to "??". Only fall back to the header for a device that has no real name.
-    has_real_name = bool(device_row.name) and device_row.name != "Unknown"
-    resolved_name = device_row.name if has_real_name else (device_name or device_row.name)
-    async with AsyncSessionLocal() as session:
-        await session.execute(
-            update(Device).where(Device.token == token)
-            .values(status="online", last_seen=datetime.utcnow(), name=resolved_name)
-        )
-        await session.commit()
-
-    logger.info("Device connected: %s (%s)", db_device_id, device_name)
 
     ping_fail_count = 0
     try:
+        # The device name is owned by the backend (set when the device is created /
+        # renamed in the web UI). Never overwrite a real DB name with the header
+        # value — it travels over latin-1 HTTP headers and mangles non-ASCII names
+        # to "??". Only fall back to the header for a device that has no real name.
+        has_real_name = bool(device_row.name) and device_row.name != "Unknown"
+        resolved_name = device_row.name if has_real_name else (device_name or device_row.name)
+        async with AsyncSessionLocal() as session:
+            await session.execute(
+                update(Device).where(Device.token == token)
+                .values(status="online", last_seen=datetime.utcnow(), name=resolved_name)
+            )
+            await session.commit()
+
+        logger.info("Device connected: %s (%s)", db_device_id, device_name)
+
+        if browser:
+            await websocket.send_json({"type": "ready", "device_id": db_device_id})
         while True:
             # Receive with a long-ish timeout to allow slow RPCs (e.g. 25s
             # screenshot on Unity pages) to complete without us triggering a
@@ -128,17 +167,20 @@ async def portal_websocket_endpoint(websocket: WebSocket):
         logger.warning("Portal WS error for %s: %s", db_device_id, e)
     finally:
         conn.is_connected = False
-        connected_devices.pop(db_device_id, None)
-        async with AsyncSessionLocal() as session:
-            await session.execute(
-                update(Device).where(Device.token == token)
-                .values(status="offline", last_seen=datetime.utcnow())
-            )
-            await session.commit()
+        is_current = connected_devices.get(db_device_id) is conn
+        if is_current:
+            connected_devices.pop(db_device_id, None)
         for fut in conn.pending.values():
             if not fut.done():
                 fut.set_exception(RuntimeError("Device disconnected"))
         conn.pending.clear()
+        if is_current:
+            async with AsyncSessionLocal() as session:
+                await session.execute(
+                    update(Device).where(Device.token == token)
+                    .values(status="offline", last_seen=datetime.utcnow())
+                )
+                await session.commit()
         logger.info("Device disconnected: %s", db_device_id)
 
 
@@ -146,6 +188,9 @@ def _handle_message(conn: DeviceConnection, raw: str):
     try:
         msg = json.loads(raw)
     except json.JSONDecodeError:
+        return
+
+    if not isinstance(msg, dict):
         return
 
     msg_id = str(msg.get("id", ""))
@@ -200,5 +245,6 @@ async def send_rpc(conn: DeviceConnection, method: str,
     try:
         return await asyncio.wait_for(future, timeout=timeout)
     except asyncio.TimeoutError:
-        conn.pending.pop(call_id, None)
         raise TimeoutError(f"RPC '{method}' timed out after {timeout}s")
+    finally:
+        conn.pending.pop(call_id, None)

@@ -29,6 +29,7 @@ from agent.llm import ModelTarget, resilient_completion
 from agent.memory import AgentMemory
 from agent.perception import detect_elements_vlm
 from agent.planner import generate_plan, generate_subgoals
+from ws.portal_ws import connected_devices
 from agent.prompt import SYSTEM_PROMPT
 from core.i18n import current_language, lang_directive
 from agent.tools import TOOLS, SOURCE_TOOLS, KB_TOOLS, KB_READ_TOOLS
@@ -610,6 +611,15 @@ class TestCaseAgent:
             {"role": "system", "content": SYSTEM_PROMPT + lang_directive(self.language)},
             {"role": "user", "content": goal},
         ]
+        connection = connected_devices.get(getattr(self.device, "device_id", ""))
+        if connection and connection.connection_type == "browser_usb":
+            init_messages.append({"role": "user", "content": (
+                "[Device capabilities] This device uses browser USB ADB. Screenshots, UI tree, "
+                "tap, swipe, key events, app launch/stop and package listing are supported. "
+                "Text input only supports printable ASCII without percent signs, with clear=false. "
+                "Unicode input, automatic text clearing, recording, APK installation and media are unsupported. "
+                "If the task needs an unsupported operation, report the limitation rather than retry it."
+            )})
         # The app under test is known (from the suite's app_package / Project
         # Profile) — tell the agent explicitly so it launches the RIGHT app
         # instead of guessing from the installed-package list.

@@ -17,6 +17,8 @@ from typing import List, Optional
 
 from fastapi import APIRouter, HTTPException, Response, WebSocket, WebSocketDisconnect
 from PIL import Image
+from db.database import AsyncSessionLocal
+from db.models import Device
 from pydantic import BaseModel
 
 from agent.ws_device import WebSocketDevice
@@ -24,6 +26,12 @@ from ws.portal_ws import connected_devices
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/api/devices", tags=["live"])
+
+
+async def _browser_usb_device(device_id: str) -> bool:
+    async with AsyncSessionLocal() as db:
+        device = await db.get(Device, device_id)
+        return device is not None and device.connection_type == "browser_usb"
 
 
 def _adb_path() -> Optional[str]:
@@ -104,7 +112,8 @@ class Capabilities(BaseModel):
 
 @router.get("/{device_id}/capabilities", response_model=Capabilities)
 async def capabilities(device_id: str):
-    serials = await asyncio.to_thread(_adb_serials)
+    browser_usb = await _browser_usb_device(device_id)
+    serials = [] if browser_usb else await asyncio.to_thread(_adb_serials)
     conn = connected_devices.get(device_id)
     return Capabilities(
         online=conn is not None and conn.is_connected,
@@ -116,8 +125,9 @@ async def capabilities(device_id: str):
 @router.get("/{device_id}/screenshot.jpg")
 async def screenshot_frame(device_id: str, source: str = "auto", serial: Optional[str] = None):
     """One JPEG frame. source: auto | adb | screenshot."""
-    serials = await asyncio.to_thread(_adb_serials)
-    use = _resolve_adb_serial(serials, source, serial)
+    browser_usb = await _browser_usb_device(device_id)
+    serials = [] if browser_usb else await asyncio.to_thread(_adb_serials)
+    use = None if browser_usb else _resolve_adb_serial(serials, source, serial)
     try:
         if use:
             jpeg = await _adb_jpeg(use)
@@ -138,6 +148,9 @@ async def stream_h264(websocket: WebSocket, device_id: str):
     """Smooth live screen over ADB: hardware-encoded H.264 from `screenrecord`,
     relayed as binary WS frames. Browser muxes to fMP4 (jmuxer). Local-only."""
     await websocket.accept()
+    if await _browser_usb_device(device_id):
+        await websocket.close(code=4403)
+        return
     source = websocket.query_params.get("source", "auto")
     serials = await asyncio.to_thread(_adb_serials)
     serial = _resolve_adb_serial(serials, source, websocket.query_params.get("serial"))

@@ -71,7 +71,16 @@ class RunRecorder:
         self._stop = asyncio.Event()
         self._device_files: List[str] = []
 
-    async def start(self) -> bool:
+    async def start(self, device_id: Optional[str] = None) -> bool:
+        if device_id:
+            from db.database import AsyncSessionLocal
+            from db.models import Device
+            async with AsyncSessionLocal() as db:
+                device = await db.get(Device, device_id)
+            if device is None or device.connection_type == "browser_usb":
+                # Browser owns USB. Never start host adb or record an unrelated
+                # server-side phone while testing a browser-local device.
+                return False
         self.serial = _single_adb_serial()
         if not self.serial:
             return False

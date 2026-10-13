@@ -16,6 +16,7 @@ class Device(Base):
     id: Mapped[str] = mapped_column(String, primary_key=True, default=_uuid)
     token: Mapped[str] = mapped_column(String, unique=True, index=True)
     name: Mapped[str] = mapped_column(String, default="Unknown")
+    connection_type: Mapped[str] = mapped_column(String, default="portal")
     status: Mapped[str] = mapped_column(String, default="offline")  # online/offline
     last_seen: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
 

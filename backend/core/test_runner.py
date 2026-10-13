@@ -232,7 +232,7 @@ async def execute_batch_run(run_id: str, state: "RunState", base_path: str,
         await emit(f"Batch: {len(ordered)} checks on one session · base = {base_path} · model = {provider}/{model}")
         if len(ordered) > len(safe):
             await emit(f"  ⚠ {len(ordered) - len(safe)} destructive check(s) deferred to the end")
-        if await recorder.start():
+        if await recorder.start(device_id):
             await emit("Screen recording started (ADB)")
 
         async def log_cb(m: str) -> None:
@@ -455,7 +455,7 @@ async def execute_tree_run(run_id: str, state: "RunState", max_steps: int = 20,
             await session.commit()
 
         await emit(f"Tree run: {len(targets)} leaf case(s) · DFS · model = {provider}/{model}")
-        if await recorder.start():
+        if await recorder.start(device_id):
             await emit("Screen recording started (ADB)")
 
         async def log_cb(m: str) -> None:
@@ -685,7 +685,7 @@ async def execute_run(
             await session.commit()
 
         await emit(f"Run started: {len(cases)} test cases, device={device_id}, model={provider}/{model}")
-        if await recorder.start():
+        if await recorder.start(device_id):
             await emit("Screen recording started (ADB)")
 
         passed = failed = errored = skipped = 0
