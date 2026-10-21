@@ -97,7 +97,7 @@ Smart-AI-Bot has full coverage at this layer: suite creation / case CRUD / run h
 ## Where we lose
 
 1. **Pure-vision maturity** — VLM fallback works, but for Canvas/game scenes our robustness lags Midscene's Set-of-Marks approach
-2. **Cross-platform** — Android only. Midscene supports Web + iOS + HarmonyOS + desktop
+2. **Cross-platform** — Android has the broadest support. Harmony HDC and iOS WDA bridges provide a limited device-control subset; see their bridge documentation. Web-app automation is not supported.
 3. **Test case templates** — DroidRun has a 40+ workflow library for popular apps; we don't
 4. **Parallel execution** — currently single-device serial; DroidRun's hosted service supports multi-device parallel
 5. **Community / ecosystem** — independent project, no external user community yet

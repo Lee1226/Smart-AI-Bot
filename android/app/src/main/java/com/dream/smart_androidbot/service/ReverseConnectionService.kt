@@ -55,6 +55,11 @@ class ReverseConnectionService : Service() {
 
         @Volatile private var instance: ReverseConnectionService? = null
         fun isRunning(): Boolean = instance != null
+        fun publishVideoCapability() {
+            runCatching { instance?.webSocketClient?.takeIf { it.isOpen }?.send(
+                JSONObject().put("type", "capabilities").put("video", LiveVideoService.available()).toString()
+            ) }
+        }
 
         fun connectionState(): ConnState {
             val inst = instance ?: return ConnState.STOPPED
@@ -162,16 +167,27 @@ class ReverseConnectionService : Service() {
             val client = AgentWebSocketClient(
                 uri = uri,
                 headers = headers,
-                openedCallback = {
+                openedCallback = opened@ { sender ->
+                    if (webSocketClient !== sender) return@opened
                     Log.i(TAG, "Connected")
                     isWsConnected = true
+                    publishVideoCapability()
                     reconnectStartedAtMs = 0L    // reset give-up timer on success
                     updateNotification("Connected to ${uri.host}")
+                    // Register the sender so the a11y service can stream
+                    // real-record events back to the server.
+                    AgentAccessibilityService.wsSender = { json ->
+                        if (webSocketClient === sender && sender.isOpen) runCatching { sender.send(json) }
+                        Unit
+                    }
                 },
                 messageCallback = ::handleMessage,
-                closedCallback = { code, reason, _ ->
+                closedCallback = closed@ { sender, code, reason, _ ->
+                    if (webSocketClient !== sender) return@closed
+                    LiveVideoService.stopCurrentStream()
                     Log.w(TAG, "Disconnected code=$code reason=$reason")
                     isWsConnected = false
+                    AgentAccessibilityService.wsSender = null
                     logNetworkState("onClose")
                     if (isTerminalClose(reason)) {
                         Log.w(TAG, "Terminal error — not retrying")
@@ -182,7 +198,8 @@ class ReverseConnectionService : Service() {
                         scheduleReconnect()
                     }
                 },
-                errorCallback = { ex ->
+                errorCallback = failed@ { sender, ex ->
+                    if (webSocketClient !== sender) return@failed
                     Log.e(TAG, "WS error: ${ex?.message}")
                     logNetworkState("onError")
                     scheduleReconnect()  // safety net — onClose usually follows
@@ -228,16 +245,19 @@ class ReverseConnectionService : Service() {
     }
 
     private fun disconnect() {
-        try {
-            webSocketClient?.close()
-        } catch (_: Exception) {}
+        val previous = webSocketClient
         webSocketClient = null
+        AgentAccessibilityService.wsSender = null
+        LiveVideoService.stopCurrentStream()
+        try { previous?.close() } catch (_: Exception) {}
     }
 
     // ── Message handling ──────────────────────────────────────────────────────
 
     private fun handleMessage(raw: String, sender: AgentWebSocketClient) {
+        if (webSocketClient !== sender) return
         scope.launch {
+            if (webSocketClient !== sender) return@launch
             try {
                 val json = JSONObject(raw)
                 val id: Any? = json.opt("id")
@@ -328,15 +348,15 @@ class ReverseConnectionService : Service() {
 internal class AgentWebSocketClient(
     uri: URI,
     headers: Map<String, String>,
-    private val openedCallback: () -> Unit,
+    private val openedCallback: (AgentWebSocketClient) -> Unit,
     private val messageCallback: (String, AgentWebSocketClient) -> Unit,
-    private val closedCallback: (Int, String?, Boolean) -> Unit,
-    private val errorCallback: (Exception?) -> Unit,
+    private val closedCallback: (AgentWebSocketClient, Int, String?, Boolean) -> Unit,
+    private val errorCallback: (AgentWebSocketClient, Exception?) -> Unit,
 ) : WebSocketClient(uri, org.java_websocket.drafts.Draft_6455(), headers, 5_000) {
 
     override fun onOpen(handshakedata: ServerHandshake?) {
         Log.i("AgentWS", "Connected (http=${handshakedata?.httpStatus})")
-        openedCallback()
+        openedCallback(this)
     }
 
     override fun onMessage(message: String?) {
@@ -344,11 +364,11 @@ internal class AgentWebSocketClient(
     }
 
     override fun onClose(code: Int, reason: String?, remote: Boolean) {
-        closedCallback(code, reason, remote)
+        closedCallback(this, code, reason, remote)
     }
 
     override fun onError(ex: Exception?) {
         Log.e("AgentWS", "Error: ${ex?.javaClass?.simpleName}: ${ex?.message}")
-        errorCallback(ex)
+        errorCallback(this, ex)
     }
 }

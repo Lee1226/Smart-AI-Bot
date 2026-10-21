@@ -91,7 +91,7 @@ Smart-AI-Bot 在这一层有完整实现：套件创建 / 用例增删改 / 历�
 ### 我们的差距
 
 1. **纯视觉成熟度** — VLM fallback 已实现，但在 Canvas/游戏等复杂场景下的鲁棒性仍不如 Midscene 的 Set of Marks 分层方案
-2. **跨平台支持** — 目前仅支持 Android。Midscene 支持 Web + iOS + HarmonyOS + 桌面端
+2. **跨平台支持** — Android 功能最完整；鸿蒙 HDC 和 iOS WDA 桥接已提供部分设备操作，功能边界见各桥接文档；不支持 Web 应用自动化。
 3. **测试用例规模** — 没有 DroidRun 内置的 40+ 主流 App 工作流模板库
 4. **并行执行** — 当前单设备串行；DroidRun 云端支持多设备并行
 5. **社区与生态** — 独立项目，暂无外部用户生态

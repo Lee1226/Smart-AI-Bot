@@ -232,7 +232,8 @@ class Bridge:
                 def encode():
                     with Image.open(io.BytesIO(raw)) as image:
                         out = io.BytesIO()
-                        image.resize((max(1, image.width // 2), max(1, image.height // 2))).save(out, 'PNG')
+                        # Keep device dimensions; the agent downsizes once for the model.
+                        image.save(out, 'PNG')
                         return base64.b64encode(out.getvalue()).decode()
                 return await asyncio.to_thread(encode)
             if method in {'state', 'state/full-tree'}:

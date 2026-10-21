@@ -75,9 +75,8 @@ def _resize_screenshot(img_bytes: bytes) -> tuple[bytes, int, int]:
     """Downscale a screenshot to 50% of its original size.
 
     Returns (resized_bytes, new_width, new_height).
-    Halving preserves the exact device aspect ratio.  The AI outputs pixel
-    coordinates in this half-size image; the server multiplies by 2 to get
-    device pixel coordinates — no normalization math involved.
+    The AI outputs pixels in this image. WebSocketDevice maps its actual
+    dimensions back to device bounds (including odd sizes and older bridges).
 
     Falls back to (original_bytes, 0, 0) if Pillow is unavailable.
     """
@@ -798,6 +797,9 @@ class TestCaseAgent:
                 except Exception as e:
                     await self._log(f"UI state fetch failed (screenshot only): {e}")
 
+                if hasattr(self.device, 'set_model_image_size'):
+                    self.device.set_model_image_size(img_w, img_h)
+
                 # VLM fallback: detect elements visually when a11y tree is empty
                 if not _ui_elements:
                     try:
@@ -838,8 +840,10 @@ class TestCaseAgent:
                         self.device.screen_width, self.device.screen_height,
                     )
                     llm_img_b64 = base64.b64encode(annotated).decode()
+                    llm_image_mime = 'image/png' if annotated.startswith(b'\x89PNG\r\n\x1a\n') else 'image/jpeg'
                 else:
                     llm_img_b64 = base64.b64encode(resized_bytes).decode()
+                    llm_image_mime = 'image/png' if resized_bytes.startswith(b'\x89PNG\r\n\x1a\n') else 'image/jpeg'
                 _step_screenshot_b64 = llm_img_b64  # save for StepLog (always)
                 _step_perception_ms = int((time.monotonic() - _t0) * 1000)
 
@@ -924,7 +928,7 @@ class TestCaseAgent:
                         "content": [
                             {"type": "text", "text": step_text},
                             {"type": "image_url", "image_url": {
-                                "url": f"data:image/jpeg;base64,{llm_img_b64}"
+                                "url": f"data:{llm_image_mime};base64,{llm_img_b64}"
                             }},
                         ],
                     })

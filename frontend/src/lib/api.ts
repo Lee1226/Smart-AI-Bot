@@ -30,7 +30,7 @@ export interface Device {
   status: 'online' | 'offline'
   last_seen: string
   platform?: 'android' | 'harmony' | 'ios'
-  connection_type: 'portal' | 'browser_usb' | 'adb_bridge' | 'hdc_bridge'
+  connection_type: 'portal' | 'browser_usb' | 'adb_bridge' | 'hdc_bridge' | 'ios_bridge'
 }
 
 export interface Suite {
@@ -214,6 +214,129 @@ export const fetchSuiteImportMetadata = (suiteId: string) =>
     const parsed = JSON.parse(r.data[0]?.parameters || '{}')
     return parsed as { source_cases?: SuiteImportDraft['sources']; changes?: string[]; review_notes?: string[]; platform?: string }
   })
+
+// ── Automation catalog (SAB Cases and Test Plans) ────────────────────────
+
+export type AutomationKind = 'cases' | 'plans'
+
+export interface AutomationListItem {
+  id: string
+  name: string
+  description: string
+  tags: string[]
+  target_package: string
+  updated_at: string
+  latest_version: number
+}
+
+export interface AutomationStep {
+  index: number
+  kind: 'action' | 'wait' | 'guard' | string
+  action: string
+  action_name?: string
+  wait_ms?: number
+  recorded_step?: string
+  before_screenshot?: string
+  screenshot?: string
+  popup_guard?: { title: string; mode: string }
+}
+
+export interface AutomationDependency {
+  caseID: string
+  version: number
+  sha256: string
+}
+
+export interface AutomationVersion {
+  version: number
+  sha256: string
+  content_sha256?: string
+  created_at: string
+  updated_at?: string
+  uploaded_by?: string
+  change_note?: string
+  validation?: Record<string, unknown>
+  screenshots?: string[]
+  steps?: AutomationStep[]
+  flow_yaml?: string
+  dependencies?: AutomationDependency[]
+  plan_yaml?: string
+}
+
+export interface AutomationDetail extends AutomationListItem {
+  versions: AutomationVersion[]
+}
+
+export interface AutomationListResponse {
+  items: AutomationListItem[]
+}
+
+export const fetchAutomationResources = (kind: AutomationKind, q = '') =>
+  api.get<AutomationListResponse>(`/automation/${kind}`, { params: { q } }).then(r => r.data)
+
+export const fetchAutomationResource = (kind: AutomationKind, id: string) =>
+  api.get<AutomationDetail>(`/automation/${kind}/${encodeURIComponent(id)}`).then(r => r.data)
+
+export const uploadAutomationCase = (manifest: string, packageFile: File, screenshots: File[]) => {
+  const form = new FormData()
+  form.append('manifest', manifest)
+  form.append('file', packageFile)
+  screenshots.forEach(file => {
+    // Preserve directory uploads when the browser exposes the relative path.
+    form.append('screenshots', file, file.webkitRelativePath || file.name)
+  })
+  return api.post('/automation/cases', form).then(r => r.data)
+}
+
+export const uploadAutomationCaseWorkspace = (input: {
+  caseId: string
+  name: string
+  description: string
+  tags: string
+  flowPath: string
+  files: File[]
+}) => {
+  const form = new FormData()
+  form.append('case_id', input.caseId)
+  form.append('name', input.name)
+  form.append('description', input.description)
+  form.append('tags', input.tags)
+  form.append('flow_path', input.flowPath)
+  input.files.forEach(file => {
+    form.append('files', file, file.webkitRelativePath || file.name)
+  })
+  return api.post('/automation/cases/workspace', form).then(r => r.data)
+}
+
+export const uploadAutomationPlan = (manifest: string, packageFile: File) => {
+  const form = new FormData()
+  form.append('manifest', manifest)
+  form.append('file', packageFile)
+  return api.post('/automation/plans', form).then(r => r.data)
+}
+
+export const deleteAutomationResource = (kind: AutomationKind, id: string) =>
+  api.delete(`/automation/${kind}/${encodeURIComponent(id)}`)
+
+function automationAuthHeaders() {
+  const token = getToken()
+  return token ? { Authorization: `Bearer ${token}` } : undefined
+}
+
+export const downloadAutomationVersion = (kind: AutomationKind, id: string, version: number) =>
+  api.get<Blob>(`/automation/${kind}/${encodeURIComponent(id)}/versions/${version}/download`, {
+    responseType: 'blob',
+    headers: automationAuthHeaders(),
+  }).then(r => r.data)
+
+export const fetchAutomationScreenshot = (caseId: string, version: number, fileName: string) =>
+  api.get<Blob>(
+    `/automation/cases/${encodeURIComponent(caseId)}/versions/${version}/screenshots/${fileName
+      .split('/')
+      .map(encodeURIComponent)
+      .join('/')}`,
+    { responseType: 'blob', headers: automationAuthHeaders() },
+  ).then(r => r.data)
 
 export interface TrendPoint {
   run_id: string

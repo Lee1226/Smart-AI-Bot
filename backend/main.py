@@ -13,12 +13,12 @@ import litellm
 from db.database import init_db
 from db import regression_models
 from core.settings_store import ensure_seeded
-from routers import appdist, devices, knowledge, live, projects, recorder, serverinfo, settings, testsuites, testruns
+from routers import appdist, automation, devices, knowledge, live, projects, recorder, serverinfo, settings, testsuites, testruns
 from routers import testaccounts
 from routers import auth as auth_router
 from routers import account as account_router
 from auth.middleware import AuthMiddleware
-from ws.portal_ws import portal_websocket_endpoint, browser_usb_websocket_endpoint, adb_bridge_websocket_endpoint, hdc_bridge_websocket_endpoint
+from ws.portal_ws import portal_websocket_endpoint, browser_usb_websocket_endpoint, adb_bridge_websocket_endpoint, hdc_bridge_websocket_endpoint, ios_bridge_websocket_endpoint
 from ws.video import provider_video_endpoint
 from routers import regressions
 
@@ -57,6 +57,8 @@ async def lifespan(app: FastAPI):
         yield
     finally:
         await shutdown()
+        from routers.ios_local import shutdown as shutdown_ios
+        await shutdown_ios()
 
 
 app = FastAPI(title="smart-ai-bot", version="1.1.1", lifespan=lifespan)
@@ -75,6 +77,10 @@ app.add_middleware(AuthMiddleware)
 app.include_router(auth_router.router)
 app.include_router(testaccounts.router)
 app.include_router(account_router.router)
+from routers import ios_local
+app.include_router(ios_local.router)
+from routers import ios_hosts
+app.include_router(ios_hosts.router)
 app.include_router(devices.router)
 app.include_router(testsuites.router)
 app.include_router(testsuites.nodes_router)
@@ -86,6 +92,7 @@ app.include_router(serverinfo.router)
 app.include_router(live.router)
 app.include_router(projects.router)
 app.include_router(knowledge.router)
+app.include_router(automation.router)
 app.include_router(regressions.router)
 app.include_router(regressions.download_router)
 
@@ -94,6 +101,8 @@ app.add_api_websocket_route("/v1/providers/join", portal_websocket_endpoint)
 app.add_api_websocket_route("/v1/providers/browser-usb", browser_usb_websocket_endpoint)
 app.add_api_websocket_route("/v1/providers/adb-bridge", adb_bridge_websocket_endpoint)
 app.add_api_websocket_route("/v1/providers/hdc-bridge", hdc_bridge_websocket_endpoint)
+app.add_api_websocket_route("/v1/providers/ios-bridge", ios_bridge_websocket_endpoint)
+app.add_api_websocket_route("/v1/providers/ios-host", ios_hosts.host_websocket)
 app.add_api_websocket_route("/v1/providers/video", provider_video_endpoint)
 
 # Live H.264 screen stream (ADB screenrecord) — under /v1 so the WS proxy applies

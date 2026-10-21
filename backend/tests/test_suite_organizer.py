@@ -1,5 +1,6 @@
 import io
 import json
+import os
 import unittest
 import uuid
 import zipfile
@@ -57,6 +58,9 @@ class OrganizerApiTests(unittest.TestCase):
         cls.client = cls.context.__enter__()
         suffix = uuid.uuid4().hex[:8]
         cls.headers = []
+        registration = patch.dict(os.environ, {'SAB_ALLOW_PUBLIC_REGISTRATION': 'true'})
+        registration.start()
+        cls.addClassCleanup(registration.stop)
         for i in range(2):
             response = cls.client.post('/api/auth/register', json={"account_name": f"organizer-{suffix}-{i}",
                 "email": f"organizer-{suffix}-{i}@example.test", "password": "test-only-password", "name": "Organizer test"})

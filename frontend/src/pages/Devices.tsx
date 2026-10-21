@@ -137,7 +137,7 @@ export default function Devices() {
       <div className="bg-white border rounded-lg p-4 mb-5">
         <div className="flex items-center justify-between gap-4">
           <div>
-            <h2 className="font-semibold">{t('本地模式 · USB 连接', 'Local mode · USB')}</h2>
+            <h2 className="font-semibold">{t('Android · 浏览器 USB 连接', 'Android · Browser USB')}</h2>
             <p className="text-sm text-gray-500 mt-1">{t('电脑 Chrome/Edge + USB 调试，无需安装辅助 App。AI 仍由 SAB 服务端执行。', 'Desktop Chrome/Edge + USB debugging. No helper app. SAB server still runs AI.')}</p>
           </div>
           {usb.phase === 'idle' ? <button className="bg-primary text-white rounded px-4 py-2 text-sm shrink-0 disabled:opacity-50" disabled={!usbSupported()} onClick={() => void connectUsb()}>{t('连接 USB 手机', 'Connect USB phone')}</button>
@@ -147,6 +147,7 @@ export default function Devices() {
         <p className="text-xs text-gray-400 mt-1">{t('试用版：支持实时画面、截图、UI 树、点击滑动、按键和启动应用。中文/清空输入、录像保存、APK 安装暂不支持。以下 App 配对方式继续可用。', 'Preview: live video, screenshots, UI tree, tap/swipe, keys and app launch. Unicode/clear input, video saving and APK installation are not supported. App pairing remains available below.')}</p>
       </div>
       <AdbBridgeSetup devices={devices} server={import.meta.env.DEV ? `${location.protocol}//${location.hostname}:${backendPort || 8000}` : location.origin} />
+      <AdbBridgeSetup transport="ios" devices={devices} server={import.meta.env.DEV ? `${location.protocol}//${location.hostname}:${backendPort || 8000}` : location.origin} />
       <AdbBridgeSetup transport="hdc" devices={devices} server={import.meta.env.DEV ? `${location.protocol}//${location.hostname}:${backendPort || 8000}` : location.origin} />
       <div className="flex items-center justify-between mb-6">
         <h1 className="text-2xl font-bold">{t('远程模式 · App 配对', 'Remote mode · App pairing')}</h1>
@@ -288,11 +289,11 @@ export default function Devices() {
                       ID: {d.id}
                     </div>
                     <div className="text-xs text-gray-400 font-mono truncate">
-                      {d.connection_type === 'hdc_bridge' ? '鸿蒙 · HDC 本地桥接 · 截图刷新' : d.connection_type === 'adb_bridge' ? '本机 ADB 桥接 · 多设备' : d.connection_type === 'browser_usb' ? '本地 USB · 无需 App 配对' : `远程 App · Token: ${d.token.slice(0, 20)}…`}
+                      {d.connection_type === 'hdc_bridge' ? '鸿蒙 · HDC USB 桥接 · 截图刷新' : d.connection_type === 'ios_bridge' ? 'iOS · USB 桥接 · 截图刷新' : d.connection_type === 'adb_bridge' ? '本机 ADB 桥接 · 多设备' : d.connection_type === 'browser_usb' ? '本地 USB · 无需 App 配对' : `远程 App · Token: ${d.token.slice(0, 20)}…`}
                     </div>
                   </div>
                   <div className="flex gap-2">
-                    {['adb_bridge', 'hdc_bridge'].includes(d.connection_type) ? <button className="text-xs px-3 py-1.5 border rounded" onClick={e => { e.stopPropagation(); copyToken(d) }}>{copiedId === d.id ? '✓ Copied' : 'Copy Token'}</button> : d.connection_type === 'browser_usb' ? <button className="text-xs px-3 py-1.5 border rounded disabled:opacity-50" disabled={usb.phase !== 'idle'} onClick={e => { e.stopPropagation(); void connectUsb(d.id) }}>连接 USB</button> : <>
+                    {['adb_bridge', 'hdc_bridge', 'ios_bridge'].includes(d.connection_type) ? <button className="text-xs px-3 py-1.5 border rounded" onClick={e => { e.stopPropagation(); copyToken(d) }}>{copiedId === d.id ? '✓ Copied' : 'Copy Token'}</button> : d.connection_type === 'browser_usb' ? <button className="text-xs px-3 py-1.5 border rounded disabled:opacity-50" disabled={usb.phase !== 'idle'} onClick={e => { e.stopPropagation(); void connectUsb(d.id) }}>连接 USB</button> : <>
                     <button
                       className="text-xs px-3 py-1.5 border border-primary text-primary rounded hover:bg-primary-soft"
                       onClick={e => { e.stopPropagation(); setQrDevice(d) }}

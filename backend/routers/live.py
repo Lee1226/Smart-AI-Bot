@@ -153,7 +153,7 @@ class Capabilities(BaseModel):
 @router.get("/{device_id}/capabilities", response_model=Capabilities)
 async def capabilities(device_id: str, request: Request, db: AsyncSession = Depends(get_db)):
     device = await db.get(Device, device_id)
-    browser_usb = device is not None and device.connection_type in {"browser_usb", "adb_bridge", "hdc_bridge"}
+    browser_usb = device is not None and device.connection_type in {"browser_usb", "adb_bridge", "hdc_bridge", "ios_bridge"}
     serials = await asyncio.to_thread(_adb_serials) if not browser_usb and await _local_adb_allowed(request, db) else []
     conn = connected_devices.get(device_id)
     return Capabilities(
@@ -169,7 +169,7 @@ async def screenshot_frame(device_id: str, request: Request, source: str = "auto
                            serial: Optional[str] = None, db: AsyncSession = Depends(get_db)):
     """One JPEG frame. source: auto | adb | screenshot."""
     device = await db.get(Device, device_id)
-    browser_usb = device is not None and device.connection_type in {"browser_usb", "adb_bridge", "hdc_bridge"}
+    browser_usb = device is not None and device.connection_type in {"browser_usb", "adb_bridge", "hdc_bridge", "ios_bridge"}
     serials = await asyncio.to_thread(_adb_serials) if not browser_usb and await _local_adb_allowed(request, db) else []
     use = None if browser_usb else _resolve_adb_serial(serials, source, serial)
     try:
@@ -212,7 +212,7 @@ async def stream_h264(websocket: WebSocket, device_id: str):
     if websocket.query_params.get("source") == "device":
         await websocket.close(code=4404)
         return
-    if device.connection_type in {"browser_usb", "adb_bridge", "hdc_bridge"} or not is_operator:
+    if device.connection_type in {"browser_usb", "adb_bridge", "hdc_bridge", "ios_bridge"} or not is_operator:
         await websocket.close(code=4403)
         return
     await websocket.accept()

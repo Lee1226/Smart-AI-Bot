@@ -16,6 +16,8 @@
 
 手机通过 USB 接在电脑上时，可使用[浏览器 USB 本地模式](docs/browser-usb-local-mode.md)：无需辅助 APK，支持实时 H.264 画面；需要桌面 Chrome/Edge 和 HTTPS 或 localhost。
 
+也支持多设备 ADB、鸿蒙 HDC 和 [iOS USB / Mac 统一设备助手](docs/ios-bridge.zh-CN.md)。iOS 需要 Xcode 和已签名 WebDriverAgent，目前使用截图刷新，不支持视频或 IPA 安装。[公开版同步范围与限制](docs/open-source-sync.zh-CN.md)。
+
 ## 演示视频
 
 <video src="https://github.com/user-attachments/assets/f5869888-be0e-4166-9d7a-806d05afe24d" controls width="100%"></video>
@@ -53,7 +55,7 @@ Smart-AI-Bot 是一个面向 Android 应用 QA 团队（或希望自动化操作
 5. 全程步骤回放，可导出自包含 HTML 报告
 6. 失败用例自动总结教训，下次同任务自动避免
 
-不需要 XPath，不需要 Appium，不需要录制脚本。
+Android 无需 XPath、Appium 或录制脚本；iOS 桥接需要单独准备已签名的 WebDriverAgent。
 
 ### 和同类有什么不同
 
@@ -68,7 +70,7 @@ Smart-AI-Bot 是一个面向 Android 应用 QA 团队（或希望自动化操作
 | 自包含、可分享的 HTML 报告 | ✅ | ❌ | ⚠️ |
 | 导入 xmind / Excel / Markdown | ✅ | ❌ | ❌ |
 
-诚实的取舍：目前**仅支持 Android**（Midscene / Appium 还覆盖 iOS 和 Web），Canvas/游戏类纯视觉的鲁棒性也还不及 Midscene 的 Set-of-Marks。完整对比见 → [Comparison](docs/comparison.zh-CN.md)。
+支持范围有差异：Android 功能最完整，鸿蒙 HDC 与 iOS WDA 桥接尚不支持所有 Android 能力；Web 应用自动化不在当前范围内。Canvas/游戏类纯视觉仍有局限。完整对比见 → [Comparison](docs/comparison.zh-CN.md)。
 
 ---
 

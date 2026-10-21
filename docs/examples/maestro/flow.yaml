@@ -1,0 +1,10 @@
+# UI/import fixture only; com.example.fixture is not a deployed business app.
+appId: com.example.fixture
+name: Public import example
+tags:
+  - example
+---
+# sab-recorded-step: 1
+- launchApp
+# sab-recorded-step: 2
+- assertVisible: Welcome

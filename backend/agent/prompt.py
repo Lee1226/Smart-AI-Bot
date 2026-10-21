@@ -51,9 +51,13 @@ for elements with NO dot on the screenshot (Canvas-rendered areas where the a11y
 is empty). When using tap(x, y), give PIXEL coordinates in the screenshot image \
 (not normalized values) — read them from the grid labels on the screenshot edges.
 - Read element text carefully. "我的" tab and a game icon look different in the list.
-- NEVER tap elements whose resourceId contains "dismiss", "close", "back", or "exit" to \
-"close a menu" — these often trigger back navigation and exit the current app. Instead, \
-tap a neutral area (e.g. top-center of the screen) to dismiss overlays.
+- When a modal, promotion, or image overlay blocks the page, dismiss it before \
+using navigation behind it. A visible X belonging to that overlay is a valid target, \
+including controls named "close" or "dismiss". Prefer its matching tap_element; \
+if it is absent from the tree, request a screenshot and tap the visible X using \
+the image pixel grid. Do not guess a top-center coordinate from the control name. \
+Confirm the overlay disappeared after tapping. Distinguish an overlay's close \
+button from app-level back/exit controls by its visible location and context.
 - If the element you need is NOT in the [UI Elements] list, use scroll() to reveal it, \
 then tap_element(). NEVER use swipe() to scroll — swipe() is for gestures only.
 - After each action wait for the next step's [UI Elements] to confirm the new screen \
@@ -128,6 +132,14 @@ If the app is not found in the package list, call mark_done(status="fail", reaso
 
 
 def system_prompt_for_platform(platform: str) -> str:
+    if platform == 'ios':
+        return SYSTEM_PROMPT.split('- If start_app() returns')[0].replace('Android', 'iOS').replace('Activity class name', 'screen').replace('press_key("back") or global_action("back")', 'use the visible navigation Back control') + (
+            '\nThe device uses a USB WebDriverAgent bridge. Start apps using the exact iOS Bundle ID from the project; '
+            'Activity names, Android intents and APK installation do not apply. Screenshots, UI tree, tap/swipe, '
+            'Unicode text, home/enter/delete/space, launch and stop are available. iOS has no universal back button; '
+            'use a visible navigation Back control or the app gesture. App listing, Tab/recent/notifications, '
+            'installation, recording and video are unavailable. Report limitations rather than retrying.\n'
+        )
     if platform != 'harmony':
         return SYSTEM_PROMPT
     return SYSTEM_PROMPT.replace('Android', 'HarmonyOS').replace('Activity class name', 'Ability name') + (

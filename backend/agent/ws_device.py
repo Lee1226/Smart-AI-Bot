@@ -55,6 +55,10 @@ class WebSocketDevice:
         # if Portal downscales the screenshot before sending)
         self._screenshot_width: int = 0
         self._screenshot_height: int = 0
+        self._model_image_size: Optional[Tuple[int, int]] = None
+
+    def set_model_image_size(self, width: int, height: int) -> None:
+        self._model_image_size = (width, height) if width > 0 and height > 0 else None
 
     def is_connected(self) -> bool:
         conn = connected_devices.get(self.device_id)
@@ -115,12 +119,11 @@ class WebSocketDevice:
         raise RuntimeError(f"Device {self.device_id} is not connected")
 
     def _img_to_abs(self, img_x: int, img_y: int) -> tuple[int, int]:
-        """Convert half-size screenshot pixel coordinates to device pixel coordinates.
-
-        The screenshot is always resized to 50% of the device's native resolution,
-        so the conversion is simply ×2.  Using image pixel coordinates directly
-        avoids the normalized-vs-pixel confusion that caused off-target taps.
-        """
+        """Map the actual model image to device coordinates, including older bridges."""
+        if self._model_image_size and self.screen_width and self.screen_height:
+            iw, ih = self._model_image_size
+            return round(img_x * self.screen_width / iw), round(img_y * self.screen_height / ih)
+        # Compatibility for callers that do not provide model image dimensions.
         return img_x * 2, img_y * 2
 
     async def tap(self, x: int, y: int) -> str:

@@ -1,5 +1,7 @@
 package com.dream.smart_androidbot.ui
 
+import android.media.projection.MediaProjectionManager
+import com.dream.smart_androidbot.service.LiveVideoService
 import android.content.Context
 import android.content.Intent
 import android.content.pm.PackageManager
@@ -41,6 +43,12 @@ class MainActivity : AppCompatActivity() {
     private val permsLauncher = registerForActivityResult(
         ActivityResultContracts.RequestMultiplePermissions()
     ) { /* results don't block usage; everything degrades gracefully */ }
+
+    private val captureLauncher = registerForActivityResult(ActivityResultContracts.StartActivityForResult()) { result ->
+        if (result.resultCode == RESULT_OK && result.data != null) {
+            startForegroundService(Intent(this, LiveVideoService::class.java).putExtra("consent", result.data))
+        } else Toast.makeText(this, "未授权录屏，仍可使用截图模式", Toast.LENGTH_LONG).show()
+    }
 
     // QR scanner (ZXing). The CaptureActivity handles the CAMERA runtime prompt.
     private val qrScanLauncher = registerForActivityResult(ScanContract()) { result ->
@@ -119,6 +127,15 @@ class MainActivity : AppCompatActivity() {
             qrScanLauncher.launch(options)
         }
 
+        binding.btnVideo.setOnClickListener {
+            if (LiveVideoService.available()) {
+                startService(Intent(this, LiveVideoService::class.java).setAction(LiveVideoService.STOP))
+            } else {
+                val manager = getSystemService(MediaProjectionManager::class.java)
+                captureLauncher.launch(manager.createScreenCaptureIntent())
+            }
+        }
+
         // Config buttons
         binding.btnSave.setOnClickListener {
             saveConfig()
@@ -172,6 +189,7 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun refreshStatus() {
+        binding.btnVideo.text = if (LiveVideoService.available()) "停止远程视频" else "开启远程视频（需录屏授权）"
         updateAccessibilityCard()
         updateImeCard()
         updateBackgroundCard()

@@ -1,12 +1,14 @@
 import { useState } from 'react'
+import IosConnect from './IosConnect'
 import { useMutation, useQueryClient } from '@tanstack/react-query'
 import { createDevice, Device } from '../lib/api'
 import { useT } from '../lib/i18n'
 
-export default function AdbBridgeSetup({ devices, server, transport = 'adb' }: { devices: Device[]; server: string; transport?: 'adb' | 'hdc' }) {
+export default function AdbBridgeSetup({ devices, server, transport = 'adb' }: { devices: Device[]; server: string; transport?: 'adb' | 'hdc' | 'ios' }) {
   const harmony = transport === 'hdc'
-  const tool = harmony ? 'HDC' : 'ADB'
-  const kind = harmony ? 'hdc_bridge' : 'adb_bridge'
+  const ios = transport === 'ios'
+  const tool = ios ? 'iOS' : harmony ? 'HDC' : 'ADB'
+  const kind = ios ? 'ios_bridge' : harmony ? 'hdc_bridge' : 'adb_bridge'
   const storageKey = `${transport}-bridge-serials`
   const t = useT()
   const qc = useQueryClient()
@@ -39,26 +41,31 @@ export default function AdbBridgeSetup({ devices, server, transport = 'adb' }: {
     if (new Set(configured.map(d => serials[d.id])).size !== configured.length) {
       setError(t(`每台设备需要不同的 ${tool} 序列号。`, `Each device needs a unique ${tool} serial.`)); return
     }
-    const blob = new Blob([JSON.stringify({ server, devices: configured.map(d => ({ serial: serials[d.id], token: d.token })) }, null, 2)], { type: 'application/json' })
+    const blob = new Blob([JSON.stringify({ server, devices: configured.map(d => ({ serial: serials[d.id], token: d.token, ...(ios ? { port: 8100 + configured.indexOf(d) } : {}) })) }, null, 2)], { type: 'application/json' })
     const url = URL.createObjectURL(blob)
     const a = document.createElement('a'); a.href = url; a.download = `sab-${transport}-bridge.json`; a.click()
     setTimeout(() => URL.revokeObjectURL(url), 1000)
     setError('')
   }
   return <details className="mb-6 border rounded-lg p-4 bg-white">
-    <summary className="font-semibold cursor-pointer">{harmony ? t('鸿蒙本地模式 · HDC · 手机和模拟器', 'Harmony local mode · HDC · phones and emulators') : t('本机 ADB 桥接 · 多设备 · 与 Android Studio 共存', 'Local ADB bridge · multiple devices · shares Android Studio ADB')}</summary>
-    <p className="text-sm text-ink-mute mt-3">{harmony ? t('在连接鸿蒙手机或模拟器的电脑上运行代理，无需安装辅助 App。支持截图刷新、UI 树、点击滑动、返回、主页和启动应用；AI 仍由 SAB 服务端执行。', 'Run the bridge on the Harmony device computer, without a helper app. Supports screenshots, UI tree, tap/swipe, back/home and app launch. SAB server runs AI.') : t('在连接手机的电脑上运行代理，设备可并发执行不同任务，并提供视频流和截图。无需停止本机 ADB。', 'Run the bridge on the computer connected to the phones. Devices can run different tasks concurrently and provide video or screenshots, sharing the existing ADB server.')}</p>
-    <p className="text-sm mt-2">{harmony ? t('先用 hdc list targets 查看设备或模拟器标识，再逐台添加：', 'Run hdc list targets to find phones or emulators, then add each target:') : t('先用 adb devices -l 查看序列号，再逐台添加：', 'Run adb devices -l to find serials, then add each phone:')}</p>
+    <summary className="font-semibold cursor-pointer">{ios ? t('统一设备助手 · Android / 鸿蒙 / iOS · Mac', 'Unified device helper · Android / Harmony / iOS · Mac') : harmony ? t('鸿蒙 USB 桥接 · HDC · 手机和模拟器', 'Harmony USB bridge · HDC · phones and emulators') : t('本机 ADB 桥接 · 多设备 · 与 Android Studio 共存', 'Local ADB bridge · multiple devices · shares Android Studio ADB')}</summary>
+    {ios && <IosConnect devices={devices} />}
+    <details open={ios ? undefined : true} className="mt-3">
+    <summary className={ios ? "cursor-pointer text-sm text-ink-mute" : "hidden"}>首次准备与手动连接</summary>
+    <p className="text-sm text-ink-mute mt-3">{ios ? t('iPhone / iPad 通过 USB 连接 Mac，开启开发者模式并信任电脑；在 Xcode 启动已签名的 WebDriverAgentRunner。支持截图刷新、UI 树、点击滑动、文本输入和启动应用，网页可在其他电脑操作。', 'Connect iPhone / iPad to a Mac over USB, enable Developer Mode and trust the computer. Start a signed WebDriverAgentRunner in Xcode. Supports screenshots, UI tree, gestures, text and app launch; the browser may run on another computer.') : harmony ? t('在连接鸿蒙手机或模拟器的电脑上运行代理，无需安装辅助 App。支持截图刷新、UI 树、点击滑动、返回、主页和启动应用；AI 仍由 SAB 服务端执行。', 'Run the bridge on the Harmony device computer, without a helper app. Supports screenshots, UI tree, tap/swipe, back/home and app launch. SAB server runs AI.') : t('在连接手机的电脑上运行代理，设备可并发执行不同任务，并提供视频流和截图。无需停止本机 ADB。', 'Run the bridge on the computer connected to the phones. Devices can run different tasks concurrently and provide video or screenshots, sharing the existing ADB server.')}</p>
+    <p className="text-sm mt-2">{ios ? t('先在 Xcode「设备与模拟器」复制设备 Identifier（UDID），再逐台添加。桥接配置为每台设备分配独立端口：', 'Copy each USB UDID from Xcode Devices and Simulators. Each device receives a separate forwarding port:') : harmony ? t('先用 hdc list targets 查看设备或模拟器标识，再逐台添加：', 'Run hdc list targets to find phones or emulators, then add each target:') : t('先用 adb devices -l 查看序列号，再逐台添加：', 'Run adb devices -l to find serials, then add each phone:')}</p>
     <div className="flex flex-wrap gap-2 mt-2">
-      <input aria-label={`${tool} serial`} className="border rounded px-3 py-2 text-sm" placeholder={t(`${tool} 序列号`, `${tool} serial`)} value={serial} onChange={e => setSerial(e.target.value)} />
+      <input aria-label={`${tool} serial`} className="border rounded px-3 py-2 text-sm" placeholder={ios ? 'iPhone / iPad UDID' : t(`${tool} 序列号`, `${tool} serial`)} value={serial} onChange={e => setSerial(e.target.value)} />
       <input aria-label={`${tool} bridge device name`} className="border rounded px-3 py-2 text-sm" placeholder={t('设备名称（可选）', 'Device name (optional)')} value={name} onChange={e => setName(e.target.value)} />
       <button className="bg-primary text-white rounded px-3 py-2 text-sm disabled:opacity-50" disabled={!serial.trim() || add.isPending || bridges.some(d => serials[d.id] === serial.trim())} onClick={() => add.mutate()}>{t('添加桥接设备', 'Add bridge device')}</button>
     </div>
     {bridges.map(d => <label key={d.id} className="flex flex-wrap items-center gap-2 text-sm mt-2"><span>{d.name}</span><input aria-label={`${tool} serial ${d.name}`} className="border rounded px-2 py-1" placeholder={`${tool} serial`} value={serials[d.id] || ''} onChange={e => saveSerial(d.id, e.target.value)} /></label>)}
     <button className="border border-primary text-primary rounded px-3 py-2 text-sm mt-3" onClick={download}>{t('下载桥接配置', 'Download bridge config')}</button>
     <p className="text-xs text-ink-mute mt-2">{t('配置含设备控制凭证，请仅保存在运行代理的电脑上。以下命令在项目根目录执行：', 'The config contains device credentials. Keep it on the bridge computer. Run these commands from the project root:')}</p>
-    <pre className="text-xs overflow-x-auto bg-canvas-cool rounded p-3 mt-2">{`python3 -m venv .venv-bridge\n.venv-bridge/bin/pip install -r tools/adb-bridge-requirements.txt\n.venv-bridge/bin/python tools/${transport}_bridge.py --config ~/Downloads/sab-${transport}-bridge.json`}</pre>
+    <pre className="text-xs overflow-x-auto bg-canvas-cool rounded p-3 mt-2">{`${ios ? 'brew install libusbmuxd\n' : ''}python3 -m venv .venv-bridge\n.venv-bridge/bin/pip install -r tools/adb-bridge-requirements.txt\n.venv-bridge/bin/python tools/${transport}_bridge.py --config ~/Downloads/sab-${transport}-bridge.json`}</pre>
+    {ios && <p className="text-xs text-ink-mute mt-2">{t('首次连接需要签名并运行 WDA，桥接不会自动安装或启动它。每台设备的 WDA 使用手机端 8100 端口。暂不支持视频流、安装包、应用列表、录制及通用返回键。', 'Sign and run WDA first; the bridge does not install or launch it. WDA must listen on device port 8100. Video, app installation/listing, recording and a universal Back key are unavailable.')}</p>}
     {harmony && <p className="text-xs text-ink-mute mt-2">{t('HDC 随 DevEco Studio / 鸿蒙 SDK 安装；找不到时用 --hdc 指定完整路径。暂不支持视频流、中文或清空输入、安装包和录制。', 'HDC ships with DevEco Studio / Harmony SDK. Use --hdc to specify its path. Video, Unicode/clear input, installation and recording are not supported yet.')}</p>}
+    </details>
     {error && <p role="alert" className="text-sm text-red-600 mt-2">{error}</p>}
   </details>
 }

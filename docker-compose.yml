@@ -1,7 +1,8 @@
 services:
   backend:
     build:
-      context: ./backend
+      context: .
+      dockerfile: backend/Dockerfile
     image: smart-ai-bot-backend
     container_name: smart-ai-bot-backend
     restart: unless-stopped
@@ -9,6 +10,12 @@ services:
       # Use litellm's bundled cost map instead of fetching it from GitHub on
       # startup (the remote fetch fails behind restrictive networks).
       LITELLM_LOCAL_MODEL_COST_MAP: "True"
+      # Empty => a random persistent secret is generated in the data volume.
+      SAB_JWT_SECRET: "${SAB_JWT_SECRET:-}"
+      SAB_ALLOW_PUBLIC_REGISTRATION: "${SAB_ALLOW_PUBLIC_REGISTRATION:-false}"
+      SAB_OPERATOR_ACCOUNT_ID: "${SAB_OPERATOR_ACCOUNT_ID:-}"
+      # No knowledge-search command is enabled without an explicit allowlist.
+      SAB_KB_SEARCH_COMMAND_ALLOWLIST: "${SAB_KB_SEARCH_COMMAND_ALLOWLIST:-}"
     volumes:
       - backend-data:/app/data
     expose:

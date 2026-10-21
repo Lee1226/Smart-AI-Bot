@@ -85,8 +85,8 @@ async function screenshot(device: Adb, signal: AbortSignal) {
   const bitmap = await createImageBitmap(new Blob([Uint8Array.from(bytes).buffer], { type: 'image/png' }))
   try {
     const canvas = document.createElement('canvas')
-    // SAB's AI coordinates are based on half-resolution images; taps are scaled back by backend.
-    canvas.width = Math.floor(bitmap.width / 2); canvas.height = Math.floor(bitmap.height / 2)
+    // Preserve device dimensions. The backend alone downsizes for the model.
+    canvas.width = bitmap.width; canvas.height = bitmap.height
     const context = canvas.getContext('2d')
     if (!context) throw new Error('截图 Canvas 不可用')
     context.drawImage(bitmap, 0, 0, canvas.width, canvas.height)

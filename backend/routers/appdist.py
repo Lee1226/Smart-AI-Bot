@@ -174,6 +174,8 @@ async def download_named_app(filename: str):
 
 
 CLI_PATH = Path(__file__).parent.parent / "cli" / "sab"
+if not CLI_PATH.is_file():
+    CLI_PATH = Path(__file__).resolve().parents[2] / "cli" / "sab"
 
 
 @router.get("/cli/download")

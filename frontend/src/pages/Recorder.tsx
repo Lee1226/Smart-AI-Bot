@@ -94,6 +94,8 @@ export default function Recorder() {
 
   // ── Device selection helpers ────────────────────────────────────────────────
   const selectedDevice = allDevices.find(d => d.id === deviceId)
+  const ios = selectedDevice?.connection_type === 'ios_bridge'
+  const harmony = selectedDevice?.connection_type === 'hdc_bridge'
 
   const applySnapshot = (data: SnapshotData) => {
     setScreenshot(data.screenshot_b64)
@@ -272,7 +274,7 @@ export default function Recorder() {
           </button>
           <button
             className={BTN_GREEN}
-            disabled={!deviceId || loading || realRecording}
+            disabled={!deviceId || loading || realRecording || ios || harmony}
             onClick={startRealRecording}
           >
             {t('📱 真机录制', '📱 Record on device')}
@@ -349,7 +351,7 @@ export default function Recorder() {
                       { action: 'back', label: t('↩ 返回', '↩ Back') },
                       { action: 'home', label: t('⌂ 主页', '⌂ Home') },
                       { action: 'recent', label: t('⊞ 最近', '⊞ Recent') },
-                    ].map(({ action, label }) => (
+                    ].filter(({ action }) => ios ? action === 'home' : harmony ? action !== 'recent' : true).map(({ action, label }) => (
                       <button key={action} className={BTN_GRAY} disabled={loading}
                         onClick={() => doAction('global_action', { action })}>
                         {label}

@@ -24,13 +24,13 @@ class BridgeTest(unittest.IsolatedAsyncioTestCase):
     async def test_multiple_launchers_excludes_leakcanary_and_never_launches_resolver(self):
         instance = bridge.Bridge('adb', 'http://localhost:8000', 'phone-a', 'token')
         instance.shell = AsyncMock(side_effect=[
-            '2 activities found:\ncom.example.app/.default\ncom.example.app/leakcanary.internal.activity.LeakLauncherActivity',
+            '2 activities found:\ncom.example.fixture/.default\ncom.example.fixture/leakcanary.internal.activity.LeakLauncherActivity',
             'Status: ok'])
-        self.assertEqual('Launched com.example.app', await instance.dispatch('app', {'package': 'com.example.app'}))
-        instance.shell.assert_awaited_with('am start -W -n com.example.app/.default')
+        self.assertEqual('Launched com.example.fixture', await instance.dispatch('app', {'package': 'com.example.fixture'}))
+        instance.shell.assert_awaited_with('am start -W -n com.example.fixture/.default')
         instance.shell = AsyncMock(return_value='com.android.intentresolver/.ResolverActivity')
         with self.assertRaises(ValueError):
-            await instance.dispatch('app', {'package': 'com.example.app'})
+            await instance.dispatch('app', {'package': 'com.example.fixture'})
         self.assertEqual(1, instance.shell.await_count)
 
     async def test_actions_route_to_assigned_serial_and_reject_injection(self):
@@ -45,14 +45,14 @@ class BridgeTest(unittest.IsolatedAsyncioTestCase):
                 await a.dispatch(method, params)
         self.assertEqual(1, a.shell.await_count)
 
-    async def test_screenshot_preserves_half_resolution_coordinate_contract(self):
+    async def test_screenshot_preserves_device_resolution(self):
         instance = bridge.Bridge('adb', 'http://localhost:8000', 'phone-a', 'token')
         out = io.BytesIO()
         Image.new('RGB', (1080, 2400)).save(out, 'PNG')
         instance.command = AsyncMock(return_value=out.getvalue())
         result = await instance.dispatch('screenshot', {})
         with Image.open(io.BytesIO(bridge.base64.b64decode(result))) as image:
-            self.assertEqual((540, 1200), image.size)
+            self.assertEqual((1080, 2400), image.size)
         instance.command.assert_awaited_once_with('exec-out', 'screencap', '-p')
 
     def test_ui_tree_rotation_and_phone_context(self):

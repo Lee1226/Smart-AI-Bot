@@ -21,6 +21,7 @@ logger = logging.getLogger(__name__)
 
 # API endpoints that do NOT require authentication.
 _PUBLIC_API_PATHS = {
+    "/api/ios-host/pair",
     "/api/auth/register",
     "/api/auth/login",
     "/api/auth/config",

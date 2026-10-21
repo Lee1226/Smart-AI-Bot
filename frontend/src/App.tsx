@@ -19,13 +19,14 @@ import Knowledge from './pages/Knowledge'
 import Login from './pages/Login'
 import Register from './pages/Register'
 import Account from './pages/Account'
+import AutomationCatalog from './pages/AutomationCatalog'
 
 type NavigationItem = { to: string; label: { zh: string; en: string }; icon: string; paths: string[] }
 const NAV_GROUPS: { label: { zh: string; en: string }; items: NavigationItem[] }[] = [
   { label: { zh: '测试工作台', en: 'Test workspace' }, items: [
     { to: '/', label: { zh: '设备', en: 'Devices' }, icon: '📱', paths: ['/'] },
     { to: '/quick', label: { zh: '任务执行', en: 'Execution' }, icon: '⚡', paths: ['/quick', '/regressions'] },
-    { to: '/suites', label: { zh: '用例中心', en: 'Cases' }, icon: '🧪', paths: ['/suites', '/library', '/recorder', '/knowledge'] },
+    { to: '/suites', label: { zh: '用例中心', en: 'Cases' }, icon: '🧪', paths: ['/suites', '/library', '/automation', '/recorder', '/knowledge'] },
     { to: '/runs', label: { zh: '运行结果', en: 'Results' }, icon: '▶', paths: ['/runs'] },
   ] },
   { label: { zh: '管理', en: 'Manage' }, items: [
@@ -40,6 +41,7 @@ const PAGE_TABS = {
   cases: [
     { to: '/suites', zh: '用例套件', en: 'Suites' },
     { to: '/library', zh: '步骤复用库', en: 'Reusable steps' },
+    { to: '/automation', zh: 'Maestro 用例', en: 'Maestro cases' },
     { to: '/recorder', zh: '录制用例', en: 'Record' },
     { to: '/knowledge', zh: '知识库', en: 'Knowledge' },
   ],
@@ -206,6 +208,8 @@ function AppLayout() {
             <Route path="/suites" element={<PageTabs section="cases"><Suites /></PageTabs>} />
             <Route path="/suites/:suiteId" element={<PageTabs section="cases"><SuiteDetail /></PageTabs>} />
             <Route path="/library" element={<PageTabs section="cases"><Library /></PageTabs>} />
+            <Route path="/automation" element={<PageTabs section="cases"><AutomationCatalog /></PageTabs>} />
+            <Route path="/automation/:kind/:id" element={<PageTabs section="cases"><AutomationCatalog /></PageTabs>} />
             <Route path="/knowledge" element={<PageTabs section="cases"><Knowledge /></PageTabs>} />
             <Route path="/regressions" element={<PageTabs section="execution"><Regressions /></PageTabs>} />
             <Route path="/runs" element={<PageTabs section="results"><Runs /></PageTabs>} />

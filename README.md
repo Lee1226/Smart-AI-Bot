@@ -51,7 +51,9 @@ Expected: System version is shown, no error dialog.
 
 The AI agent finds the path, taps, verifies — every step has a screenshot and a thought trace. Failed cases automatically extract a "lesson learned"; the next time the same task runs, the agent avoids the same mistake.
 
-No XPath, no Appium, no recorded scripts.
+Android needs no XPath, Appium or recorded scripts. iOS USB support requires a separately signed WebDriverAgent.
+
+Additional transports include multi-device ADB, Harmony HDC and the [iOS USB / unified Mac helper](docs/ios-bridge.zh-CN.md). iOS currently uses screenshot refresh, without video or IPA installation. See the [public synchronization scope](docs/open-source-sync.zh-CN.md) for boundaries and limitations.
 
 ### How it's different
 
@@ -66,7 +68,7 @@ Most AI phone tools stop at *"control a device with an LLM."* Smart-AI-Bot is th
 | Self-contained shareable HTML reports | ✅ | ❌ | ⚠️ |
 | Import from xmind / Excel / Markdown | ✅ | ❌ | ❌ |
 
-Honest trade-offs: it's **Android-only** today (Midscene / Appium also cover iOS & web), and pure-vision robustness on Canvas/game UIs still trails Midscene's Set-of-Marks. Full breakdown → [Comparison](docs/comparison.md).
+Support differs by transport: Android has the broadest feature set; Harmony HDC and iOS WDA bridges do not implement every Android capability. Web-app automation is not supported, and pure-vision Canvas/game interaction remains limited. Full breakdown → [Comparison](docs/comparison.md).
 
 ---
 

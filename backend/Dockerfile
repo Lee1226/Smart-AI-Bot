@@ -11,10 +11,20 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
         zlib1g \
     && rm -rf /var/lib/apt/lists/*
 
-COPY requirements.txt .
+COPY backend/requirements.txt .
 RUN pip install -r requirements.txt
 
-COPY . .
+COPY backend/ .
+
+# Ship the CLI so the backend can serve it for download (GET /api/cli/download)
+COPY cli/sab /app/cli/sab
+
+# Downloadable Mac USB helper; runs on the user's Mac, never in this Linux container.
+COPY tools/ /app/tools/
+
+# Ship public knowledge-base tooling and examples only. Local business documents
+# and runtime configuration are excluded by .dockerignore.
+COPY test_knowledge /app/test_knowledge
 
 RUN mkdir -p /app/data
 VOLUME ["/app/data"]

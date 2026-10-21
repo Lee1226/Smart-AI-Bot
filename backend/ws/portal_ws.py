@@ -36,7 +36,7 @@ class DeviceConnection:
 
     @property
     def platform(self):
-        return "harmony" if self.connection_type == "hdc_bridge" else "android"
+        return {"hdc_bridge": "harmony", "ios_bridge": "ios"}.get(self.connection_type, "android")
 
 
 def _header_utf8(value: str) -> str:
@@ -119,6 +119,20 @@ async def hdc_bridge_websocket_endpoint(websocket: WebSocket):
     async with AsyncSessionLocal() as session:
         device = (await session.execute(select(Device).where(
             Device.token == token, Device.connection_type == "hdc_bridge"
+        ))).scalar_one_or_none() if token else None
+    await websocket.accept()
+    if device is None:
+        await websocket.close(code=4001, reason="Unauthorized")
+        return
+    await serve_device_connection(websocket, device, token, device.name, browser=True)
+
+
+async def ios_bridge_websocket_endpoint(websocket: WebSocket):
+    authorization = websocket.headers.get("authorization", "")
+    token = authorization.removeprefix("Bearer ").strip() if authorization.startswith("Bearer ") else ""
+    async with AsyncSessionLocal() as session:
+        device = (await session.execute(select(Device).where(
+            Device.token == token, Device.connection_type == "ios_bridge"
         ))).scalar_one_or_none() if token else None
     await websocket.accept()
     if device is None:

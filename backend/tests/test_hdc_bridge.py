@@ -90,12 +90,12 @@ class HdcCommandTest(unittest.IsolatedAsyncioTestCase):
         with self.assertRaises(ValueError):
             main_ability({'hapModuleInfos': [{}]})
 
-    async def test_screenshot_half_size_and_quoted_input(self):
+    async def test_screenshot_device_size_and_quoted_input(self):
         b = self.bridge()
         buf = io.BytesIO(); Image.new('RGB', (1320, 2856)).save(buf, 'PNG')
         b.capture_file = AsyncMock(return_value=buf.getvalue())
         with Image.open(io.BytesIO(base64.b64decode(await b.dispatch('screenshot', {})))) as image:
-            self.assertEqual((660, 1428), image.size)
+            self.assertEqual((1320, 2856), image.size)
         await b.dispatch('keyboard/input', {'base64_text': base64.b64encode(b"hello'; reboot").decode()})
         self.assertIn("'\"'\"'", b.shell.call_args.args[0])
 

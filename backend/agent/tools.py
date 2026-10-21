@@ -461,6 +461,19 @@ KB_READ_TOOLS: list[dict] = [
 
 
 def tools_for_platform(platform: str) -> list[dict]:
+    if platform == 'ios':
+        from copy import deepcopy
+        tools = deepcopy([t for t in TOOLS if t['function']['name'] not in {'install_apk', 'list_packages'}])
+        for tool in tools:
+            fn = tool['function']
+            if fn['name'] == 'start_app':
+                fn['description'] = 'Launch an installed iOS app by its exact Bundle ID configured in the project. Do not specify an Android activity.'
+            elif fn['name'] == 'press_key':
+                fn['parameters']['properties']['key']['enum'] = ['home', 'enter', 'del', 'space']
+            elif fn['name'] == 'global_action':
+                fn['parameters']['properties']['action']['enum'] = ['home']
+                fn['description'] = 'Return to the iOS home screen. Use visible navigation controls for back.'
+        return tools
     if platform != 'harmony':
         return list(TOOLS)
     from copy import deepcopy

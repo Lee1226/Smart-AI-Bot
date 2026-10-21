@@ -15,6 +15,8 @@
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_DATA_SYNC" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_SPECIAL_USE" />
 
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MEDIA_PROJECTION" />
+
     <!-- Notifications (Android 13+) -->
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
 
@@ -54,6 +56,7 @@
         android:roundIcon="@mipmap/ic_launcher_round"
         android:supportsRtl="true"
         android:theme="@style/Theme.Smartandroidbot"
+        android:usesCleartextTraffic="true"
         tools:targetApi="30">
 
         <!-- Main settings UI -->
@@ -101,6 +104,9 @@
                 android:name="android.app.PROPERTY_SPECIAL_USE_FGS_SUBTYPE"
                 android:value="agent_device_connection" />
         </service>
+
+        <service android:name=".service.LiveVideoService" android:exported="false"
+            android:foregroundServiceType="mediaProjection" />
 
         <!-- Headless IME for reliable text input -->
         <service

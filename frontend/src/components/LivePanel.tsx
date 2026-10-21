@@ -113,11 +113,13 @@ export default function LivePanel({ device, defaultMode = 'off', storageKey = 'l
 
   const online = device?.status === 'online' || localUsb
   const harmony = device?.connection_type === 'hdc_bridge'
-  const wantsVideo = !harmony && (mode === 'auto' || mode === 'video')
+  const ios = device?.connection_type === 'ios_bridge'
+  const screenshotsOnly = harmony || ios
+  const wantsVideo = !screenshotsOnly && (mode === 'auto' || mode === 'video')
   const remoteVideo = !!caps?.video_available
   const usingUsb = wantsVideo && localUsb && !adbFailed
   const usingRemote = wantsVideo && remoteVideo && !localUsb && !adbFailed
-  const videoUnavailable = !harmony && mode === 'video' && !(usingUsb || usingRemote)
+  const videoUnavailable = !screenshotsOnly && mode === 'video' && !(usingUsb || usingRemote)
   const videoSource = useMemo(() => device
     ? localUsb ? browserUsbH264Source(device.id) : websocketH264Source(h264WsUrl(device.id))
     : undefined, [device?.id, localUsb, remoteVideo, mode, reloadKey])
@@ -133,8 +135,8 @@ export default function LivePanel({ device, defaultMode = 'off', storageKey = 'l
             <button
               key={m.key}
               onClick={() => pick(m.key)}
-              disabled={harmony && m.key === 'video'}
-              title={harmony && m.key === 'video' ? '鸿蒙 HDC 当前使用截图刷新' : undefined}
+              disabled={screenshotsOnly && m.key === 'video'}
+              title={screenshotsOnly && m.key === 'video' ? '当前 USB 桥接使用截图刷新' : undefined}
               className={`px-2.5 py-1 transition-colors ${
                 mode === m.key
                   ? 'bg-primary text-white'
@@ -192,7 +194,7 @@ export default function LivePanel({ device, defaultMode = 'off', storageKey = 'l
             ? t('本地 USB · 实时录屏 H.264', 'Local USB · live recording H.264')
             : usingRemote
             ? t('远程设备 · H.264 视频流', 'Remote device · H.264 video')
-            : videoUnavailable ? t('视频流未就绪', 'Video not ready') : harmony ? t('鸿蒙 HDC · 截图刷新', 'Harmony HDC · screenshot refresh') : t('截图 · ~1 fps', 'Screenshot · ~1 fps')
+            : videoUnavailable ? t('视频流未就绪', 'Video not ready') : ios ? t('iOS USB · 截图刷新', 'iOS USB · screenshot refresh') : harmony ? t('鸿蒙 HDC · 截图刷新', 'Harmony HDC · screenshot refresh') : t('截图 · ~1 fps', 'Screenshot · ~1 fps')
             : ' '}
       </div>
       {device?.connection_type === 'portal' && !remoteVideo && wantsVideo && <p className="mt-1 text-center text-xs text-ink-mute">{t('远程视频需要新版 App，并在手机点击「开启远程视频」授权录屏。', 'Remote video requires the updated app and screen capture authorization on the phone.')}</p>}

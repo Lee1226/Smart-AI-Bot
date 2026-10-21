@@ -135,7 +135,7 @@ async def generate_plan(
             primary=ModelTarget(provider, model, api_key, api_base),
             base_kwargs={
                 "messages": [
-                    {"role": "system", "content": (PLANNER_PROMPT.replace("Android", "HarmonyOS") if platform == "harmony" else PLANNER_PROMPT) + _lang(language)},
+                    {"role": "system", "content": (PLANNER_PROMPT.replace("Android", {"harmony": "HarmonyOS", "ios": "iOS"}[platform]) if platform in {"harmony", "ios"} else PLANNER_PROMPT) + _lang(language)},
                     {"role": "user", "content": task_description},
                 ],
                 "temperature": 0.3,
@@ -189,7 +189,7 @@ async def generate_subgoals(
             primary=ModelTarget(provider, model, api_key, api_base),
             base_kwargs={
                 "messages": [
-                    {"role": "system", "content": (SUBGOAL_PROMPT.replace("Android", "HarmonyOS") if platform == "harmony" else SUBGOAL_PROMPT) + _lang(language)},
+                    {"role": "system", "content": (SUBGOAL_PROMPT.replace("Android", {"harmony": "HarmonyOS", "ios": "iOS"}[platform]) if platform in {"harmony", "ios"} else SUBGOAL_PROMPT) + _lang(language)},
                     {"role": "user", "content": task_description},
                 ],
                 "temperature": 0.3,

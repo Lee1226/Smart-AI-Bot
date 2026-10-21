@@ -31,7 +31,7 @@ class DeviceOut(BaseModel):
     platform: str = "android"
 
     def model_post_init(self, __context):
-        self.platform = "harmony" if self.connection_type == "hdc_bridge" else "android"
+        self.platform = {"hdc_bridge": "harmony", "ios_bridge": "ios"}.get(self.connection_type, "android")
 
     class Config:
         from_attributes = True
@@ -39,7 +39,7 @@ class DeviceOut(BaseModel):
 
 class TokenCreateRequest(BaseModel):
     name: str = "New Device"
-    connection_type: Literal["portal", "browser_usb", "adb_bridge", "hdc_bridge"] = "portal"
+    connection_type: Literal["portal", "browser_usb", "adb_bridge", "hdc_bridge", "ios_bridge"] = "portal"
 
 
 @router.get("", response_model=List[DeviceOut])

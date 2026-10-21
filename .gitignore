@@ -62,3 +62,11 @@ assets/*.mov
 sab-*-bridge*.json
 .test_account_key
 .jwt_secret
+
+# Native helper builds and per-user state (not publication inputs).
+.venv-mac-app/
+tools/macos/build/
+tools/macos/dist/
+test_knowledge/notes/
+docker-compose.override.yml
+.gradle-local/

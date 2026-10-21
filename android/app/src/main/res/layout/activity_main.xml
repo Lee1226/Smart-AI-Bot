@@ -382,6 +382,20 @@
                 android:singleLine="true" />
         </com.google.android.material.textfield.TextInputLayout>
 
+        <Button
+            android:id="@+id/btnVideo"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="开启远程视频（需录屏授权）"
+            android:layout_marginBottom="8dp"
+            style="@style/Widget.Material3.Button.OutlinedButton" />
+        <TextView
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="授权后可在网页选择视频流或截图。只在网页观看时传输视频；可随时停止共享。"
+            android:textSize="12sp"
+            android:layout_marginBottom="12dp" />
+
         <!-- Buttons -->
         <Button
             android:id="@+id/btnConnect"

@@ -31,6 +31,11 @@ class ActionDispatcher(context: Context) {
     suspend fun dispatch(method: String, params: JSONObject): ApiResponse {
         return when (method) {
             "ping" -> handler.ping()
+            "video/start" -> ApiResponse.Success(LiveVideoService.startStream(params.getString("stream_id")))
+            "video/stop" -> {
+                LiveVideoService.stopStream(params.getString("stream_id"))
+                ApiResponse.Success("Video stopped")
+            }
 
             // Tap at absolute pixel coordinates
             "tap" -> handler.performTapAbs(
@@ -102,6 +107,18 @@ class ActionDispatcher(context: Context) {
                         .apply { timeZone = java.util.TimeZone.getDefault() }
                         .format(java.util.Date()))
             )
+
+            // ── Real-recording control ──────────────────────────────────────
+            // Enables/disables streaming real user interactions (tap/scroll/touch)
+            // back to the server as "record_event" pushes.
+            "start_record" -> {
+                AgentAccessibilityService.recording = true
+                ApiResponse.Success("Recording started")
+            }
+            "stop_record" -> {
+                AgentAccessibilityService.recording = false
+                ApiResponse.Success("Recording stopped")
+            }
 
             else -> ApiResponse.Error("Unknown method: $method")
         }

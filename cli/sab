@@ -1,0 +1,467 @@
+#!/usr/bin/env python3
+"""SAB — Smart-AI-Bot CLI.
+
+Trigger Android UI automation tests from scripts, CI, or other AI agents.
+
+Usage:
+    sab devices list
+    sab apk upload <file>
+    sab apk install <device_id> <apk_url>
+    sab suites list
+    sab suites create <file>
+    sab suites show <suite_id>
+    sab run quick <goal> --device <id> [--wait] [--webhook <url>]
+    sab run suite <suite_id> --device <id> [--case <id> ...] [--wait] [--webhook <url>]
+    sab run status <run_id>
+    sab run wait <run_id>
+    sab config set <key> <value>
+    sab config get [key]
+    sab help
+
+Configuration (env vars override ~/.sab.conf):
+    SAB_SERVER   Server base URL (default http://localhost:8000)
+    SAB_API_KEY  API key (sk-...) from the SAB account settings page
+
+Result contract (sab run wait / --wait / status --done):
+    Emits a single JSON object to stdout:
+      {"run_id","status","passed","failed","errored","total","pass_rate","results":[...]}
+    Exit code: 0 = all pass, 1 = any fail/error, 2 = run error/cancelled.
+"""
+
+import argparse
+import json
+import os
+import sys
+import time
+import urllib.error
+import urllib.request
+import urllib.parse
+from pathlib import Path
+
+VERSION = "0.1.0"
+
+CONFIG_PATH = Path.home() / ".sab.conf"
+
+
+# ── Config ────────────────────────────────────────────────────────────────────
+
+def _load_config() -> dict:
+    cfg = {}
+    if CONFIG_PATH.exists():
+        try:
+            for line in CONFIG_PATH.read_text().splitlines():
+                line = line.strip()
+                if not line or line.startswith("#") or "=" not in line:
+                    continue
+                k, v = line.split("=", 1)
+                cfg[k.strip()] = v.strip()
+        except Exception:
+            pass
+    return cfg
+
+
+def _server() -> str:
+    return (os.environ.get("SAB_SERVER") or _load_config().get("server")
+            or "http://localhost:8000").rstrip("/")
+
+
+def _api_key() -> str:
+    return os.environ.get("SAB_API_KEY") or _load_config().get("api_key") or ""
+
+
+# ── HTTP helper ────────────────────────────────────────────────────────────────
+
+def _request(method: str, path: str, body=None, timeout: int = 60):
+    """Return (status, parsed_json). Raises SystemExit on HTTP error."""
+    url = f"{_server()}{path}"
+    headers = {"Accept": "application/json"}
+    key = _api_key()
+    if key:
+        headers["Authorization"] = f"Bearer {key}"
+
+    data = None
+    if body is not None:
+        if isinstance(body, (dict, list)):
+            data = json.dumps(body).encode()
+            headers["Content-Type"] = "application/json"
+        elif isinstance(body, bytes):
+            data = body
+        else:
+            data = str(body).encode()
+
+    req = urllib.request.Request(url, data=data, headers=headers, method=method)
+    try:
+        with urllib.request.urlopen(req, timeout=timeout) as resp:
+            raw = resp.read()
+            if not raw:
+                return resp.status, None
+            return resp.status, json.loads(raw)
+    except urllib.error.HTTPError as e:
+        detail = ""
+        try:
+            detail = json.loads(e.read()).get("detail", "")
+        except Exception:
+            pass
+        print(f"Error {e.code}: {detail}", file=sys.stderr)
+        sys.exit(1)
+    except urllib.error.URLError as e:
+        print(f"Connection error: {e.reason}", file=sys.stderr)
+        sys.exit(1)
+
+
+def _multipart_upload(path: str, file_path: str):
+    """Upload a file as multipart/form-data (urllib, no external deps)."""
+    url = f"{_server()}{path}"
+    boundary = "----sab" + str(int(time.time() * 1000))
+    filename = os.path.basename(file_path)
+    with open(file_path, "rb") as f:
+        content = f.read()
+
+    parts = []
+    parts.append(f"--{boundary}\r\n".encode())
+    parts.append(
+        f'Content-Disposition: form-data; name="file"; filename="{filename}"\r\n'.encode()
+    )
+    parts.append(b"Content-Type: application/vnd.android.package-archive\r\n\r\n")
+    parts.append(content)
+    parts.append(f"\r\n--{boundary}--\r\n".encode())
+    body = b"".join(parts)
+
+    headers = {
+        "Content-Type": f"multipart/form-data; boundary={boundary}",
+        "Accept": "application/json",
+    }
+    key = _api_key()
+    if key:
+        headers["Authorization"] = f"Bearer {key}"
+
+    req = urllib.request.Request(url, data=body, headers=headers, method="POST")
+    try:
+        with urllib.request.urlopen(req, timeout=120) as resp:
+            return resp.status, json.loads(resp.read())
+    except urllib.error.HTTPError as e:
+        detail = ""
+        try:
+            detail = json.loads(e.read()).get("detail", "")
+        except Exception:
+            pass
+        print(f"Error {e.code}: {detail}", file=sys.stderr)
+        sys.exit(1)
+
+
+# ── Result formatting ──────────────────────────────────────────────────────────
+
+def _fmt_run(run: dict) -> dict:
+    """Normalise a run object into the CLI result contract."""
+    return {
+        "run_id": run.get("id", ""),
+        "status": run.get("status", ""),
+        "passed": run.get("passed", 0),
+        "failed": run.get("failed", 0),
+        "errored": run.get("errored", 0),
+        "total": run.get("total", 0),
+        "pass_rate": round(run.get("passed", 0) / max(run.get("total", 0), 1) * 100, 1),
+    }
+
+
+def _fetch_run(run_id: str) -> dict:
+    _, run = _request("GET", f"/api/runs/{run_id}")
+    return run
+
+
+def _fetch_results(run_id: str) -> list:
+    _, results = _request("GET", f"/api/runs/{run_id}/results")
+    return results or []
+
+
+def _wait_for_done(run_id: str, poll: float = 3.0, timeout: float = 0):
+    """Poll until the run leaves pending/running. Returns the final run object."""
+    deadline = time.time() + timeout if timeout else 0
+    while True:
+        run = _fetch_run(run_id)
+        status = run.get("status", "")
+        if status not in ("pending", "running"):
+            return run
+        if deadline and time.time() > deadline:
+            print(f"Timed out waiting for run {run_id}", file=sys.stderr)
+            sys.exit(2)
+        time.sleep(poll)
+
+
+def _emit_full(run_id: str):
+    """Print the full result contract to stdout and set exit code."""
+    run = _fetch_run(run_id)
+    results = _fetch_results(run_id)
+    status = run.get("status", "")
+
+    out = _fmt_run(run)
+    out["results"] = [
+        {
+            "path": r.get("path", ""),
+            "status": r.get("status", ""),
+            "reason": r.get("reason", ""),
+        }
+        for r in results
+    ]
+    print(json.dumps(out, ensure_ascii=False))
+
+    if status == "done" and out["failed"] == 0 and out["errored"] == 0:
+        sys.exit(0)
+    elif status == "done":
+        sys.exit(1)
+    else:  # cancelled / error
+        sys.exit(2)
+
+
+# ── Subcommands ────────────────────────────────────────────────────────────────
+
+def _resolve_device(ref: str) -> str:
+    """Resolve a device reference (UUID id or name) to a device_id.
+
+    Matching order: exact id → exact name → unique substring (name or id) →
+    unique id prefix. Multiple matches → list candidates and exit 1.
+    """
+    _, devices = _request("GET", "/api/devices")
+    devices = devices or []
+
+    # Exact id
+    for d in devices:
+        if d.get("id") == ref:
+            return ref
+
+    # Exact name
+    by_name = [d for d in devices if d.get("name") == ref]
+    if len(by_name) == 1:
+        return by_name[0]["id"]
+
+    # Unique substring match (name or id)
+    lower = ref.lower()
+    matches = [d for d in devices
+               if lower in d.get("name", "").lower() or lower in d.get("id", "").lower()]
+    if len(matches) == 1:
+        return matches[0]["id"]
+    if len(matches) > 1:
+        print(f"设备 '{ref}' 匹配到多个，请用完整 id 指定：", file=sys.stderr)
+        for d in matches:
+            print(f"  {d['id']}  {d['status']}  {d['name']}", file=sys.stderr)
+        sys.exit(1)
+
+    # Unique id prefix
+    prefix = [d for d in devices if d.get("id", "").startswith(ref)]
+    if len(prefix) == 1:
+        return prefix[0]["id"]
+
+    print(f"设备 '{ref}' 未找到", file=sys.stderr)
+    sys.exit(1)
+
+
+def _cmd_devices(args):
+    _, devices = _request("GET", "/api/devices")
+    for d in devices or []:
+        print(f"{d['id']}\t{d['status']}\t{d['name']}")
+    if not devices:
+        print("(no devices)")
+
+
+def _cmd_apk_upload(args):
+    _, out = _multipart_upload("/api/app/upload", args.file)
+    # Resolve the relative apk_url to an absolute URL the device can reach.
+    apk_url = out["apk_url"]
+    if apk_url.startswith("/"):
+        apk_url = f"{_server()}{apk_url}"
+    print(json.dumps({"filename": out["filename"], "size": out["size"], "apk_url": apk_url},
+                     ensure_ascii=False))
+
+
+def _cmd_apk_install(args):
+    apk_url = args.apk_url
+    # Accept a local file path: upload it first.
+    if os.path.exists(apk_url):
+        _, up = _multipart_upload("/api/app/upload", apk_url)
+        apk_url = up["apk_url"]
+        if apk_url.startswith("/"):
+            apk_url = f"{_server()}{apk_url}"
+    _, out = _request("POST", f"/api/devices/{_resolve_device(args.device_id)}/install",
+                      {"apk_url": apk_url})
+    print(json.dumps(out, ensure_ascii=False))
+
+
+def _cmd_suites_list(args):
+    _, data = _request("GET", "/api/suites")
+    # /api/suites 返回分页格式 {"total": N, "items": [...]}，兼容旧版直接 list
+    suites = data.get("items") if isinstance(data, dict) else data
+    for s in suites or []:
+        print(f"{s['id']}\t{s['case_count']} cases\t{s['name']}")
+
+
+def _cmd_suites_create(args):
+    _, out = _multipart_upload("/api/suites", args.file)
+    print(json.dumps(out, ensure_ascii=False))
+
+
+def _cmd_suites_show(args):
+    _, cases = _request("GET", f"/api/suites/{args.suite_id}/cases")
+    for c in cases or []:
+        print(f"{c['id']}\t{c['path']}")
+
+
+def _cmd_run_quick(args):
+    body = {
+        "goal": args.goal,
+        "device_id": _resolve_device(args.device),
+        "webhook_url": args.webhook or "",
+    }
+    _, run = _request("POST", "/api/runs/quick", body)
+    run_id = run["id"]
+    if args.wait:
+        _wait_for_done(run_id)
+        _emit_full(run_id)
+    else:
+        print(json.dumps({"run_id": run_id}, ensure_ascii=False))
+
+
+def _cmd_run_suite(args):
+    device_id = _resolve_device(args.device)
+    if args.case:
+        # Batch run over selected cases
+        body = {
+            "suite_id": args.suite_id,
+            "device_id": device_id,
+            "case_ids": args.case,
+            "base_path": "",
+            "webhook_url": args.webhook or "",
+        }
+        _, run = _request("POST", "/api/runs/batch", body)
+    else:
+        body = {
+            "suite_id": args.suite_id,
+            "device_id": device_id,
+            "webhook_url": args.webhook or "",
+        }
+        _, run = _request("POST", "/api/runs", body)
+    run_id = run["id"]
+    if args.wait:
+        _wait_for_done(run_id)
+        _emit_full(run_id)
+    else:
+        print(json.dumps({"run_id": run_id}, ensure_ascii=False))
+
+
+def _cmd_run_status(args):
+    run = _fetch_run(args.run_id)
+    out = _fmt_run(run)
+    if args.done and run.get("status") in ("done", "cancelled", "error"):
+        _emit_full(args.run_id)
+    else:
+        print(json.dumps(out, ensure_ascii=False))
+
+
+def _cmd_run_wait(args):
+    _wait_for_done(args.run_id)
+    _emit_full(args.run_id)
+
+
+def _cmd_config_set(args):
+    cfg = _load_config()
+    cfg[args.key] = args.value
+    CONFIG_PATH.write_text("".join(f"{k}={v}\n" for k, v in cfg.items()))
+    CONFIG_PATH.chmod(0o600)
+    print(f"Set {args.key}")
+
+
+def _cmd_config_get(args):
+    cfg = _load_config()
+    if args.key:
+        print(cfg.get(args.key, ""))
+    else:
+        for k, v in cfg.items():
+            print(f"{k}={'[configured]' if k == 'api_key' and v else v}")
+
+
+# ── Main ───────────────────────────────────────────────────────────────────────
+
+def build_parser():
+    p = argparse.ArgumentParser(prog="sab", description="Smart-AI-Bot CLI")
+    p.add_argument("--version", action="version", version=f"sab {VERSION}")
+    sub = p.add_subparsers(dest="command")
+
+    # devices
+    d = sub.add_parser("devices")
+    dd = d.add_subparsers(dest="sub")
+    dd.add_parser("list").set_defaults(func=_cmd_devices)
+
+    # apk
+    a = sub.add_parser("apk")
+    aa = a.add_subparsers(dest="sub")
+    up = aa.add_parser("upload")
+    up.add_argument("file")
+    up.set_defaults(func=_cmd_apk_upload)
+    ins = aa.add_parser("install")
+    ins.add_argument("device_id")
+    ins.add_argument("apk_url")
+    ins.set_defaults(func=_cmd_apk_install)
+
+    # suites
+    s = sub.add_parser("suites")
+    ss = s.add_subparsers(dest="sub")
+    ss.add_parser("list").set_defaults(func=_cmd_suites_list)
+    sc = ss.add_parser("create")
+    sc.add_argument("file")
+    sc.set_defaults(func=_cmd_suites_create)
+    sh = ss.add_parser("show")
+    sh.add_argument("suite_id")
+    sh.set_defaults(func=_cmd_suites_show)
+
+    # run
+    r = sub.add_parser("run")
+    rr = r.add_subparsers(dest="sub")
+
+    q = rr.add_parser("quick")
+    q.add_argument("goal")
+    q.add_argument("--device", required=True)
+    q.add_argument("--wait", action="store_true")
+    q.add_argument("--webhook")
+    q.set_defaults(func=_cmd_run_quick)
+
+    ru = rr.add_parser("suite")
+    ru.add_argument("suite_id")
+    ru.add_argument("--device", required=True)
+    ru.add_argument("--case", action="append", help="case id (repeatable); omit to run all")
+    ru.add_argument("--wait", action="store_true")
+    ru.add_argument("--webhook")
+    ru.set_defaults(func=_cmd_run_suite)
+
+    st = rr.add_parser("status")
+    st.add_argument("run_id")
+    st.add_argument("--done", action="store_true", help="emit full result if finished")
+    st.set_defaults(func=_cmd_run_status)
+
+    w = rr.add_parser("wait")
+    w.add_argument("run_id")
+    w.set_defaults(func=_cmd_run_wait)
+
+    # config
+    c = sub.add_parser("config")
+    cc = c.add_subparsers(dest="sub")
+    cs = cc.add_parser("set")
+    cs.add_argument("key")
+    cs.add_argument("value")
+    cs.set_defaults(func=_cmd_config_set)
+    cg = cc.add_parser("get")
+    cg.add_argument("key", nargs="?")
+    cg.set_defaults(func=_cmd_config_get)
+
+    return p
+
+
+def main():
+    parser = build_parser()
+    args = parser.parse_args()
+    if not getattr(args, "func", None):
+        parser.print_help()
+        sys.exit(0)
+    args.func(args)
+
+
+if __name__ == "__main__":
+    main()

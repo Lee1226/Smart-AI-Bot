@@ -129,7 +129,7 @@ export default function QuickRun() {
               >
                 <option value="">— {t('选择设备', 'Select device')} —</option>
                 {onlineDevices.map(d => (
-                  <option key={d.id} value={d.id}>{d.name}{d.connection_type === 'hdc_bridge' ? ' · 鸿蒙' : ''}</option>
+                  <option key={d.id} value={d.id}>{d.name}{d.connection_type === 'hdc_bridge' ? ' · 鸿蒙' : d.connection_type === 'ios_bridge' ? ' · iOS' : ''}</option>
                 ))}
               </select>
             )}

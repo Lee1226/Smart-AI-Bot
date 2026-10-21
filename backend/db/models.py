@@ -26,6 +26,16 @@ class Device(Base):
     account_id: Mapped[Optional[str]] = mapped_column(String, nullable=True)
 
 
+class IosHost(Base):
+    """Account-scoped Mac helper; never stores the helper's bearer token."""
+    __tablename__ = "ios_hosts"
+    id: Mapped[str] = mapped_column(String, primary_key=True, default=_uuid)
+    account_id: Mapped[str] = mapped_column(String, index=True)
+    name: Mapped[str] = mapped_column(String)
+    token_hash: Mapped[str] = mapped_column(String, unique=True)
+    devices_json: Mapped[str] = mapped_column(Text, default='{}')
+
+
 class TestSuite(Base):
     """A parsed test file (XMind or Markdown)."""
     __tablename__ = "test_suites"

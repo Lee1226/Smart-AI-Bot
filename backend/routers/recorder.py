@@ -226,6 +226,8 @@ async def start_record(device_id: str, request: Request):
     """Begin real recording: the Portal starts streaming the user's taps/scrolls."""
     await _authorize_device(request, device_id)
     device = _get_device(device_id)
+    if device.platform in {"ios", "harmony"}:
+        raise HTTPException(status_code=400, detail="当前 USB 桥接不支持真机触摸监控，请使用网页录制")
     _recording.add(device_id)
     _record_events[device_id] = []
     # Tell the Portal to start capturing touch/click events (best-effort; older
