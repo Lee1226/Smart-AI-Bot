@@ -126,7 +126,7 @@ export default function LivePanel({ device, defaultMode = 'off', storageKey = 'l
   const videoUnavailable = !screenshotsOnly && mode === 'video' && !(usingScrcpy || usingRemote)
   const videoSource = useMemo(() => device
     ? device.connection_type === 'portal' ? websocketH264Source(h264WsUrl(device.id)) : websocketH264Source(scrcpyWsUrl(device.id))
-    : undefined, [device?.id, localUsb, remoteVideo, mode, reloadKey])
+    : undefined, [device?.id, device?.connection_type, localUsb, remoteVideo, mode, reloadKey])
   const videoFailed = (message: string) => { setStreamError(message); setAdbFailed(true) }
   const canStream = !!device && mode !== 'off' && online
 
@@ -194,8 +194,8 @@ export default function LivePanel({ device, defaultMode = 'off', storageKey = 'l
       {/* Status line */}
       <div className="mt-2 text-center text-xs text-gray-400 font-mono">
         {device && mode !== 'off' && canStream
-          ? usingUsb
-            ? t('本地 USB · 实时录屏 H.264', 'Local USB · live recording H.264')
+          ? usingScrcpy
+            ? t('Scrcpy · 实时 H.264', 'Scrcpy · live H.264')
             : usingRemote
             ? t('远程设备 · H.264 视频流', 'Remote device · H.264 video')
             : videoUnavailable ? t('视频流未就绪', 'Video not ready') : ios ? t('iOS USB · 截图刷新', 'iOS USB · screenshot refresh') : harmony ? t('鸿蒙 HDC · 截图刷新', 'Harmony HDC · screenshot refresh') : t('截图 · ~1 fps', 'Screenshot · ~1 fps')
