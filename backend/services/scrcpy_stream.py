@@ -144,16 +144,12 @@ class ScrcpyStreamer:
         print("[scrcpy] 清理: 快速清理...", flush=True)
 
         # 并行执行清理操作，使用非常短的超时
-        async def kill_process():
-            cmd = self._adb_cmd("shell", "pkill -9 app_process 2>/dev/null; exit 0")
-            await self._run_cmd(cmd, timeout=2)
-
         async def remove_forward():
             cmd = self._adb_cmd("forward", "--remove", f"tcp:{self.port}")
             await self._run_cmd(cmd, timeout=1)
 
         # 并行执行，不等待结果
-        await asyncio.gather(kill_process(), remove_forward(), return_exceptions=True)
+        await asyncio.gather(remove_forward(), return_exceptions=True)
         print("[scrcpy] 清理: 完成", flush=True)
 
     async def _push_server(self) -> None:
