@@ -12,6 +12,8 @@ from __future__ import annotations
 import asyncio
 import anyio
 import hashlib
+import json
+import zlib
 import io
 import logging
 import os
@@ -33,6 +35,7 @@ from db.database import AsyncSessionLocal
 from db.models import ApiKey, Device, User
 from ws.portal_ws import connected_devices, send_rpc
 from ws.video import VideoSession, sessions
+from services.scrcpy_stream import ScrcpyStreamer
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/api/devices", tags=["live"])
@@ -313,3 +316,83 @@ async def _stream_remote(websocket: WebSocket, conn):
                 await websocket.close(code=close_code)
             except RuntimeError:
                 pass
+
+
+
+async def stream_scrcpy(websocket: WebSocket, device_id: str):
+    """Authenticated Scrcpy H.264 preview from a server-reachable ADB device.
+
+    For multiple attached phones, configure SCRCPY_DEVICE_MAP as a JSON object
+    mapping Smart-AI-Bot device IDs to ADB serials. With one connected ADB device,
+    that device is selected automatically.
+    """
+    identity = await _websocket_identity(websocket)
+    if not identity:
+        await websocket.close(code=4401)
+        return
+
+    account_id, role = identity
+    async with AsyncSessionLocal() as db:
+        device = (await db.execute(select(Device).where(
+            Device.id == device_id, Device.account_id == account_id
+        ))).scalar_one_or_none()
+        is_operator = account_id == await operator_account_id(db) and role in {"owner", "admin"}
+
+    if not device:
+        await websocket.close(code=4404)
+        return
+    if not is_operator:
+        await websocket.close(code=4403)
+        return
+
+    try:
+        mapping = json.loads(os.getenv("SCRCPY_DEVICE_MAP", "{}"))
+        serial = mapping.get(device_id) if isinstance(mapping, dict) else None
+    except (ValueError, TypeError):
+        logger.error("SCRCPY_DEVICE_MAP must be a JSON object mapping device IDs to ADB serials")
+        await websocket.close(code=1011, reason="Invalid SCRCPY_DEVICE_MAP")
+        return
+
+    serials = await asyncio.to_thread(_adb_serials)
+    if serial:
+        if serial not in serials:
+            await websocket.close(code=4404, reason="Mapped ADB serial is not connected")
+            return
+    elif len(serials) == 1:
+        serial = serials[0]
+    elif len(serials) == 0:
+        await websocket.close(code=4404, reason="No ADB device available")
+        return
+    else:
+        await websocket.close(code=4408, reason="Configure SCRCPY_DEVICE_MAP for multiple devices")
+        return
+
+    # Keep port forwards independent for concurrent devices.
+    port = 27183 + (zlib.crc32(device_id.encode("utf-8")) % 10000)
+    streamer = ScrcpyStreamer(device_id=serial, max_size=1280, bit_rate=4_000_000, port=port)
+    await websocket.accept()
+    try:
+        await streamer.start()
+        metadata = await asyncio.wait_for(streamer.read_video_metadata(), timeout=15)
+        await websocket.send_json({
+            "type": "metadata",
+            "codec": metadata.codec,
+            "width": metadata.width,
+            "height": metadata.height,
+            "device_name": metadata.device_name,
+        })
+        async for packet in streamer.iter_packets():
+            # H264Canvas expects Annex-B bytes. Both the codec configuration
+            # packet (SPS/PPS) and encoded frame payloads are forwarded unchanged.
+            if packet.data:
+                await websocket.send_bytes(packet.data)
+    except (WebSocketDisconnect, RuntimeError, asyncio.CancelledError):
+        pass
+    except Exception as exc:
+        logger.warning("Scrcpy stream failed for device %s: %s", device_id, exc)
+        try:
+            await websocket.close(code=1011, reason="Scrcpy stream failed")
+        except RuntimeError:
+            pass
+    finally:
+        streamer.stop()

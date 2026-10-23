@@ -4,7 +4,7 @@ import { fetchDeviceCapabilities, Device, getToken } from '../lib/api'
 import { useT } from '../lib/i18n'
 import H264Canvas from './H264Canvas'
 import H264Player from './H264Player'
-import { browserUsbH264Source, subscribeUsb, usbSnapshot } from '../lib/browserUsb'
+import { subscribeUsb, usbSnapshot } from '../lib/browserUsb'
 import { websocketH264Source } from '../lib/h264Stream'
 
 // WebCodecs (the smooth canvas path) only exists in a secure context
@@ -26,9 +26,13 @@ const MODES: { key: Mode; label: string; labelEn: string }[] = [
 function h264WsUrl(id: string): string {
   const proto = location.protocol === 'https:' ? 'wss:' : 'ws:'
   const token = getToken()
-  const source = 'device'
-  const qs = `?source=${source}${token ? `&token=${encodeURIComponent(token)}` : ''}`
-  return `${proto}//${location.host}/v1/devices/${id}/live${qs}`
+  return `${proto}//${location.host}/v1/devices/${id}/live?source=device${token ? `&token=${encodeURIComponent(token)}` : ''}`
+}
+
+function scrcpyWsUrl(id: string): string {
+  const proto = location.protocol === 'https:' ? 'wss:' : 'ws:'
+  const token = getToken()
+  return `${proto}//${location.host}/v1/devices/${id}/scrcpy${token ? `?token=${encodeURIComponent(token)}` : ''}`
 }
 
 // Screenshot mode: poll single JPEG frames (chained on load/error) instead of a
@@ -117,12 +121,12 @@ export default function LivePanel({ device, defaultMode = 'off', storageKey = 'l
   const screenshotsOnly = harmony || ios
   const wantsVideo = !screenshotsOnly && (mode === 'auto' || mode === 'video')
   const remoteVideo = !!caps?.video_available
-  const usingUsb = wantsVideo && localUsb && !adbFailed
-  const usingRemote = wantsVideo && remoteVideo && !localUsb && !adbFailed
-  const videoUnavailable = !screenshotsOnly && mode === 'video' && !(usingUsb || usingRemote)
+  const usingScrcpy = wantsVideo && !!device && device.connection_type !== 'portal' && !screenshotsOnly && !adbFailed
+  const usingRemote = wantsVideo && remoteVideo && device?.connection_type === 'portal' && !adbFailed
+  const videoUnavailable = !screenshotsOnly && mode === 'video' && !(usingScrcpy || usingRemote)
   const videoSource = useMemo(() => device
-    ? localUsb ? browserUsbH264Source(device.id) : websocketH264Source(h264WsUrl(device.id))
-    : undefined, [device?.id, localUsb, remoteVideo, mode, reloadKey])
+    ? device.connection_type === 'portal' ? websocketH264Source(h264WsUrl(device.id)) : websocketH264Source(scrcpyWsUrl(device.id))
+    : undefined, [device?.id, device?.connection_type, localUsb, remoteVideo, mode, reloadKey])
   const videoFailed = (message: string) => { setStreamError(message); setAdbFailed(true) }
   const canStream = !!device && mode !== 'off' && online
 
@@ -164,7 +168,7 @@ export default function LivePanel({ device, defaultMode = 'off', storageKey = 'l
           <Placeholder text={t('设备离线，无法取流', 'Device offline, cannot stream')} />
         ) : videoUnavailable ? (
           <Placeholder text={streamError || t('视频未就绪。远程 App 请先在手机开启远程视频并授权录屏；也可切换截图。', 'Video not ready. Enable remote video and authorize screen capture in the phone app, or select Screenshot.')} />
-        ) : (usingUsb || usingRemote) && videoSource ? (
+        ) : (usingScrcpy || usingRemote) && videoSource ? (
           CAN_WEBCODECS ? (
             <H264Canvas
               key={`${device.id}-h264-${reloadKey}`}
@@ -190,8 +194,8 @@ export default function LivePanel({ device, defaultMode = 'off', storageKey = 'l
       {/* Status line */}
       <div className="mt-2 text-center text-xs text-gray-400 font-mono">
         {device && mode !== 'off' && canStream
-          ? usingUsb
-            ? t('本地 USB · 实时录屏 H.264', 'Local USB · live recording H.264')
+          ? usingScrcpy
+            ? t('Scrcpy · 实时 H.264', 'Scrcpy · live H.264')
             : usingRemote
             ? t('远程设备 · H.264 视频流', 'Remote device · H.264 video')
             : videoUnavailable ? t('视频流未就绪', 'Video not ready') : ios ? t('iOS USB · 截图刷新', 'iOS USB · screenshot refresh') : harmony ? t('鸿蒙 HDC · 截图刷新', 'Harmony HDC · screenshot refresh') : t('截图 · ~1 fps', 'Screenshot · ~1 fps')

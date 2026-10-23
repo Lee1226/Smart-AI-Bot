@@ -107,6 +107,7 @@ app.add_api_websocket_route("/v1/providers/video", provider_video_endpoint)
 
 # Live H.264 screen stream (ADB screenrecord) — under /v1 so the WS proxy applies
 app.add_api_websocket_route("/v1/devices/{device_id}/live", live.stream_h264)
+app.add_api_websocket_route("/v1/devices/{device_id}/scrcpy", live.stream_scrcpy)
 
 # Serve built frontend (production)
 FRONTEND_DIST = Path(__file__).parent.parent / "frontend" / "dist"
