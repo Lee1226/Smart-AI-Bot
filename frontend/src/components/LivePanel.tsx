@@ -26,9 +26,14 @@ const MODES: { key: Mode; label: string; labelEn: string }[] = [
 function h264WsUrl(id: string): string {
   const proto = location.protocol === 'https:' ? 'wss:' : 'ws:'
   const token = getToken()
-  const source = 'device'
-  const qs = `?source=${source}${token ? `&token=${encodeURIComponent(token)}` : ''}`
-  return `${proto}//${location.host}/v1/devices/${id}/live${qs}`
+  const qs = token ? `?token=${encodeURIComponent(token)}` : ''
+  return `${proto}//${location.host}/v1/devices/${id}/live?source=device${token ? `&token=${encodeURIComponent(token)}` : ''}`
+}
+
+function scrcpyWsUrl(id: string): string {
+  const proto = location.protocol === 'https:' ? 'wss:' : 'ws:'
+  const token = getToken()
+  return `${proto}//${location.host}/v1/devices/${id}/scrcpy${token ? `?token=${encodeURIComponent(token)}` : ''}`
 }
 
 // Screenshot mode: poll single JPEG frames (chained on load/error) instead of a
@@ -121,7 +126,7 @@ export default function LivePanel({ device, defaultMode = 'off', storageKey = 'l
   const usingRemote = wantsVideo && remoteVideo && !localUsb && !adbFailed
   const videoUnavailable = !screenshotsOnly && mode === 'video' && !(usingUsb || usingRemote)
   const videoSource = useMemo(() => device
-    ? localUsb ? browserUsbH264Source(device.id) : websocketH264Source(h264WsUrl(device.id))
+    ? device.connection_type === 'portal' ? websocketH264Source(h264WsUrl(device.id)) : websocketH264Source(scrcpyWsUrl(device.id))
     : undefined, [device?.id, localUsb, remoteVideo, mode, reloadKey])
   const videoFailed = (message: string) => { setStreamError(message); setAdbFailed(true) }
   const canStream = !!device && mode !== 'off' && online
