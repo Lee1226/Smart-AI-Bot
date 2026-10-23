@@ -121,9 +121,9 @@ export default function LivePanel({ device, defaultMode = 'off', storageKey = 'l
   const screenshotsOnly = harmony || ios
   const wantsVideo = !screenshotsOnly && (mode === 'auto' || mode === 'video')
   const remoteVideo = !!caps?.video_available
-  const usingUsb = wantsVideo && localUsb && !adbFailed
-  const usingRemote = wantsVideo && remoteVideo && !localUsb && !adbFailed
-  const videoUnavailable = !screenshotsOnly && mode === 'video' && !(usingUsb || usingRemote)
+  const usingScrcpy = wantsVideo && !!device && device.connection_type !== 'portal' && !screenshotsOnly && !adbFailed
+  const usingRemote = wantsVideo && remoteVideo && device?.connection_type === 'portal' && !adbFailed
+  const videoUnavailable = !screenshotsOnly && mode === 'video' && !(usingScrcpy || usingRemote)
   const videoSource = useMemo(() => device
     ? device.connection_type === 'portal' ? websocketH264Source(h264WsUrl(device.id)) : websocketH264Source(scrcpyWsUrl(device.id))
     : undefined, [device?.id, localUsb, remoteVideo, mode, reloadKey])
@@ -168,7 +168,7 @@ export default function LivePanel({ device, defaultMode = 'off', storageKey = 'l
           <Placeholder text={t('设备离线，无法取流', 'Device offline, cannot stream')} />
         ) : videoUnavailable ? (
           <Placeholder text={streamError || t('视频未就绪。远程 App 请先在手机开启远程视频并授权录屏；也可切换截图。', 'Video not ready. Enable remote video and authorize screen capture in the phone app, or select Screenshot.')} />
-        ) : (usingUsb || usingRemote) && videoSource ? (
+        ) : (usingScrcpy || usingRemote) && videoSource ? (
           CAN_WEBCODECS ? (
             <H264Canvas
               key={`${device.id}-h264-${reloadKey}`}
