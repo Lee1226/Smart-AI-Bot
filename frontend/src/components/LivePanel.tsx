@@ -4,7 +4,7 @@ import { fetchDeviceCapabilities, Device, getToken } from '../lib/api'
 import { useT } from '../lib/i18n'
 import H264Canvas from './H264Canvas'
 import H264Player from './H264Player'
-import { browserUsbH264Source, subscribeUsb, usbSnapshot } from '../lib/browserUsb'
+import { subscribeUsb, usbSnapshot } from '../lib/browserUsb'
 import { websocketH264Source } from '../lib/h264Stream'
 
 // WebCodecs (the smooth canvas path) only exists in a secure context
@@ -26,7 +26,6 @@ const MODES: { key: Mode; label: string; labelEn: string }[] = [
 function h264WsUrl(id: string): string {
   const proto = location.protocol === 'https:' ? 'wss:' : 'ws:'
   const token = getToken()
-  const qs = token ? `?token=${encodeURIComponent(token)}` : ''
   return `${proto}//${location.host}/v1/devices/${id}/live?source=device${token ? `&token=${encodeURIComponent(token)}` : ''}`
 }
 
