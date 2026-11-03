@@ -31,6 +31,7 @@ class DeviceOut(BaseModel):
     connection_type: str = "portal"
     platform: str = "android"
     adb_serial: str | None = None
+    adb_auto_connect: bool = True
 
     def model_post_init(self, __context):
         self.platform = {"hdc_bridge": "harmony", "ios_bridge": "ios"}.get(self.connection_type, "android")
@@ -63,6 +64,7 @@ async def list_devices(request: Request, db: AsyncSession = Depends(get_db)):
             id=d.id,
             connection_type=d.connection_type,
             adb_serial=d.adb_serial,
+            adb_auto_connect=d.adb_auto_connect,
             name=d.name,
             token=d.token,
             status=status,
@@ -82,6 +84,7 @@ async def create_device(req: TokenCreateRequest, request: Request, db: AsyncSess
         id=device.id,
         connection_type=device.connection_type,
         adb_serial=device.adb_serial,
+        adb_auto_connect=device.adb_auto_connect,
         name=device.name,
         token=device.token,
         status="offline",
@@ -130,7 +133,7 @@ async def attach_local_adb(req: LocalAdbAttachRequest, request: Request, db: Asy
         await db.refresh(existing)
         return DeviceOut(
             id=existing.id, connection_type=existing.connection_type, adb_serial=serial,
-            name=existing.name, token=existing.token, status="online",
+            adb_auto_connect=True, name=existing.name, token=existing.token, status="online",
             last_seen=existing.last_seen.isoformat() if existing.last_seen else "",
         )
     device = Device(
@@ -145,7 +148,7 @@ async def attach_local_adb(req: LocalAdbAttachRequest, request: Request, db: Asy
     local_adb.bind_device(device.id, serial)
     return DeviceOut(
         id=device.id, connection_type=device.connection_type, adb_serial=serial,
-        name=device.name, token=device.token, status="online",
+        adb_auto_connect=True, name=device.name, token=device.token, status="online",
         last_seen=device.last_seen.isoformat() if device.last_seen else "",
     )
 
