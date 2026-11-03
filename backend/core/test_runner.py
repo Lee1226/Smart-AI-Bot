@@ -279,8 +279,7 @@ async def execute_batch_run(run_id: str, state: "RunState", base_path: str,
         safe = [cid for cid in ordered if not _is_destructive(f"{case_map[cid].path} {case_map[cid].expected}")]
         ordered = safe + [cid for cid in ordered if cid not in safe]
 
-        conn = connected_devices.get(device_id)
-        if conn is None or not conn.is_connected:
+        if not WebSocketDevice(device_id).is_connected():
             await emit(f"ERROR: Device {device_id} is not connected"); return
         device = WebSocketDevice(device_id)
         settings = await load_settings(account_id)
@@ -526,8 +525,7 @@ async def execute_tree_run(run_id: str, state: "RunState", max_steps: int = 20,
         if project_app_package:
             await emit(f"目标应用: {project_app_package} · 平台: {WebSocketDevice(device_id).platform}")
 
-        conn = connected_devices.get(device_id)
-        if conn is None or not conn.is_connected:
+        if not WebSocketDevice(device_id).is_connected():
             await emit(f"ERROR: Device {device_id} is not connected"); return
         device = WebSocketDevice(device_id)
         settings = await load_settings(account_id)
@@ -797,8 +795,7 @@ async def execute_replay_run(
                 select(TestResult).where(TestResult.run_id == run_id)
             )).scalars().all()}
 
-        conn = connected_devices.get(device_id)
-        if conn is None or not conn.is_connected:
+        if not WebSocketDevice(device_id).is_connected():
             async with AsyncSessionLocal() as session:
                 await session.execute(update(TestRun).where(TestRun.id == run_id)
                                      .values(status="error", finished_at=datetime.utcnow()))
@@ -955,8 +952,7 @@ async def execute_run(
             result_rows = {r.case_id: r for r in res_result.scalars().all()}
 
         # Check device is connected
-        conn = connected_devices.get(device_id)
-        if conn is None or not conn.is_connected:
+        if not WebSocketDevice(device_id).is_connected():
             async with AsyncSessionLocal() as session:
                 await session.execute(
                     update(TestRun).where(TestRun.id == run_id)
