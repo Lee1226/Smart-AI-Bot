@@ -202,7 +202,7 @@ async def rpc(device_id: str, method: str, params: dict[str, Any] | None = None,
             text = base64.b64decode(params.get("base64_text", "")).decode("utf-8")
             if any(ord(ch) > 127 for ch in text):
                 raise RuntimeError("当前 ADB 原生输入不支持中文/Unicode；请使用支持 Unicode 的输入法桥接方式")
-            escaped = text.replace("%", "%25").replace(" ", "%s").replace("&", "\\&").replace(";", "\\;").replace("(", "\\(").replace(")", "\\)")
+            escaped = text.replace("%", "%25").replace(" ", "%s")
             await _shell(serial, "input", "text", escaped, timeout=15)
             return "OK"
         if method == "globalAction":
@@ -220,14 +220,16 @@ async def rpc(device_id: str, method: str, params: dict[str, Any] | None = None,
             if activity:
                 await _shell(serial, "am", "start", "-n", f"{package}/{activity}", timeout=30)
             else:
-                await _shell(serial, "monkey", "-p", package, "-c", "android.intent.category.LAUNCHER", "1", timeout=30)
+                output = await _shell(serial, "monkey", "-p", package, "-c", "android.intent.category.LAUNCHER", "1", timeout=30)
+                if "no activities found" in output.lower() or "monkey aborted" in output.lower() or "error" in output.lower():
+                    return output
             return f"Launched {package}"
         if method == "app/stop":
             package = str(params.get("package", "")).strip()
             await _shell(serial, "am", "force-stop", package)
             return f"Force-stopped {package}"
         if method == "packages":
-            output = await _shell(serial, "pm", "list", "packages", "-3", timeout=30)
+            output = await _shell(serial, "pm", "list", "packages", timeout=30)
             return [{"packageName": line.split(":", 1)[-1]} for line in output.splitlines() if line.startswith("package:")]
         if method == "install":
             raise RuntimeError("本地 ADB 模式暂不支持通过 URL 安装 APK；请使用 adb install 或 Portal App 配对方式")
