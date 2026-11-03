@@ -32,6 +32,7 @@ from auth.access import require_device
 from db.database import AsyncSessionLocal
 from db.models import TestCase, TestSuite
 from ws.portal_ws import connected_devices
+from agent import local_adb
 
 logger = logging.getLogger(__name__)
 
@@ -158,10 +159,10 @@ class SaveResponse(BaseModel):
 # ── Helpers ───────────────────────────────────────────────────────────────────
 
 def _get_device(device_id: str) -> WebSocketDevice:
-    conn = connected_devices.get(device_id)
-    if conn is None or not conn.is_connected:
+    device = WebSocketDevice(device_id)
+    if not device.is_connected():
         raise HTTPException(status_code=400, detail=f"Device '{device_id}' is not connected")
-    return WebSocketDevice(device_id)
+    return device
 
 
 def _step_description(action: str, args: dict, elements: list) -> str:
@@ -228,6 +229,9 @@ async def start_record(device_id: str, request: Request):
     device = _get_device(device_id)
     if device.platform in {"ios", "harmony"}:
         raise HTTPException(status_code=400, detail="当前 USB 桥接不支持真机触摸监控，请使用网页录制")
+    if local_adb.is_bound(device_id):
+        return {"ok": True, "device_id": device_id, "mode": "manual",
+                "message": "本机 ADB 模式不支持手机端触摸事件监听，请通过网页录制器的操作按钮录制。"}
     _recording.add(device_id)
     _record_events[device_id] = []
     # Tell the Portal to start capturing touch/click events (best-effort; older
@@ -244,6 +248,8 @@ async def stop_record(device_id: str, request: Request):
     """End real recording and return the captured events."""
     await _authorize_device(request, device_id)
     device = _get_device(device_id)
+    if local_adb.is_bound(device_id):
+        return {"ok": True, "events": [], "mode": "manual"}
     _recording.discard(device_id)
     try:
         await device._rpc("stop_record", {})
@@ -386,9 +392,5 @@ async def save_recording(req: SaveRequest, request: Request):
 async def raw_state(device_id: str, request: Request):
     """DEBUG: return raw Portal state RPC response (unprocessed a11y tree)."""
     await _authorize_device(request, device_id)
-    conn = connected_devices.get(device_id)
-    if conn is None or not conn.is_connected:
-        raise HTTPException(status_code=400, detail=f"Device '{device_id}' not connected")
-    from ws.portal_ws import send_rpc
-    raw = await send_rpc(conn, "state", {"filter": True}, timeout=30.0)
-    return raw
+    device = _get_device(device_id)
+    return await device._rpc("state", {"filter": True}, timeout=30.0)
