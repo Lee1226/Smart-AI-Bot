@@ -1,10 +1,10 @@
-import { useState, useEffect, useSyncExternalStore } from 'react'
+import { useState, useEffect } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { QRCodeSVG } from 'qrcode.react'
 import {
   fetchDevices, createDevice, deleteDevice, renameDevice, fetchAppInfo, fetchServerInfo, Device,
+  fetchLocalAdbDevices, attachLocalAdbDevice, detachLocalAdbDevice,
 } from '../lib/api'
-import { connectUsb, disconnectUsb, usbSnapshot, subscribeUsb, usbSupported } from '../lib/browserUsb'
 import DeviceWall from '../components/DeviceWall'
 import AdbBridgeSetup from '../components/AdbBridgeSetup'
 import { useT } from '../lib/i18n'
@@ -46,7 +46,6 @@ function buildConnectUri(device: Device, lanIp?: string, backendPort?: number): 
 }
 
 export default function Devices() {
-  const usb = useSyncExternalStore(subscribeUsb, usbSnapshot)
   const qc = useQueryClient()
   const t = useT()
   const [newName, setNewName] = useState('')
@@ -72,10 +71,24 @@ export default function Devices() {
     setSelectedId(preferred?.id ?? null)
   }, [devices, selectedId])
 
-  useEffect(() => {
-    qc.invalidateQueries({ queryKey: ['devices'] })
-    if (usb.deviceId) setSelectedId(usb.deviceId)
-  }, [usb.phase, usb.deviceId, qc])
+  const { data: localAdb, isLoading: adbLoading, refetch: refreshLocalAdb } = useQuery({
+    queryKey: ['local-adb-devices'],
+    queryFn: fetchLocalAdbDevices,
+    refetchInterval: 5000,
+    retry: false,
+  })
+
+  const attachAdbMut = useMutation({
+    mutationFn: (serial: string) => attachLocalAdbDevice(serial),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['devices'] })
+      qc.invalidateQueries({ queryKey: ['local-adb-devices'] })
+    },
+  })
+  const detachAdbMut = useMutation({
+    mutationFn: detachLocalAdbDevice,
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['devices'] }),
+  })
 
   const { data: appInfo } = useQuery({ queryKey: ['app-info'], queryFn: fetchAppInfo })
   const { data: serverInfo } = useQuery({ queryKey: ['server-info'], queryFn: fetchServerInfo })
@@ -137,14 +150,32 @@ export default function Devices() {
       <div className="bg-white border rounded-lg p-4 mb-5">
         <div className="flex items-center justify-between gap-4">
           <div>
-            <h2 className="font-semibold">{t('Android · 浏览器 USB 连接', 'Android · Browser USB')}</h2>
-            <p className="text-sm text-gray-500 mt-1">{t('电脑 Chrome/Edge + USB 调试，无需安装辅助 App。AI 仍由 SAB 服务端执行。', 'Desktop Chrome/Edge + USB debugging. No helper app. SAB server still runs AI.')}</p>
+            <h2 className="font-semibold">{t('Android · 本机 ADB USB 直连', 'Android · Local ADB USB')}</h2>
+            <p className="text-sm text-gray-500 mt-1">{t('手机通过 USB 连接到运行 SAB 后端的 Windows 电脑，由后端直接调用本机 ADB。无需浏览器 WebUSB、Portal APK 或手动启动桥接脚本。', 'Connect the phone to the Windows host running the SAB backend. The backend uses its local ADB directly — no browser WebUSB, Portal APK or manual bridge script.')}</p>
           </div>
-          {usb.phase === 'idle' ? <button className="bg-primary text-white rounded px-4 py-2 text-sm shrink-0 disabled:opacity-50" disabled={!usbSupported()} onClick={() => void connectUsb()}>{t('连接 USB 手机', 'Connect USB phone')}</button>
-            : <button className="border rounded px-4 py-2 text-sm shrink-0" onClick={() => disconnectUsb()}>{t('断开 USB', 'Disconnect USB')}</button>}
+          <button className="bg-primary text-white rounded px-4 py-2 text-sm shrink-0 disabled:opacity-50" disabled={adbLoading} onClick={() => void refreshLocalAdb()}>
+            {adbLoading ? t('扫描中…', 'Scanning…') : t('刷新 USB 设备', 'Refresh USB devices')}
+          </button>
         </div>
-        <p className="text-sm mt-2" role="status">{usb.message || (!usbSupported() ? t('当前浏览器或地址不支持，请用 Chrome/Edge 在 HTTPS 或 localhost 打开。', 'Use Chrome/Edge on HTTPS or localhost.') : t('手机打开 USB 调试，连接后保持此网页打开；切换测试页面不影响连接。', 'Enable USB debugging and keep this tab open. Navigation preserves the connection.'))}</p>
-        <p className="text-xs text-gray-400 mt-1">{t('试用版：支持实时画面、截图、UI 树、点击滑动、按键和启动应用。中文/清空输入、录像保存、APK 安装暂不支持。以下 App 配对方式继续可用。', 'Preview: live video, screenshots, UI tree, tap/swipe, keys and app launch. Unicode/clear input, video saving and APK installation are not supported. App pairing remains available below.')}</p>
+        {!localAdb?.available && <p className="text-sm text-amber-700 mt-3">{t('后端未检测到 adb。请在运行后端的 Windows 电脑安装 Android SDK Platform-Tools，并将 adb.exe 加入 PATH 后重启后端。', 'ADB was not found by the backend. Install Android SDK Platform-Tools on the Windows host, add adb.exe to PATH, then restart the backend.')}</p>}
+        {localAdb?.available && localAdb.devices.length === 0 && <p className="text-sm text-gray-500 mt-3">{t('未发现已授权的 Android USB 设备。请开启手机「开发者选项 → USB 调试」，连接电脑并在手机上确认 RSA 授权。', 'No authorized Android USB devices found. Enable Developer options → USB debugging, connect the phone and approve the RSA prompt.')}</p>}
+        {!!localAdb?.devices.length && (
+          <div className="mt-3 divide-y">
+            {localAdb.devices.map(phone => {
+              const attached = devices.some(d => d.connection_type === 'adb_usb' && d.adb_serial === phone.serial)
+              return <div key={phone.serial} className="py-3 flex items-center gap-3">
+                <div className="flex-1 min-w-0">
+                  <div className="font-medium text-sm">{phone.model || phone.product || 'Android device'}</div>
+                  <div className="text-xs text-gray-400 font-mono">{phone.serial}</div>
+                </div>
+                {attached
+                  ? <span className="text-xs text-ok">{t('已接入', 'Connected')}</span>
+                  : <button className="text-xs px-3 py-1.5 bg-primary text-white rounded disabled:opacity-50" disabled={attachAdbMut.isPending} onClick={() => attachAdbMut.mutate(phone.serial)}>{t('连接设备', 'Connect')}</button>}
+              </div>
+            })}
+          </div>
+        )}
+        <p className="text-xs text-gray-400 mt-2">{t('设备发现每 5 秒自动刷新。断开 USB 后设备会显示离线；重新插入并授权后会自动恢复绑定。', 'Device discovery refreshes every 5 seconds. Unplugged devices show offline; reconnecting the same phone restores its saved binding.')}</p>
       </div>
       <AdbBridgeSetup devices={devices} server={import.meta.env.DEV ? `${location.protocol}//${location.hostname}:${backendPort || 8000}` : location.origin} />
       <AdbBridgeSetup transport="ios" devices={devices} server={import.meta.env.DEV ? `${location.protocol}//${location.hostname}:${backendPort || 8000}` : location.origin} />
@@ -225,7 +256,7 @@ export default function Devices() {
       {devices.length === 0 && !isLoading && (
         <div className="text-center py-16 text-gray-400">
           <p className="text-lg">{t('还没有设备', 'No devices yet')}</p>
-          <p className="text-sm mt-1">{t('使用上方 USB 本地模式，或通过 App 配对连接手机。', 'Follow the 3 steps above to connect your first phone.')}</p>
+          <p className="text-sm mt-1">{t('使用上方本机 ADB USB 直连，或通过 App 配对连接手机。', 'Connect a local ADB USB phone above, or pair through the Portal app.')}</p>
         </div>
       )}
 
@@ -289,11 +320,11 @@ export default function Devices() {
                       ID: {d.id}
                     </div>
                     <div className="text-xs text-gray-400 font-mono truncate">
-                      {d.connection_type === 'hdc_bridge' ? '鸿蒙 · HDC USB 桥接 · 截图刷新' : d.connection_type === 'ios_bridge' ? 'iOS · USB 桥接 · 截图刷新' : d.connection_type === 'adb_bridge' ? '本机 ADB 桥接 · 多设备' : d.connection_type === 'browser_usb' ? '本地 USB · 无需 App 配对' : `远程 App · Token: ${d.token.slice(0, 20)}…`}
+                      {d.connection_type === 'hdc_bridge' ? '鸿蒙 · HDC USB 桥接 · 截图刷新' : d.connection_type === 'ios_bridge' ? 'iOS · USB 桥接 · 截图刷新' : d.connection_type === 'adb_bridge' ? '本机 ADB 桥接 · 多设备' : d.connection_type === 'adb_usb' ? `本机 ADB USB · ${d.adb_serial || 'USB'}` : d.connection_type === 'browser_usb' ? '旧版浏览器 USB · 回滚保留' : `远程 App · Token: ${d.token.slice(0, 20)}…`}
                     </div>
                   </div>
                   <div className="flex gap-2">
-                    {['adb_bridge', 'hdc_bridge', 'ios_bridge'].includes(d.connection_type) ? <button className="text-xs px-3 py-1.5 border rounded" onClick={e => { e.stopPropagation(); copyToken(d) }}>{copiedId === d.id ? '✓ Copied' : 'Copy Token'}</button> : d.connection_type === 'browser_usb' ? <button className="text-xs px-3 py-1.5 border rounded disabled:opacity-50" disabled={usb.phase !== 'idle'} onClick={e => { e.stopPropagation(); void connectUsb(d.id) }}>连接 USB</button> : <>
+                    {['adb_bridge', 'hdc_bridge', 'ios_bridge'].includes(d.connection_type) ? <button className="text-xs px-3 py-1.5 border rounded" onClick={e => { e.stopPropagation(); copyToken(d) }}>{copiedId === d.id ? '✓ Copied' : 'Copy Token'}</button> : d.connection_type === 'adb_usb' ? <button className="text-xs px-3 py-1.5 border rounded" onClick={e => { e.stopPropagation(); detachAdbMut.mutate(d.id) }}>{t('断开 USB', 'Disconnect USB')}</button> : d.connection_type === 'browser_usb' ? <span className="text-xs text-gray-400">{t('旧版连接', 'Legacy connection')}</span> : <>
                     <button
                       className="text-xs px-3 py-1.5 border border-primary text-primary rounded hover:bg-primary-soft"
                       onClick={e => { e.stopPropagation(); setQrDevice(d) }}
@@ -311,7 +342,7 @@ export default function Devices() {
                       className="text-xs px-3 py-1.5 border border-red-200 text-red-600 rounded hover:bg-red-50"
                       onClick={e => {
                         e.stopPropagation()
-                        if (confirm(`Delete device "${d.name}"?`)) { if (usb.deviceId === d.id) disconnectUsb(); deleteMut.mutate(d.id) }
+                        if (confirm(`Delete device "${d.name}"?`)) { deleteMut.mutate(d.id) }
                       }}
                     >
                       Delete
