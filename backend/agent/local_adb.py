@@ -61,7 +61,8 @@ async def discover_devices() -> list[dict[str, str]]:
         if len(fields) < 2:
             continue
         serial, state = fields[0], fields[1]
-        if state != "device":
+        # Exclude wireless-debugging endpoints; this transport is USB-only.
+        if state != "device" or ":" in serial:
             continue
         details = {}
         for field in fields[2:]:
