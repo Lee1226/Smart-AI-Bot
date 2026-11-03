@@ -167,7 +167,7 @@ async def screenshot_frame(device_id: str, request: Request, source: str = "auto
                            serial: Optional[str] = None, db: AsyncSession = Depends(get_db)):
     """One JPEG frame. source: auto | adb | screenshot."""
     device = await db.get(Device, device_id)
-    browser_usb = device is not None and device.connection_type in {"browser_usb", "adb_bridge", "hdc_bridge", "ios_bridge"}
+    browser_usb = device is not None and device.connection_type in {"browser_usb", "adb_bridge", "hdc_bridge", "ios_bridge", "adb_usb"}
     serials = await asyncio.to_thread(_adb_serials) if not browser_usb and await _local_adb_allowed(request, db) else []
     native_serial = local_adb.serial_for(device_id) if device is not None and device.connection_type == "adb_usb" else None
     use = native_serial or (None if browser_usb else _resolve_adb_serial(serials, source, serial))
