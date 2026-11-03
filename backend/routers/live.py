@@ -75,11 +75,7 @@ async def _websocket_identity(websocket: WebSocket) -> tuple[str, str] | None:
 
 
 def _adb_path() -> Optional[str]:
-    found = shutil.which("adb")
-    if found:
-        return found
-    fallback = os.path.expanduser("~/Library/Android/sdk/platform-tools/adb")
-    return fallback if os.path.exists(fallback) else None
+    return local_adb.adb_path()
 
 
 def _adb_serials() -> List[str]:
@@ -154,7 +150,7 @@ class Capabilities(BaseModel):
 @router.get("/{device_id}/capabilities", response_model=Capabilities)
 async def capabilities(device_id: str, request: Request, db: AsyncSession = Depends(get_db)):
     device = await db.get(Device, device_id)
-    browser_usb = device is not None and device.connection_type in {"browser_usb", "adb_bridge", "hdc_bridge", "ios_bridge"}
+    browser_usb = device is not None and device.connection_type in {"browser_usb", "adb_bridge", "hdc_bridge", "ios_bridge", "adb_usb"}
     serials = await asyncio.to_thread(_adb_serials) if not browser_usb and await _local_adb_allowed(request, db) else []
     conn = connected_devices.get(device_id)
     native_online = device is not None and device.connection_type == "adb_usb" and local_adb.is_bound(device_id)
