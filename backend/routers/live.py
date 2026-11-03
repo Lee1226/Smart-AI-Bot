@@ -36,6 +36,7 @@ from agent import local_adb
 from ws.video import VideoSession, sessions
 
 logger = logging.getLogger(__name__)
+_local_adb_streams: set[str] = set()
 router = APIRouter(prefix="/api/devices", tags=["live"])
 
 
@@ -206,8 +207,15 @@ async def _stream_local_adb(websocket: WebSocket, serial: str):
                 if not chunk:
                     break
                 await websocket.send_bytes(chunk)
-            await proc.wait()
+            code = await proc.wait()
             proc = None
+            if code != 0:
+                logger.debug("local ADB screenrecord exited with code %s for %s", code, serial)
+                try:
+                    await websocket.close(code=4404, reason="ADB screenrecord unavailable")
+                except RuntimeError:
+                    pass
+                return
     except (WebSocketDisconnect, RuntimeError, asyncio.CancelledError):
         pass
     except Exception as exc:
@@ -240,8 +248,15 @@ async def stream_h264(websocket: WebSocket, device_id: str):
     # A directly attached adb_usb device is streamed from its own persisted serial.
     native_serial = local_adb.serial_for(device_id) if device.connection_type == "adb_usb" else None
     if native_serial:
+        if device_id in _local_adb_streams:
+            await websocket.close(code=4409, reason="Video already being viewed")
+            return
+        _local_adb_streams.add(device_id)
         await websocket.accept()
-        await _stream_local_adb(websocket, native_serial)
+        try:
+            await _stream_local_adb(websocket, native_serial)
+        finally:
+            _local_adb_streams.discard(device_id)
         return
     # A remote video request must never show an unrelated server USB device.
     if websocket.query_params.get("source") == "device":
