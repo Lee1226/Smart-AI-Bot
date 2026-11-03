@@ -48,6 +48,17 @@ class SPAStaticFiles(StaticFiles):
 async def lifespan(app: FastAPI):
     await init_db()
     logger.info("Database initialised")
+    # Restore local USB ADB bindings before the first test can be queued.
+    from sqlalchemy import select
+    from db.database import AsyncSessionLocal
+    from db.models import Device
+    from agent.local_adb import refresh_bindings
+    async with AsyncSessionLocal() as db:
+        local_devices = (await db.execute(
+            select(Device).where(Device.connection_type == "adb_usb")
+        )).scalars().all()
+    await refresh_bindings(local_devices)
+    logger.info("Restored %d local ADB USB device bindings", len(local_devices))
     await ensure_seeded()
     from core.device_scheduler import recover_interrupted_runs, shutdown
     recovered = await recover_interrupted_runs()
