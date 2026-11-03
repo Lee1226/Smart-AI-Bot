@@ -47,7 +47,6 @@ async def shutdown():
 
 
 async def enqueue(run_id, state, executor):
-    from ws.portal_ws import connected_devices
     from core.test_runner import active_runs
     if run_id in jobs:
         raise ValueError('Run already scheduled')
@@ -68,8 +67,8 @@ async def enqueue(run_id, state, executor):
             await lock.acquire()
             acquired = True
             owners[device_id] = run_id
-            conn = connected_devices.get(device_id)
-            if not conn or not conn.is_connected:
+            from agent.ws_device import WebSocketDevice
+            if not WebSocketDevice(device_id).is_connected():
                 raise RuntimeError('设备离线，未执行；请重新连接后重跑')
             await state.emit('已获得设备独占权，开始环境准备')
             from core.regression import prepare_run
