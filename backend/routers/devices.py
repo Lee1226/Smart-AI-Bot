@@ -124,6 +124,7 @@ async def attach_local_adb(req: LocalAdbAttachRequest, request: Request, db: Asy
         if existing.connection_type != "adb_usb":
             raise HTTPException(status_code=409, detail="该设备序列号已被其他连接方式占用")
         existing.name = req.name.strip() or item.get("model") or existing.name
+        existing.adb_auto_connect = True
         local_adb.bind_device(existing.id, serial)
         await db.commit()
         await db.refresh(existing)
@@ -134,7 +135,7 @@ async def attach_local_adb(req: LocalAdbAttachRequest, request: Request, db: Asy
         )
     device = Device(
         name=req.name.strip() or item.get("model") or f"Android {serial[-6:]}",
-        connection_type="adb_usb", adb_serial=serial,
+        connection_type="adb_usb", adb_serial=serial, adb_auto_connect=True,
         token=secrets.token_urlsafe(32), status="online",
         account_id=request.state.account_id,
     )
@@ -160,6 +161,7 @@ async def detach_local_adb(device_id: str, request: Request, db: AsyncSession = 
     if not device:
         raise HTTPException(status_code=404, detail="本地 ADB 设备不存在")
     local_adb.unbind_device(device_id)
+    device.adb_auto_connect = False
     device.status = "offline"
     await db.commit()
 
