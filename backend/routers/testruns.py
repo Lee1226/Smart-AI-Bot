@@ -183,22 +183,20 @@ async def _run_out(run: TestRun, db: AsyncSession) -> RunOut:
 
 async def _validate_project_target(db, suite_id, device_id):
     from core.test_runner import _suite_app_package
-    conn = connected_devices.get(device_id)
-    if conn:
-        try:
-            await _suite_app_package(suite_id, conn.platform)
+    try:
+        await _suite_app_package(suite_id, WebSocketDevice(device_id).platform)
         except ValueError as exc:
             raise HTTPException(status_code=400, detail=str(exc))
 
 
 async def _attach_test_account(db, run, req):
     from core.test_accounts import select_run_account
-    conn = connected_devices.get(req.device_id)
+    platform = WebSocketDevice(req.device_id).platform
     if getattr(req, "mode", "ai") == "replay":
         if req.test_account_id and req.test_account_id != '-':
             raise HTTPException(400, '测试账号自动登录仅支持 AI 模式，回放不注入凭据')
         return
-    await select_run_account(db, run, req.test_account_id, conn.platform)
+    await select_run_account(db, run, req.test_account_id, platform)
 
 
 # ── Endpoints ────────────────────────────────────────────────────────────────
