@@ -183,9 +183,11 @@ async def _run_out(run: TestRun, db: AsyncSession) -> RunOut:
 
 async def _validate_project_target(db, suite_id, device_id):
     from core.test_runner import _suite_app_package
-    try:
-        await _suite_app_package(suite_id, WebSocketDevice(device_id).platform)
-    except ValueError as exc:
+    conn = connected_devices.get(device_id)
+    if conn or WebSocketDevice(device_id).is_connected():
+        try:
+            await _suite_app_package(suite_id, WebSocketDevice(device_id).platform)
+        except ValueError as exc:
             raise HTTPException(status_code=400, detail=str(exc))
 
 
