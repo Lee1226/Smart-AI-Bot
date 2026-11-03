@@ -40,7 +40,6 @@ from core.settings_store import (
     resolve_language,
     resolve_verifier,
 )
-from ws.portal_ws import connected_devices
 
 logger = logging.getLogger(__name__)
 
