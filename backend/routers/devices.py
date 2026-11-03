@@ -12,6 +12,7 @@ from db.database import AsyncSessionLocal
 from db.models import Device
 from ws.portal_ws import connected_devices
 from agent.ws_device import WebSocketDevice
+from agent import local_adb
 
 router = APIRouter(prefix="/api/devices", tags=["devices"])
 
@@ -29,6 +30,7 @@ class DeviceOut(BaseModel):
     last_seen: str
     connection_type: str = "portal"
     platform: str = "android"
+    adb_serial: str | None = None
 
     def model_post_init(self, __context):
         self.platform = {"hdc_bridge": "harmony", "ios_bridge": "ios"}.get(self.connection_type, "android")
@@ -39,7 +41,7 @@ class DeviceOut(BaseModel):
 
 class TokenCreateRequest(BaseModel):
     name: str = "New Device"
-    connection_type: Literal["portal", "browser_usb", "adb_bridge", "hdc_bridge", "ios_bridge"] = "portal"
+    connection_type: Literal["portal", "browser_usb", "adb_bridge", "hdc_bridge", "ios_bridge", "adb_usb"] = "portal"
 
 
 @router.get("", response_model=List[DeviceOut])
@@ -49,13 +51,19 @@ async def list_devices(request: Request, db: AsyncSession = Depends(get_db)):
         q = q.where(Device.account_id == request.state.account_id)
     result = await db.execute(q)
     devices = result.scalars().all()
-    # Sync status from in-memory connected_devices
+    # Rehydrate local ADB bindings after backend restart; never touch remote bridge types.
+    adb_rows = [d for d in devices if d.connection_type == "adb_usb"]
+    if adb_rows:
+        await local_adb.refresh_bindings(adb_rows)
+    # Sync status from native ADB or existing WebSocket registry.
     out = []
     for d in devices:
-        status = "online" if d.id in connected_devices and connected_devices[d.id].is_connected else "offline"
+        native_online = d.connection_type == "adb_usb" and local_adb.is_bound(d.id)
+        status = "online" if native_online or (d.id in connected_devices and connected_devices[d.id].is_connected) else "offline"
         out.append(DeviceOut(
             id=d.id,
             connection_type=d.connection_type,
+            adb_serial=d.adb_serial,
             name=d.name,
             token=d.token,
             status=status,
@@ -74,6 +82,7 @@ async def create_device(req: TokenCreateRequest, request: Request, db: AsyncSess
     return DeviceOut(
         id=device.id,
         connection_type=device.connection_type,
+        adb_serial=device.adb_serial,
         name=device.name,
         token=device.token,
         status="offline",
@@ -98,10 +107,11 @@ async def rename_device(device_id: str, req: DeviceRenameRequest, db: AsyncSessi
     device.name = name
     await db.commit()
     await db.refresh(device)
-    status = "online" if device.id in connected_devices and connected_devices[device.id].is_connected else "offline"
+    status = "online" if (device.connection_type == "adb_usb" and local_adb.is_bound(device.id)) or (device.id in connected_devices and connected_devices[device.id].is_connected) else "offline"
     return DeviceOut(
         id=device.id,
         connection_type=device.connection_type,
+        adb_serial=device.adb_serial,
         name=device.name,
         token=device.token,
         status=status,
@@ -117,6 +127,7 @@ async def delete_device(device_id: str, db: AsyncSession = Depends(get_db)):
     conn = connected_devices.get(device_id)
     if conn:
         await conn.ws.close(code=4000, reason="Device deleted")
+    local_adb.unbind_device(device_id)
     await db.delete(device)
     await db.commit()
 
@@ -135,8 +146,7 @@ async def install_apk(device_id: str, req: InstallRequest, db: AsyncSession = De
     if device is None:
         raise HTTPException(status_code=404, detail="Device not found")
 
-    conn = connected_devices.get(device_id)
-    if conn is None or not conn.is_connected:
+    if not WebSocketDevice(device_id).is_connected():
         raise HTTPException(status_code=400, detail=f"Device {device_id} is not connected")
 
     from core.device_scheduler import locks
