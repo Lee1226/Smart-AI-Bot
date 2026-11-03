@@ -205,7 +205,7 @@ async def rpc(device_id: str, method: str, params: dict[str, Any] | None = None,
             text = base64.b64decode(params.get("base64_text", "")).decode("utf-8")
             if any(ord(ch) > 127 for ch in text):
                 raise RuntimeError("当前 ADB 原生输入不支持中文/Unicode；请使用支持 Unicode 的输入法桥接方式")
-            escaped = text.replace("%", "%25").replace(" ", "%s")
+            escaped = text.replace(" ", "%s")
             await _shell(serial, "input", "text", escaped, timeout=15)
             return "OK"
         if method == "globalAction":
