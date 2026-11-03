@@ -228,9 +228,10 @@ class WebSocketDevice:
             ts, cached = _screenshot_cache.get(self.device_id, (0.0, b""))
             if accept_cached_age and cached and (loop.time() - ts) <= accept_cached_age:
                 return cached
-            # Respect the OS minimum interval between device screenshots.
+            # Portal's AccessibilityService screenshot API is OS-rate-limited;
+            # host-side ADB screencap is not, so do not add artificial latency.
             gap = loop.time() - ts
-            if cached and gap < _MIN_SCREENSHOT_GAP:
+            if not local_adb.is_bound(self.device_id) and cached and gap < _MIN_SCREENSHOT_GAP:
                 await asyncio.sleep(_MIN_SCREENSHOT_GAP - gap)
             img = await self._capture_screenshot()
             _screenshot_cache[self.device_id] = (loop.time(), img)
