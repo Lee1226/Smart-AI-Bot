@@ -32,6 +32,7 @@ export interface Device {
   platform?: 'android' | 'harmony' | 'ios'
   connection_type: 'portal' | 'browser_usb' | 'adb_bridge' | 'hdc_bridge' | 'ios_bridge' | 'adb_usb'
   adb_serial?: string | null
+  adb_auto_connect?: boolean
 }
 
 export interface Suite {
