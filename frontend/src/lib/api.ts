@@ -30,7 +30,8 @@ export interface Device {
   status: 'online' | 'offline'
   last_seen: string
   platform?: 'android' | 'harmony' | 'ios'
-  connection_type: 'portal' | 'browser_usb' | 'adb_bridge' | 'hdc_bridge' | 'ios_bridge'
+  connection_type: 'portal' | 'browser_usb' | 'adb_bridge' | 'hdc_bridge' | 'ios_bridge' | 'adb_usb'
+  adb_serial?: string | null
 }
 
 export interface Suite {
@@ -141,6 +142,19 @@ export const createDevice = (name: string, connection_type: Device['connection_t
 export const deleteDevice = (id: string) => api.delete(`/devices/${id}`)
 export const renameDevice = (id: string, name: string) =>
   api.patch<Device>(`/devices/${id}`, { name }).then(r => r.data)
+
+export interface LocalAdbDevice {
+  serial: string
+  model: string
+  product: string
+  state: string
+}
+export const fetchLocalAdbDevices = () =>
+  api.get<{ available: boolean; devices: LocalAdbDevice[] }>('/devices/local-adb/discover').then(r => r.data)
+export const attachLocalAdbDevice = (serial: string, name = '') =>
+  api.post<Device>('/devices/local-adb/attach', { serial, name }).then(r => r.data)
+export const detachLocalAdbDevice = (id: string) =>
+  api.post(`/devices/${id}/local-adb/detach`)
 
 // ── App distribution (APK QR download) ───────────────────────────────────────
 
