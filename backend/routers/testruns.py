@@ -185,7 +185,7 @@ async def _validate_project_target(db, suite_id, device_id):
     from core.test_runner import _suite_app_package
     try:
         await _suite_app_package(suite_id, WebSocketDevice(device_id).platform)
-        except ValueError as exc:
+    except ValueError as exc:
             raise HTTPException(status_code=400, detail=str(exc))
 
 
