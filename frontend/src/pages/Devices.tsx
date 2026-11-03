@@ -175,9 +175,9 @@ export default function Devices() {
             })}
           </div>
         )}
-        <p className="text-xs text-gray-400 mt-2">{t('设备发现每 5 秒自动刷新。断开 USB 后设备会显示离线；重新插入并授权后会自动恢复绑定。', 'Device discovery refreshes every 5 seconds. Unplugged devices show offline; reconnecting the same phone restores its saved binding.')}</p>
+        <p className="text-xs text-gray-400 mt-2">{t('设备发现每 5 秒自动刷新。物理拔出后设备会显示离线；未手动断开时，重新插入会自动恢复绑定。点击设备卡片的「断开 USB」会暂停自动连接，可通过「重新连接」恢复。', 'Device discovery refreshes every 5 seconds. Physically unplugged devices show offline and reconnect automatically unless manually detached. Use Reconnect to resume after a manual detach.')}</p>
         <p className="text-xs text-gray-400 mt-1">{t('支持截图、UI 树、点击/滑动、按键、应用启动与 H.264 画面。当前 ADB 原生输入暂不支持中文/Unicode，URL 安装 APK 也尚未接入。', 'Supports screenshots, UI hierarchy, tap/swipe, keys, app launch and H.264 preview. Native ADB text entry currently does not support Chinese/Unicode; URL-based APK installation is not yet integrated.')}</p>
-        {(attachAdbMut.isError || detachAdbMut.isError) && <p className="text-sm text-red-600 mt-2">{String((attachAdbMut.error || detachAdbMut.error) instanceof Error ? (attachAdbMut.error || detachAdbMut.error as Error).message : 'ADB operation failed')}</p>}
+        {(attachAdbMut.isError || detachAdbMut.isError) && <p className="text-sm text-red-600 mt-2">{String((attachAdbMut.error || detachAdbMut.error)?.message || 'ADB operation failed')}</p>}
       </div>
       <AdbBridgeSetup devices={devices} server={import.meta.env.DEV ? `${location.protocol}//${location.hostname}:${backendPort || 8000}` : location.origin} />
       <AdbBridgeSetup transport="ios" devices={devices} server={import.meta.env.DEV ? `${location.protocol}//${location.hostname}:${backendPort || 8000}` : location.origin} />
