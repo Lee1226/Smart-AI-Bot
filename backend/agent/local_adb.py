@@ -222,7 +222,9 @@ async def rpc(device_id: str, method: str, params: dict[str, Any] | None = None,
                 raise ValueError("package 不能为空")
             activity = str(params.get("activity", "")).strip()
             if activity:
-                await _shell(serial, "am", "start", "-n", f"{package}/{activity}", timeout=30)
+                output = await _shell(serial, "am", "start", "-n", f"{package}/{activity}", timeout=30)
+                if "error:" in output.lower() or "exception" in output.lower():
+                    return output
             else:
                 output = await _shell(serial, "monkey", "-p", package, "-c", "android.intent.category.LAUNCHER", "1", timeout=30)
                 if "no activities found" in output.lower() or "monkey aborted" in output.lower() or "error" in output.lower():
