@@ -162,7 +162,7 @@ export default function Devices() {
         {!!localAdb?.devices.length && (
           <div className="mt-3 divide-y">
             {localAdb.devices.map(phone => {
-              const attached = devices.some(d => d.connection_type === 'adb_usb' && d.adb_serial === phone.serial)
+              const attached = devices.some(d => d.connection_type === 'adb_usb' && d.adb_serial === phone.serial && d.adb_auto_connect !== false)
               return <div key={phone.serial} className="py-3 flex items-center gap-3">
                 <div className="flex-1 min-w-0">
                   <div className="font-medium text-sm">{phone.model || phone.product || 'Android device'}</div>
@@ -324,7 +324,7 @@ export default function Devices() {
                     </div>
                   </div>
                   <div className="flex gap-2">
-                    {['adb_bridge', 'hdc_bridge', 'ios_bridge'].includes(d.connection_type) ? <button className="text-xs px-3 py-1.5 border rounded" onClick={e => { e.stopPropagation(); copyToken(d) }}>{copiedId === d.id ? '✓ Copied' : 'Copy Token'}</button> : d.connection_type === 'adb_usb' ? <button className="text-xs px-3 py-1.5 border rounded" onClick={e => { e.stopPropagation(); detachAdbMut.mutate(d.id) }}>{t('断开 USB', 'Disconnect USB')}</button> : d.connection_type === 'browser_usb' ? <span className="text-xs text-gray-400">{t('旧版连接', 'Legacy connection')}</span> : <>
+                    {['adb_bridge', 'hdc_bridge', 'ios_bridge'].includes(d.connection_type) ? <button className="text-xs px-3 py-1.5 border rounded" onClick={e => { e.stopPropagation(); copyToken(d) }}>{copiedId === d.id ? '✓ Copied' : 'Copy Token'}</button> : d.connection_type === 'adb_usb' ? <button className="text-xs px-3 py-1.5 border rounded" onClick={e => { e.stopPropagation(); if (d.adb_auto_connect === false && d.adb_serial) attachAdbMut.mutate(d.adb_serial); else detachAdbMut.mutate(d.id) }}>{d.adb_auto_connect === false ? t('重新连接', 'Reconnect') : t('断开 USB', 'Disconnect USB')}</button> : d.connection_type === 'browser_usb' ? <span className="text-xs text-gray-400">{t('旧版连接', 'Legacy connection')}</span> : <>
                     <button
                       className="text-xs px-3 py-1.5 border border-primary text-primary rounded hover:bg-primary-soft"
                       onClick={e => { e.stopPropagation(); setQrDevice(d) }}
