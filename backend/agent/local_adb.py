@@ -22,11 +22,14 @@ def adb_path() -> str | None:
     found = shutil.which("adb")
     if found:
         return found
-    candidates = [
-        os.path.expandvars(r"%LOCALAPPDATA%\\Android\\Sdk\\platform-tools\\adb.exe"),
-        os.path.expandvars(r"%ANDROID_HOME%\\platform-tools\\adb.exe"),
-        os.path.expanduser("~/Library/Android/sdk/platform-tools/adb"),
-    ]
+    candidates = []
+    local_appdata = os.environ.get("LOCALAPPDATA")
+    android_home = os.environ.get("ANDROID_HOME") or os.environ.get("ANDROID_SDK_ROOT")
+    if local_appdata:
+        candidates.append(os.path.join(local_appdata, "Android", "Sdk", "platform-tools", "adb.exe"))
+    if android_home:
+        candidates.append(os.path.join(android_home, "platform-tools", "adb.exe" if os.name == "nt" else "adb"))
+    candidates.append(os.path.expanduser("~/Library/Android/sdk/platform-tools/adb"))
     return next((p for p in candidates if p and os.path.isfile(p)), None)
 
 
