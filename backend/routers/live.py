@@ -252,8 +252,8 @@ async def stream_h264(websocket: WebSocket, device_id: str):
             await websocket.close(code=4409, reason="Video already being viewed")
             return
         _local_adb_streams.add(device_id)
-        await websocket.accept()
         try:
+            await websocket.accept()
             await _stream_local_adb(websocket, native_serial)
         finally:
             _local_adb_streams.discard(device_id)
