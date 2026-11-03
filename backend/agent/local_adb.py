@@ -139,6 +139,7 @@ def _node(element: ET.Element) -> dict[str, Any]:
 async def _ui_state(serial: str) -> dict[str, Any]:
     # uiautomator writes to device storage; stdout is fetched separately to
     # avoid OEM-dependent shell redirection/encoding behavior.
+    await _shell(serial, "rm", "-f", "/sdcard/window.xml", timeout=5)
     await _shell(serial, "uiautomator", "dump", "/sdcard/window.xml", timeout=25)
     xml_text = await _exec("-s", serial, "exec-out", "cat", "/sdcard/window.xml", timeout=10)
     try:
@@ -210,7 +211,7 @@ async def rpc(device_id: str, method: str, params: dict[str, Any] | None = None,
             return "OK"
         if method == "globalAction":
             action = int(params.get("action", -1))
-            key = {1: "KEYCODE_HOME", 2: "KEYCODE_BACK", 3: "KEYCODE_APP_SWITCH", 4: "KEYCODE_NOTIFICATION"}.get(action)
+            key = {1: "KEYCODE_BACK", 2: "KEYCODE_HOME", 3: "KEYCODE_APP_SWITCH", 4: "KEYCODE_NOTIFICATION"}.get(action)
             if not key:
                 raise ValueError(f"不支持的 Android globalAction：{action}")
             await _shell(serial, "input", "keyevent", key)
