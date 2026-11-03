@@ -10,6 +10,7 @@ import base64
 import os
 import re
 import shutil
+import shlex
 import subprocess
 import xml.etree.ElementTree as ET
 from typing import Any
@@ -207,7 +208,9 @@ async def rpc(device_id: str, method: str, params: dict[str, Any] | None = None,
             if any(ord(ch) > 127 for ch in text):
                 raise RuntimeError("当前 ADB 原生输入不支持中文/Unicode；请使用支持 Unicode 的输入法桥接方式")
             escaped = text.replace(" ", "%s")
-            await _shell(serial, "input", "text", escaped, timeout=15)
+            # ADB executes a command through the Android shell; quote user text
+            # for that remote shell rather than interpolating it as shell syntax.
+            await _exec("-s", serial, "shell", f"input text {shlex.quote(escaped)}", timeout=15)
             return "OK"
         if method == "globalAction":
             action = int(params.get("action", -1))
@@ -218,9 +221,11 @@ async def rpc(device_id: str, method: str, params: dict[str, Any] | None = None,
             return "OK"
         if method == "app":
             package = str(params.get("package", "")).strip()
-            if not package:
-                raise ValueError("package 不能为空")
+            if not re.fullmatch(r"[A-Za-z0-9_.]+", package):
+                raise ValueError("package 格式无效")
             activity = str(params.get("activity", "")).strip()
+            if activity and not re.fullmatch(r"[A-Za-z0-9_.$]+", activity):
+                raise ValueError("activity 格式无效")
             if activity:
                 output = await _shell(serial, "am", "start", "-n", f"{package}/{activity}", timeout=30)
                 if "error:" in output.lower() or "exception" in output.lower():
@@ -232,6 +237,8 @@ async def rpc(device_id: str, method: str, params: dict[str, Any] | None = None,
             return f"Launched {package}"
         if method == "app/stop":
             package = str(params.get("package", "")).strip()
+            if not re.fullmatch(r"[A-Za-z0-9_.]+", package):
+                raise ValueError("package 格式无效")
             await _shell(serial, "am", "force-stop", package)
             return f"Force-stopped {package}"
         if method == "packages":
