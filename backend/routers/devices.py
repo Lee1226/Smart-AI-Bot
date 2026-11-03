@@ -42,7 +42,7 @@ class DeviceOut(BaseModel):
 
 class TokenCreateRequest(BaseModel):
     name: str = "New Device"
-    connection_type: Literal["portal", "browser_usb", "adb_bridge", "hdc_bridge", "ios_bridge", "adb_usb"] = "portal"
+    connection_type: Literal["portal", "browser_usb", "adb_bridge", "hdc_bridge", "ios_bridge"] = "portal"
 
 
 @router.get("", response_model=List[DeviceOut])
@@ -163,6 +163,9 @@ async def detach_local_adb(device_id: str, request: Request, db: AsyncSession = 
     device = (await db.execute(query)).scalar_one_or_none()
     if not device:
         raise HTTPException(status_code=404, detail="本地 ADB 设备不存在")
+    from core.device_scheduler import locks
+    if locks.get(device_id) and locks[device_id].locked():
+        raise HTTPException(status_code=409, detail="设备正在执行任务，请等待完成后再断开")
     local_adb.unbind_device(device_id)
     device.adb_auto_connect = False
     device.status = "offline"
@@ -191,6 +194,7 @@ async def rename_device(device_id: str, req: DeviceRenameRequest, db: AsyncSessi
         id=device.id,
         connection_type=device.connection_type,
         adb_serial=device.adb_serial,
+        adb_auto_connect=device.adb_auto_connect,
         name=device.name,
         token=device.token,
         status=status,
