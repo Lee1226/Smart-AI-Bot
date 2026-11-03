@@ -90,6 +90,81 @@ async def create_device(req: TokenCreateRequest, request: Request, db: AsyncSess
     )
 
 
+class LocalAdbAttachRequest(BaseModel):
+    serial: str
+    name: str = ""
+
+
+@router.get("/local-adb/discover")
+async def discover_local_adb(request: Request):
+    """Discover Android phones attached to the backend host over USB ADB."""
+    if request.state.role not in {"owner", "admin"}:
+        raise HTTPException(status_code=403, detail="仅管理员可管理服务端本机 USB 设备")
+    try:
+        return {"available": bool(local_adb.adb_path()), "devices": await local_adb.discover_devices()}
+    except Exception as exc:
+        raise HTTPException(status_code=503, detail=f"ADB 设备发现失败：{exc}")
+
+
+@router.post("/local-adb/attach", response_model=DeviceOut, status_code=201)
+async def attach_local_adb(req: LocalAdbAttachRequest, request: Request, db: AsyncSession = Depends(get_db)):
+    """Bind a discovered physical USB serial to a stable Smart-AI-Bot device UUID."""
+    if request.state.role not in {"owner", "admin"}:
+        raise HTTPException(status_code=403, detail="仅管理员可连接服务端本机 USB 设备")
+    serial = req.serial.strip()
+    if not serial:
+        raise HTTPException(status_code=400, detail="ADB serial 不能为空")
+    found = {item["serial"]: item for item in await local_adb.discover_devices()}
+    item = found.get(serial)
+    if not item:
+        raise HTTPException(status_code=409, detail="未发现该 ADB 设备，请检查 USB 调试授权和连接状态")
+    existing = (await db.execute(select(Device).where(Device.adb_serial == serial))).scalars().first()
+    if existing:
+        if existing.account_id != request.state.account_id:
+            raise HTTPException(status_code=409, detail="该 USB 设备已被其他账号绑定")
+        if existing.connection_type != "adb_usb":
+            raise HTTPException(status_code=409, detail="该设备序列号已被其他连接方式占用")
+        existing.name = req.name.strip() or item.get("model") or existing.name
+        local_adb.bind_device(existing.id, serial)
+        await db.commit()
+        await db.refresh(existing)
+        return DeviceOut(
+            id=existing.id, connection_type=existing.connection_type, adb_serial=serial,
+            name=existing.name, token=existing.token, status="online",
+            last_seen=existing.last_seen.isoformat() if existing.last_seen else "",
+        )
+    device = Device(
+        name=req.name.strip() or item.get("model") or f"Android {serial[-6:]}",
+        connection_type="adb_usb", adb_serial=serial,
+        token=secrets.token_urlsafe(32), status="online",
+        account_id=request.state.account_id,
+    )
+    db.add(device)
+    await db.commit()
+    await db.refresh(device)
+    local_adb.bind_device(device.id, serial)
+    return DeviceOut(
+        id=device.id, connection_type=device.connection_type, adb_serial=serial,
+        name=device.name, token=device.token, status="online",
+        last_seen=device.last_seen.isoformat() if device.last_seen else "",
+    )
+
+
+@router.post("/{device_id}/local-adb/detach", status_code=204)
+async def detach_local_adb(device_id: str, request: Request, db: AsyncSession = Depends(get_db)):
+    if request.state.role not in {"owner", "admin"}:
+        raise HTTPException(status_code=403, detail="仅管理员可断开服务端本机 USB 设备")
+    query = select(Device).where(Device.id == device_id, Device.connection_type == "adb_usb")
+    if request.state.account_id:
+        query = query.where(Device.account_id == request.state.account_id)
+    device = (await db.execute(query)).scalar_one_or_none()
+    if not device:
+        raise HTTPException(status_code=404, detail="本地 ADB 设备不存在")
+    local_adb.unbind_device(device_id)
+    device.status = "offline"
+    await db.commit()
+
+
 class DeviceRenameRequest(BaseModel):
     name: str
 
