@@ -96,7 +96,7 @@ async def refresh_bindings(rows: list[Any]) -> set[str]:
     _ATTACHED.clear()
     for row in rows:
         serial = getattr(row, "adb_serial", None)
-        if getattr(row, "connection_type", "") == "adb_usb" and serial in available:
+        if getattr(row, "connection_type", "") == "adb_usb" and getattr(row, "adb_auto_connect", True) and serial in available:
             _ATTACHED[row.id] = serial
     return set(_ATTACHED)
 
