@@ -31,7 +31,6 @@ from agent.ws_device import WebSocketDevice
 from auth.access import require_device
 from db.database import AsyncSessionLocal
 from db.models import TestCase, TestSuite
-from ws.portal_ws import connected_devices
 from agent import local_adb
 
 logger = logging.getLogger(__name__)
