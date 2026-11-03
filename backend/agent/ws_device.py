@@ -1,9 +1,8 @@
 """
-WebSocketDevice — bridges litellm tool calls to Portal app via JSON-RPC.
-All method names are the actual ActionDispatcher strings from Portal 0.6.5.
-
-A11y tree parsing/formatting lives in agent.perception — this module is
-purely the transport/action layer.
+Device control adapter for Agent tool calls.
+Uses the existing Portal JSON-RPC transport for remote devices and the native
+host-side ADB adapter for directly attached Android USB devices.
+A11y tree parsing/formatting lives in agent.perception.
 """
 import asyncio
 import base64
