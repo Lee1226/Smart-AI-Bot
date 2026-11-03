@@ -52,9 +52,8 @@ async def list_devices(request: Request, db: AsyncSession = Depends(get_db)):
     result = await db.execute(q)
     devices = result.scalars().all()
     # Rehydrate local ADB bindings after backend restart; never touch remote bridge types.
-    adb_rows = [d for d in devices if d.connection_type == "adb_usb"]
-    if adb_rows:
-        await local_adb.refresh_bindings(adb_rows)
+    adb_rows = (await db.execute(select(Device).where(Device.connection_type == "adb_usb"))).scalars().all()
+    await local_adb.refresh_bindings(adb_rows)
     # Sync status from native ADB or existing WebSocket registry.
     out = []
     for d in devices:
