@@ -115,7 +115,14 @@ async def _adb_jpeg(serial: str) -> bytes:
         adb, "-s", serial, "exec-out", "screencap", "-p",
         stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.DEVNULL,
     )
-    raw, _ = await proc.communicate()
+    try:
+        raw, stderr = await asyncio.wait_for(proc.communicate(), timeout=15)
+    except asyncio.TimeoutError:
+        proc.kill()
+        await proc.communicate()
+        raise RuntimeError("ADB screencap timed out")
+    if proc.returncode != 0:
+        raise RuntimeError(stderr.decode("utf-8", errors="replace").strip() or "ADB screencap failed")
     if not raw:
         raise RuntimeError("screencap returned no data")
     return await asyncio.to_thread(_to_jpeg, raw)
