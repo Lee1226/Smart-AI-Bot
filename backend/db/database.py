@@ -90,7 +90,7 @@ async def init_db():
         })
 
         # ── Multi-tenancy: account_id on every resource table ──────────
-        await _ensure_columns("devices", {"account_id": "VARCHAR", "connection_type": "VARCHAR DEFAULT 'portal'"})
+        await _ensure_columns("devices", {"account_id": "VARCHAR", "connection_type": "VARCHAR DEFAULT 'portal'", "adb_serial": "VARCHAR"})
         await _ensure_columns("test_suites", {"account_id": "VARCHAR"})
         await _ensure_columns("test_suites", {"tag": "VARCHAR DEFAULT ''"})
         await _ensure_columns("test_cases", {"account_id": "VARCHAR"})
