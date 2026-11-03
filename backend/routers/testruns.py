@@ -30,6 +30,7 @@ from db.models import (
     TestSuite,
 )
 from ws.portal_ws import connected_devices
+from agent.ws_device import WebSocketDevice
 
 router = APIRouter(prefix="/api/runs", tags=["runs"])
 
@@ -208,8 +209,7 @@ async def create_run(req: StartRunRequest, request: Request, db: AsyncSession = 
     await require_suite(request, db, req.suite_id)
     await _validate_project_target(db, req.suite_id, req.device_id)
     # Validate device is connected
-    conn = connected_devices.get(req.device_id)
-    if conn is None or not conn.is_connected:
+    if not WebSocketDevice(req.device_id).is_connected():
         raise HTTPException(status_code=400, detail=f"Device {req.device_id} is not connected")
 
     # Validate suite exists and has cases
@@ -266,8 +266,7 @@ async def create_batch_run(req: StartBatchRunRequest, request: Request, db: Asyn
     await require_device(request, db, req.device_id)
     await require_suite(request, db, req.suite_id)
     await _validate_project_target(db, req.suite_id, req.device_id)
-    conn = connected_devices.get(req.device_id)
-    if conn is None or not conn.is_connected:
+    if not WebSocketDevice(req.device_id).is_connected():
         raise HTTPException(status_code=400, detail=f"Device {req.device_id} is not connected")
     if not req.case_ids:
         raise HTTPException(status_code=400, detail="No cases selected")
@@ -323,8 +322,7 @@ async def quick_run(req: QuickRunRequest, request: Request, db: AsyncSession = D
     internal and never appears in the user's Test Suites library.
     """
     await require_device(request, db, req.device_id)
-    conn = connected_devices.get(req.device_id)
-    if conn is None or not conn.is_connected:
+    if not WebSocketDevice(req.device_id).is_connected():
         raise HTTPException(status_code=400, detail=f"Device {req.device_id} is not connected")
 
     account_id = request.state.account_id
@@ -378,8 +376,7 @@ async def create_tree_run(req: StartRunRequest, request: Request, db: AsyncSessi
     await require_device(request, db, req.device_id)
     await require_suite(request, db, req.suite_id)
     await _validate_project_target(db, req.suite_id, req.device_id)
-    conn = connected_devices.get(req.device_id)
-    if conn is None or not conn.is_connected:
+    if not WebSocketDevice(req.device_id).is_connected():
         raise HTTPException(status_code=400, detail=f"Device {req.device_id} is not connected")
     from core.test_runner import node_targets_for_suite, start_tree_run
     targets = await node_targets_for_suite(db, req.suite_id)
@@ -418,8 +415,7 @@ async def create_node_run(req: NodeRunRequest, request: Request, db: AsyncSessio
     node = await require_node(request, db, req.node_id)
     if node.suite_id != req.suite_id:
         raise HTTPException(status_code=404, detail="Node not found in suite")
-    conn = connected_devices.get(req.device_id)
-    if conn is None or not conn.is_connected:
+    if not WebSocketDevice(req.device_id).is_connected():
         raise HTTPException(status_code=400, detail=f"Device {req.device_id} is not connected")
     from core.test_runner import node_targets_for_suite, start_tree_run
     targets = await node_targets_for_suite(db, req.suite_id, req.node_id)
