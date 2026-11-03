@@ -26,6 +26,7 @@ class Device(Base):
     account_id: Mapped[Optional[str]] = mapped_column(String, nullable=True)
     # Physical USB ADB serial; independent from the stable database UUID.
     adb_serial: Mapped[Optional[str]] = mapped_column(String, nullable=True, index=True)
+    adb_auto_connect: Mapped[bool] = mapped_column(Boolean, default=True)
 
 
 class IosHost(Base):
