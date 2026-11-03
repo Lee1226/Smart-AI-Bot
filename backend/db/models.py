@@ -24,6 +24,8 @@ class Device(Base):
     status: Mapped[str] = mapped_column(String, default="offline")  # online/offline
     last_seen: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
     account_id: Mapped[Optional[str]] = mapped_column(String, nullable=True)
+    # Physical USB ADB serial; independent from the stable database UUID.
+    adb_serial: Mapped[Optional[str]] = mapped_column(String, nullable=True, index=True)
 
 
 class IosHost(Base):
