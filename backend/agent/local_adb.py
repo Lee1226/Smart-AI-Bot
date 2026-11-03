@@ -107,7 +107,7 @@ async def _shell(serial: str, *args: str, timeout: float = 20) -> str:
 
 def _node(element: ET.Element) -> dict[str, Any]:
     bounds = element.attrib.get("bounds", "")
-    match = re.match(r"\\[(\\d+),(\\d+)\\]\\[(\\d+),(\\d+)\\]", bounds)
+    match = re.match(r"\[(\d+),(\d+)\]\[(\d+),(\d+)\]", bounds)
     box = {
         "left": int(match.group(1)), "top": int(match.group(2)),
         "right": int(match.group(3)), "bottom": int(match.group(4)),
@@ -149,7 +149,7 @@ async def _ui_state(serial: str) -> dict[str, Any]:
     activity = ""
     try:
         dump = await _shell(serial, "dumpsys", "activity", "activities", timeout=8)
-        m = re.search(r"(?:mResumedActivity|topResumedActivity)=.*? ([\\w.]+)/([\\w.$]+)", dump)
+        m = re.search(r"(?:mResumedActivity|topResumedActivity)=.*? ([\w.]+)/([\w.$]+)", dump)
         if m:
             package, activity = m.group(1), m.group(2)
     except Exception:
