@@ -13,6 +13,7 @@ from typing import Any, Dict, List, Optional, Tuple
 
 from agent.perception import format_ui_state
 from ws.portal_ws import connected_devices, send_rpc
+from agent import local_adb
 
 logger = logging.getLogger(__name__)
 
@@ -61,6 +62,8 @@ class WebSocketDevice:
         self._model_image_size = (width, height) if width > 0 and height > 0 else None
 
     def is_connected(self) -> bool:
+        if local_adb.is_bound(self.device_id):
+            return True
         conn = connected_devices.get(self.device_id)
         return conn is not None and conn.is_connected
 
@@ -81,6 +84,9 @@ class WebSocketDevice:
 
     async def _rpc(self, method: str, params: Optional[Dict[str, Any]] = None,
                    timeout: float = 30.0) -> Any:
+        # Direct host-side ADB is a native transport, not a fake WebSocket.
+        if local_adb.is_bound(self.device_id):
+            return await local_adb.rpc(self.device_id, method, params, timeout=timeout)
         # Look up the live connection on every call. If Portal briefly drops and
         # reconnects mid-run, connected_devices[device_id] is replaced with a fresh
         # DeviceConnection — we must use that, not a stale reference captured at
