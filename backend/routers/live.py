@@ -32,6 +32,7 @@ from auth.jwt_handler import decode_token
 from db.database import AsyncSessionLocal
 from db.models import ApiKey, Device, User
 from ws.portal_ws import connected_devices, send_rpc
+from agent import local_adb
 from ws.video import VideoSession, sessions
 
 logger = logging.getLogger(__name__)
@@ -156,11 +157,12 @@ async def capabilities(device_id: str, request: Request, db: AsyncSession = Depe
     browser_usb = device is not None and device.connection_type in {"browser_usb", "adb_bridge", "hdc_bridge", "ios_bridge"}
     serials = await asyncio.to_thread(_adb_serials) if not browser_usb and await _local_adb_allowed(request, db) else []
     conn = connected_devices.get(device_id)
+    native_online = device is not None and device.connection_type == "adb_usb" and local_adb.is_bound(device_id)
     return Capabilities(
-        online=conn is not None and conn.is_connected,
+        online=native_online or (conn is not None and conn.is_connected),
         adb_available=bool(serials),
         adb_serials=serials,
-        video_available=bool(conn and conn.is_connected and conn.video_available),
+        video_available=native_online or bool(conn and conn.is_connected and conn.video_available),
     )
 
 
@@ -171,7 +173,8 @@ async def screenshot_frame(device_id: str, request: Request, source: str = "auto
     device = await db.get(Device, device_id)
     browser_usb = device is not None and device.connection_type in {"browser_usb", "adb_bridge", "hdc_bridge", "ios_bridge"}
     serials = await asyncio.to_thread(_adb_serials) if not browser_usb and await _local_adb_allowed(request, db) else []
-    use = None if browser_usb else _resolve_adb_serial(serials, source, serial)
+    native_serial = local_adb.serial_for(device_id) if device is not None and device.connection_type == "adb_usb" else None
+    use = native_serial or (None if browser_usb else _resolve_adb_serial(serials, source, serial))
     try:
         if use:
             jpeg = await _adb_jpeg(use)
@@ -186,6 +189,36 @@ async def screenshot_frame(device_id: str, request: Request, source: str = "auto
         logger.debug("live frame failed: %s", e)
         raise HTTPException(status_code=503, detail="Frame unavailable")
     return Response(content=jpeg, media_type="image/jpeg", headers={"Cache-Control": "no-store"})
+
+
+async def _stream_local_adb(websocket: WebSocket, serial: str):
+    """Stream H.264 from the exact ADB serial bound to this device UUID."""
+    adb = _adb_path()
+    if not adb:
+        await websocket.close(code=4404)
+        return
+    proc = None
+    try:
+        while True:  # Android screenrecord caps duration; restart between segments.
+            proc = await asyncio.create_subprocess_exec(
+                adb, "-s", serial, "exec-out", "screenrecord",
+                "--output-format=h264", "--time-limit", "175", "--bit-rate", "8000000", "-",
+                stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.DEVNULL,
+            )
+            while True:
+                chunk = await proc.stdout.read(16384)
+                if not chunk:
+                    break
+                await websocket.send_bytes(chunk)
+            await proc.wait()
+            proc = None
+    except (WebSocketDisconnect, RuntimeError, asyncio.CancelledError):
+        pass
+    except Exception as exc:
+        logger.debug("local ADB H.264 stream ended: %s", exc)
+    finally:
+        if proc is not None and proc.returncode is None:
+            proc.kill()
 
 
 async def stream_h264(websocket: WebSocket, device_id: str):
@@ -208,11 +241,17 @@ async def stream_h264(websocket: WebSocket, device_id: str):
         await websocket.accept()
         await _stream_remote(websocket, conn)
         return
+    # A directly attached adb_usb device is streamed from its own persisted serial.
+    native_serial = local_adb.serial_for(device_id) if device.connection_type == "adb_usb" else None
+    if native_serial:
+        await websocket.accept()
+        await _stream_local_adb(websocket, native_serial)
+        return
     # A remote video request must never show an unrelated server USB device.
     if websocket.query_params.get("source") == "device":
         await websocket.close(code=4404)
         return
-    if device.connection_type in {"browser_usb", "adb_bridge", "hdc_bridge", "ios_bridge"} or not is_operator:
+    if device.connection_type in {"browser_usb", "adb_bridge", "hdc_bridge", "ios_bridge", "adb_usb"} or not is_operator:
         await websocket.close(code=4403)
         return
     await websocket.accept()
