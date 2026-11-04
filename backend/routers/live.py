@@ -306,32 +306,7 @@ async def stream_h264(websocket: WebSocket, device_id: str):
         await websocket.close(code=4404)  # no ADB → client falls back to screenshot
         return
 
-    adb = _adb_path()
-    proc = None
-    try:
-        while True:  # screenrecord caps at 3 min/run; loop to stay continuous
-            proc = await asyncio.create_subprocess_exec(
-                adb, "-s", serial, "exec-out", "screenrecord",
-                "--output-format=h264", "--time-limit", "175", "--bit-rate", "8000000", "-",
-                stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.DEVNULL,
-            )
-            while True:
-                chunk = await proc.stdout.read(16384)
-                if not chunk:
-                    break
-                await websocket.send_bytes(chunk)
-            await proc.wait()
-            proc = None
-    except (WebSocketDisconnect, RuntimeError, asyncio.CancelledError):
-        pass
-    except Exception as e:
-        logger.debug("h264 stream ended: %s", e)
-    finally:
-        if proc is not None and proc.returncode is None:
-            try:
-                proc.kill()
-            except Exception:
-                pass
+    await _stream_local_adb(websocket, serial)
 
 
 async def _stream_remote(websocket: WebSocket, conn):
