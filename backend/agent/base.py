@@ -46,6 +46,10 @@ def build_model_kwargs(
     if provider.lower() in ("zhipuai", "zhipu"):
         model_str = f"openai/{model}"
         extra_kwargs["api_base"] = "https://open.bigmodel.cn/api/paas/v4"
+    elif provider.lower() == "dashscope":
+        # Alibaba Cloud Model Studio OpenAI-compatible endpoint.
+        model_str = f"openai/{model}"
+        extra_kwargs["api_base"] = api_base or "https://dashscope.aliyuncs.com/compatible-mode/v1"
     elif provider.lower() == "bedrock":
         # litellm routes anthropic models on Bedrock through the Converse API
         # (vision + tools) automatically. Credentials are read from the
