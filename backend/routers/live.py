@@ -238,11 +238,9 @@ async def stream_h264(websocket: WebSocket, device_id: str):
         await websocket.close(code=4404)
         return
     conn = connected_devices.get(device_id)
-    if conn and conn.is_connected and conn.video_available:
-        await websocket.accept()
-        await _stream_remote(websocket, conn)
-        return
-    # A directly attached adb_usb device is streamed from its own persisted serial.
+    # Route USB ADB devices to Scrcpy explicitly. This branch must precede the
+    # remote provider branch so an incidental/stale WS registry entry cannot
+    # change the selected video engine for adb_usb.
     native_serial = local_adb.serial_for(device_id) if device.connection_type == "adb_usb" else None
     if native_serial:
         if device_id in _local_adb_streams:
@@ -254,6 +252,10 @@ async def stream_h264(websocket: WebSocket, device_id: str):
             await _stream_local_adb(websocket, native_serial)
         finally:
             _local_adb_streams.discard(device_id)
+        return
+    if conn and conn.is_connected and conn.video_available:
+        await websocket.accept()
+        await _stream_remote(websocket, conn)
         return
     # A remote video request must never show an unrelated server USB device.
     if websocket.query_params.get("source") == "device":
