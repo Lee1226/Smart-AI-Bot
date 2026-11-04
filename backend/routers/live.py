@@ -110,19 +110,9 @@ def _to_jpeg(raw: bytes, max_w: int = 540, quality: int = 70) -> bytes:
 
 
 async def _adb_jpeg(serial: str) -> bytes:
-    adb = _adb_path()
-    proc = await asyncio.create_subprocess_exec(
-        adb, "-s", serial, "exec-out", "screencap", "-p",
-        stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.DEVNULL,
+    raw = await local_adb._exec(
+        "-s", serial, "exec-out", "screencap", "-p", timeout=15, binary=True
     )
-    try:
-        raw, stderr = await asyncio.wait_for(proc.communicate(), timeout=15)
-    except asyncio.TimeoutError:
-        proc.kill()
-        await proc.communicate()
-        raise RuntimeError("ADB screencap timed out")
-    if proc.returncode != 0:
-        raise RuntimeError(stderr.decode("utf-8", errors="replace").strip() or "ADB screencap failed")
     if not raw:
         raise RuntimeError("screencap returned no data")
     return await asyncio.to_thread(_to_jpeg, raw)
@@ -196,41 +186,77 @@ async def screenshot_frame(device_id: str, request: Request, source: str = "auto
 
 
 async def _stream_local_adb(websocket: WebSocket, serial: str):
-    """Stream H.264 from the exact ADB serial bound to this device UUID."""
+    """Stream H.264 from the bound ADB serial without asyncio subprocess APIs."""
+    import threading
+    import subprocess
+    import concurrent.futures
+
     adb = _adb_path()
     if not adb:
         await websocket.close(code=4404)
         return
-    proc = None
-    try:
-        while True:  # Android screenrecord caps duration; restart between segments.
-            proc = await asyncio.create_subprocess_exec(
-                adb, "-s", serial, "exec-out", "screenrecord",
-                "--output-format=h264", "--time-limit", "175", "--bit-rate", "8000000", "-",
-                stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.DEVNULL,
+
+    loop = asyncio.get_running_loop()
+    queue: asyncio.Queue = asyncio.Queue(maxsize=16)
+    stop = threading.Event()
+    process_holder = {"proc": None}
+    sentinel = object()
+
+    def _reader():
+        proc = None
+        try:
+            proc = subprocess.Popen(
+                [adb, "-s", serial, "exec-out", "screenrecord",
+                 "--output-format=h264", "--time-limit", "175",
+                 "--bit-rate", "8000000", "-"],
+                stdout=subprocess.PIPE, stderr=subprocess.DEVNULL,
+                creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0) if os.name == "nt" else 0,
             )
-            while True:
-                chunk = await proc.stdout.read(16384)
+            process_holder["proc"] = proc
+            while not stop.is_set():
+                chunk = proc.stdout.read(16384)
                 if not chunk:
                     break
-                await websocket.send_bytes(chunk)
-            code = await proc.wait()
-            proc = None
-            if code != 0:
+                future = asyncio.run_coroutine_threadsafe(queue.put(chunk), loop)
+                while not stop.is_set():
+                    try:
+                        future.result(timeout=0.2)
+                        break
+                    except concurrent.futures.TimeoutError:
+                        continue
+                    except Exception:
+                        return
+            code = proc.wait(timeout=5)
+            if code != 0 and not stop.is_set():
                 logger.debug("local ADB screenrecord exited with code %s for %s", code, serial)
-                try:
-                    await websocket.close(code=4404, reason="ADB screenrecord unavailable")
-                except RuntimeError:
-                    pass
-                return
+        except Exception as exc:
+            if not stop.is_set():
+                logger.debug("local ADB screenrecord failed for %s: %s", serial, exc)
+        finally:
+            if proc is not None and proc.poll() is None:
+                proc.kill()
+            try:
+                loop.call_soon_threadsafe(queue.put_nowait, sentinel)
+            except RuntimeError:
+                pass
+
+    worker = asyncio.create_task(asyncio.to_thread(_reader))
+    try:
+        while True:
+            chunk = await queue.get()
+            if chunk is sentinel:
+                break
+            await websocket.send_bytes(chunk)
     except (WebSocketDisconnect, RuntimeError, asyncio.CancelledError):
         pass
-    except Exception as exc:
-        logger.debug("local ADB H.264 stream ended: %s", exc)
     finally:
-        if proc is not None and proc.returncode is None:
+        stop.set()
+        proc = process_holder.get("proc")
+        if proc is not None and proc.poll() is None:
             proc.kill()
-
+        if not worker.done():
+            worker.cancel()
+        await asyncio.gather(worker, return_exceptions=True)
 
 async def stream_h264(websocket: WebSocket, device_id: str):
     """Authenticated preview of this account's device, with legacy local ADB fallback."""
