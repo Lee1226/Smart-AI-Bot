@@ -178,10 +178,10 @@ class ScrcpyVideoSession:
                     time.sleep(0.2)
                     continue
 
-                # Keep the media socket non-blocking so reads can use the
-                # event loop directly instead of submitting one thread-pool
-                # job for every H.264 chunk.
-                candidate.setblocking(False)
+                # Windows SelectorEventLoop can fail with WinError 10038
+                # if a socket registered by sock_recv() is closed concurrently.
+                # Keep this socket blocking and perform reads in a worker thread.
+                candidate.settimeout(None)
                 self.socket = candidate
                 candidate = None
                 self.pending_data = first_data
@@ -234,8 +234,7 @@ class ScrcpyVideoSession:
     async def start(self) -> None:
         await asyncio.to_thread(self._start)
 
-    async def read(self, size: int = 64 * 1024) -> bytes:
-        """Read one H.264 chunk without blocking a worker thread."""
+    def _recv(self, size: int) -> bytes:
         if self.pending_data:
             data = self.pending_data[:size]
             self.pending_data = self.pending_data[size:]
@@ -244,12 +243,17 @@ class ScrcpyVideoSession:
         if sock is None:
             return b""
         try:
-            return await asyncio.get_running_loop().sock_recv(sock, size)
-        except (ConnectionError, OSError):
-            # A concurrently closed socket is the normal stop/disconnect path.
-            if self.socket is not sock:
+            return sock.recv(size)
+        except OSError:
+            # Socket shutdown/close during stop is an expected lifecycle event.
+            if self.socket is not sock or sock.fileno() < 0:
                 return b""
             raise
+
+    async def read(self, size: int = 64 * 1024) -> bytes:
+        # Preserve the proven Windows-compatible blocking socket path. The
+        # blocking recv runs in a worker thread, never on the event loop.
+        return await asyncio.to_thread(self._recv, size)
 
     def _stop(self) -> None:
         if self.socket is not None:
