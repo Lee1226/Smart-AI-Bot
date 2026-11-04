@@ -333,9 +333,11 @@ async def quick_run(req: QuickRunRequest, request: Request, db: AsyncSession = D
     if req.project_id:
         await require_operator(request, db)
     try:
+        # Quick-run resolves the platform from the connected device wrapper.
+        platform = WebSocketDevice(req.device_id).platform
         if account_id == await operator_account_id(db):
-            target_for_suite(suite, conn.platform)
-        elif req.app_package and conn.platform != "android":
+            target_for_suite(suite, platform)
+        elif req.app_package and platform != "android":
             raise ValueError("旧版包名仅适用于 Android")
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc))
