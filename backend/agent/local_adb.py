@@ -38,21 +38,26 @@ async def _exec(*args: str, timeout: float = 20, binary: bool = False) -> bytes 
     adb = adb_path()
     if not adb:
         raise RuntimeError("未找到 adb，请先安装 Android SDK Platform-Tools 并配置 PATH")
-    proc = await asyncio.create_subprocess_exec(
-        adb, *map(str, args),
-        stdout=asyncio.subprocess.PIPE,
-        stderr=asyncio.subprocess.PIPE,
-    )
+    # asyncio subprocess APIs are unavailable on Windows SelectorEventLoop.
+    # Run the short-lived adb command in a worker thread for compatibility
+    # with Uvicorn reload/workers and both Windows event-loop implementations.
+    def _run() -> subprocess.CompletedProcess:
+        return subprocess.run(
+            [adb, *map(str, args)],
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            timeout=timeout,
+            check=False,
+            creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0) if os.name == "nt" else 0,
+        )
     try:
-        stdout, stderr = await asyncio.wait_for(proc.communicate(), timeout=timeout)
-    except asyncio.TimeoutError:
-        proc.kill()
-        await proc.communicate()
-        raise RuntimeError(f"ADB 命令超时（{timeout:g}s）：{' '.join(args[:3])}")
-    if proc.returncode:
-        message = stderr.decode("utf-8", errors="replace").strip()
+        result = await asyncio.to_thread(_run)
+    except subprocess.TimeoutExpired as exc:
+        raise RuntimeError(f"ADB 命令超时（{timeout:g}s）：{' '.join(args[:3])}") from exc
+    if result.returncode:
+        message = result.stderr.decode("utf-8", errors="replace").strip()
         raise RuntimeError(message or f"ADB 命令失败：{' '.join(args[:3])}")
-    return stdout if binary else stdout.decode("utf-8", errors="replace").strip()
+    return result.stdout if binary else result.stdout.decode("utf-8", errors="replace").strip()
 
 
 async def discover_devices() -> list[dict[str, str]]:
