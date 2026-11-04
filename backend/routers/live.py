@@ -186,77 +186,41 @@ async def screenshot_frame(device_id: str, request: Request, source: str = "auto
 
 
 async def _stream_local_adb(websocket: WebSocket, serial: str):
-    """Stream H.264 from the bound ADB serial without asyncio subprocess APIs."""
-    import threading
-    import subprocess
-    import concurrent.futures
+    """Stream a directly attached USB device through an isolated Scrcpy session.
+
+    This path is selected only for connection_type == adb_usb. Portal and
+    bridge devices continue through _stream_remote() and their existing
+    provider-video transport.
+    """
+    from agent.scrcpy_video import ScrcpyVideoSession
 
     adb = _adb_path()
     if not adb:
-        await websocket.close(code=4404)
+        await websocket.close(code=4404, reason="ADB executable not found")
         return
 
-    loop = asyncio.get_running_loop()
-    queue: asyncio.Queue = asyncio.Queue(maxsize=16)
-    stop = threading.Event()
-    process_holder = {"proc": None}
-    sentinel = object()
-
-    def _reader():
-        proc = None
-        try:
-            proc = subprocess.Popen(
-                [adb, "-s", serial, "exec-out", "screenrecord",
-                 "--output-format=h264", "--time-limit", "175",
-                 "--bit-rate", "8000000", "-"],
-                stdout=subprocess.PIPE, stderr=subprocess.DEVNULL,
-                creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0) if os.name == "nt" else 0,
-            )
-            process_holder["proc"] = proc
-            while not stop.is_set():
-                chunk = proc.stdout.read(16384)
-                if not chunk:
-                    break
-                future = asyncio.run_coroutine_threadsafe(queue.put(chunk), loop)
-                while not stop.is_set():
-                    try:
-                        future.result(timeout=0.2)
-                        break
-                    except concurrent.futures.TimeoutError:
-                        continue
-                    except Exception:
-                        return
-            code = proc.wait(timeout=5)
-            if code != 0 and not stop.is_set():
-                logger.debug("local ADB screenrecord exited with code %s for %s", code, serial)
-        except Exception as exc:
-            if not stop.is_set():
-                logger.debug("local ADB screenrecord failed for %s: %s", serial, exc)
-        finally:
-            if proc is not None and proc.poll() is None:
-                proc.kill()
-            try:
-                loop.call_soon_threadsafe(queue.put_nowait, sentinel)
-            except RuntimeError:
-                pass
-
-    worker = asyncio.create_task(asyncio.to_thread(_reader))
+    session = ScrcpyVideoSession(adb, serial)
     try:
+        try:
+            await session.start()
+        except Exception as exc:
+            logger.warning("Scrcpy startup failed for local ADB device %s: %s", serial, exc)
+            await websocket.close(code=4404, reason="Scrcpy video unavailable")
+            return
+
+        # Relay only raw H.264 Annex-B bytes. Existing H264Canvas/H264Player
+        # already consume this format; no frontend or Portal protocol change.
         while True:
-            chunk = await queue.get()
-            if chunk is sentinel:
+            chunk = await session.read(64 * 1024)
+            if not chunk:
+                logger.info("Scrcpy video stream ended for local ADB device %s", serial)
                 break
             await websocket.send_bytes(chunk)
-    except (WebSocketDisconnect, RuntimeError, asyncio.CancelledError):
-        pass
+    except (WebSocketDisconnect, RuntimeError, asyncio.CancelledError, OSError) as exc:
+        logger.debug("Scrcpy video stream ended for %s: %s", serial, exc)
     finally:
-        stop.set()
-        proc = process_holder.get("proc")
-        if proc is not None and proc.poll() is None:
-            proc.kill()
-        if not worker.done():
-            worker.cancel()
-        await asyncio.gather(worker, return_exceptions=True)
+        await session.stop()
+
 
 async def stream_h264(websocket: WebSocket, device_id: str):
     """Authenticated preview of this account's device, with legacy local ADB fallback."""
