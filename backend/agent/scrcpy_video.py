@@ -151,7 +151,10 @@ class ScrcpyVideoSession:
                     time.sleep(0.2)
                     continue
 
-                candidate.settimeout(None)
+                # Keep the media socket non-blocking so reads can use the
+                # event loop directly instead of submitting one thread-pool
+                # job for every H.264 chunk.
+                candidate.setblocking(False)
                 self.socket = candidate
                 candidate = None
                 self.pending_data = first_data
@@ -180,14 +183,6 @@ class ScrcpyVideoSession:
         raise self._startup_error(
             f"Scrcpy did not produce first H.264 data before timeout: {last_error}"
         )
-        logger.info(
-            "[SCRCPY] Video ready: serial=%s scid=%s port=%s first_bytes=%d head=%s",
-            self.serial,
-            self.scid,
-            self.port,
-            len(first_data),
-            first_data[:32].hex(" "),
-        )
 
     def _drain_server_logs(self) -> None:
         process = self.server_process
@@ -212,17 +207,22 @@ class ScrcpyVideoSession:
     async def start(self) -> None:
         await asyncio.to_thread(self._start)
 
-    def _recv(self, size: int) -> bytes:
+    async def read(self, size: int = 64 * 1024) -> bytes:
+        """Read one H.264 chunk without blocking a worker thread."""
         if self.pending_data:
             data = self.pending_data[:size]
             self.pending_data = self.pending_data[size:]
             return data
-        if self.socket is None:
+        sock = self.socket
+        if sock is None:
             return b""
-        return self.socket.recv(size)
-
-    async def read(self, size: int = 64 * 1024) -> bytes:
-        return await asyncio.to_thread(self._recv, size)
+        try:
+            return await asyncio.get_running_loop().sock_recv(sock, size)
+        except (ConnectionError, OSError):
+            # A concurrently closed socket is the normal stop/disconnect path.
+            if self.socket is not sock:
+                return b""
+            raise
 
     def _stop(self) -> None:
         if self.socket is not None:
@@ -236,13 +236,6 @@ class ScrcpyVideoSession:
                 pass
             self.socket = None
 
-        if self.server_process is not None and self.server_process.poll() is None:
-            self.server_process.terminate()
-            try:
-                self.server_process.wait(timeout=3)
-            except subprocess.TimeoutExpired:
-                self.server_process.kill()
-                self.server_process.wait(timeout=2)
         process = self.server_process
         if process is not None and process.poll() is None:
             process.terminate()
