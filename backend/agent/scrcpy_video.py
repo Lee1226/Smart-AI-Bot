@@ -119,7 +119,7 @@ class ScrcpyVideoSession:
                 )
             try:
                 conn = socket.create_connection(("127.0.0.1", self.port), timeout=1)
-                conn.settimeout(1.0)
+                conn.settimeout(None)
                 self.socket = conn
                 self.started = True
                 return
