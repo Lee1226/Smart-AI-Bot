@@ -40,10 +40,10 @@ export function websocketH264Source(url: string): H264StreamSource {
         // Scrcpy session when the replacement socket arrives (close code 4409).
         // Treat that short-lived lock as retryable instead of immediately
         // falling back to screenshots.
-        const permanent = e.code === 4404 || e.code === 4401 || e.code === 4403
+        const permanent = e.code === 4404 || e.code === 4401 || e.code === 4403 || e.code === 4410
         const maxRetries = e.code === 4409 ? 6 : 3
         if (permanent || ++retryCount > maxRetries) {
-          handlers.fail(e.code === 4409 ? '视频设备正在被其他连接占用' : '视频流不可用')
+          handlers.fail(e.code === 4410 ? '视频预览已在其他连接中接管' : e.code === 4409 ? '视频设备正在被其他连接占用' : '视频流不可用')
           return
         }
         const delay = e.code === 4409
