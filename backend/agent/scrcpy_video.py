@@ -9,12 +9,10 @@ from __future__ import annotations
 import asyncio
 import os
 import random
-import shutil
 import socket
 import subprocess
 import time
 from pathlib import Path
-from typing import Callable
 
 SCRCPY_VERSION = "4.0"
 DEVICE_SERVER_PATH = "/data/local/tmp/scrcpy-server.jar"
