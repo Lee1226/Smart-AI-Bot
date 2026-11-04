@@ -166,6 +166,9 @@ async def detach_local_adb(device_id: str, request: Request, db: AsyncSession = 
     from core.device_scheduler import locks
     if locks.get(device_id) and locks[device_id].locked():
         raise HTTPException(status_code=409, detail="设备正在执行任务，请等待完成后再断开")
+    # Close the active Scrcpy preview before releasing the ADB binding.
+    from routers.live import stop_local_adb_stream
+    await stop_local_adb_stream(device_id)
     local_adb.unbind_device(device_id)
     device.adb_auto_connect = False
     device.status = "offline"
