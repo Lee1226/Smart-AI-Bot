@@ -208,13 +208,30 @@ async def _stream_local_adb(websocket: WebSocket, serial: str):
             await websocket.close(code=4404, reason="Scrcpy video unavailable")
             return
 
-        # Relay only raw H.264 Annex-B bytes. Existing H264Canvas/H264Player
-        # already consume this format; no frontend or Portal protocol change.
+        # Relay raw H.264 Annex-B bytes and record enough telemetry to
+        # distinguish an empty Scrcpy stream from a WebSocket relay failure.
+        total_bytes = 0
+        first_data_logged = False
         while True:
             chunk = await session.read(64 * 1024)
             if not chunk:
-                logger.info("Scrcpy video stream ended for local ADB device %s", serial)
+                logger.warning(
+                    "[SCRCPY DEBUG] Stream ended: serial=%s total_bytes=%d",
+                    serial,
+                    total_bytes,
+                )
                 break
+
+            total_bytes += len(chunk)
+            if not first_data_logged:
+                logger.info(
+                    "[SCRCPY DEBUG] First video data: serial=%s bytes=%d head=%s",
+                    serial,
+                    len(chunk),
+                    chunk[:32].hex(" "),
+                )
+                first_data_logged = True
+
             await websocket.send_bytes(chunk)
     except (WebSocketDisconnect, RuntimeError, asyncio.CancelledError, OSError) as exc:
         logger.debug("Scrcpy video stream ended for %s: %s", serial, exc)
@@ -223,55 +240,131 @@ async def _stream_local_adb(websocket: WebSocket, serial: str):
 
 
 async def stream_h264(websocket: WebSocket, device_id: str):
-    """Authenticated preview of this account's device, with legacy local ADB fallback."""
+    """Authenticated preview with an isolated Scrcpy path for local ADB USB."""
+    logger.info(
+        "[LIVE DEBUG] WebSocket request: device_id=%s client=%s",
+        device_id,
+        websocket.client,
+    )
+
     identity = await _websocket_identity(websocket)
     if not identity:
-        await websocket.close(code=4401)
+        logger.warning("[LIVE DEBUG] Authentication failed: device_id=%s", device_id)
+        await websocket.close(code=4401, reason="Authentication failed")
         return
+
     account_id, role = identity
     async with AsyncSessionLocal() as db:
         device = (await db.execute(select(Device).where(
             Device.id == device_id, Device.account_id == account_id
         ))).scalar_one_or_none()
         is_operator = account_id == await operator_account_id(db) and role in {"owner", "admin"}
+
     if not device:
-        await websocket.close(code=4404)
+        logger.warning(
+            "[LIVE DEBUG] Device not found or account mismatch: device_id=%s account_id=%s",
+            device_id,
+            account_id,
+        )
+        await websocket.close(code=4404, reason="Device not found")
         return
+
     conn = connected_devices.get(device_id)
-    # Route USB ADB devices to Scrcpy explicitly. This branch must precede the
-    # remote provider branch so an incidental/stale WS registry entry cannot
-    # change the selected video engine for adb_usb.
-    native_serial = local_adb.serial_for(device_id) if device.connection_type == "adb_usb" else None
-    if native_serial:
+    logger.info(
+        "[LIVE DEBUG] Device resolved: id=%s type=%s role=%s is_operator=%s connected=%s",
+        device_id,
+        device.connection_type,
+        role,
+        is_operator,
+        bool(conn and conn.is_connected),
+    )
+
+    # Local ADB USB devices must never fall through to the generic ADB path:
+    # that path could select an unrelated device attached to the host.
+    if device.connection_type == "adb_usb":
+        native_serial = local_adb.serial_for(device_id)
+        is_bound = local_adb.is_bound(device_id)
+        logger.info(
+            "[LIVE DEBUG] Local ADB state: device_id=%s serial=%s is_bound=%s",
+            device_id,
+            native_serial,
+            is_bound,
+        )
+
+        # Accept before reporting device-state errors. Closing a Starlette
+        # WebSocket before accept is surfaced by browsers as HTTP 403.
+        await websocket.accept()
+
+        if not native_serial:
+            logger.error(
+                "[LIVE DEBUG] adb_usb has no serial binding: device_id=%s",
+                device_id,
+            )
+            await websocket.close(code=4404, reason="Local ADB device is not bound")
+            return
+
         if device_id in _local_adb_streams:
+            logger.warning("[LIVE DEBUG] Video already being viewed: device_id=%s", device_id)
             await websocket.close(code=4409, reason="Video already being viewed")
             return
+
         _local_adb_streams.add(device_id)
+        logger.info(
+            "[LIVE DEBUG] Starting Scrcpy stream: device_id=%s serial=%s",
+            device_id,
+            native_serial,
+        )
         try:
-            await websocket.accept()
             await _stream_local_adb(websocket, native_serial)
+        except (WebSocketDisconnect, RuntimeError, asyncio.CancelledError, OSError):
+            raise
+        except Exception:
+            logger.exception(
+                "[LIVE DEBUG] Scrcpy stream exception: device_id=%s serial=%s",
+                device_id,
+                native_serial,
+            )
+            raise
         finally:
             _local_adb_streams.discard(device_id)
         return
+
     if conn and conn.is_connected and conn.video_available:
+        logger.info("[LIVE DEBUG] Using remote video stream: device_id=%s", device_id)
         await websocket.accept()
         await _stream_remote(websocket, conn)
         return
+
     # A remote video request must never show an unrelated server USB device.
     if websocket.query_params.get("source") == "device":
-        await websocket.close(code=4404)
+        logger.warning("[LIVE DEBUG] Remote device video unavailable: device_id=%s", device_id)
+        await websocket.close(code=4404, reason="Device video unavailable")
         return
-    if device.connection_type in {"browser_usb", "adb_bridge", "hdc_bridge", "ios_bridge", "adb_usb"} or not is_operator:
-        await websocket.close(code=4403)
+
+    if device.connection_type in {"browser_usb", "adb_bridge", "hdc_bridge", "ios_bridge"} or not is_operator:
+        logger.warning(
+            "[LIVE DEBUG] Video access denied: device_id=%s connection_type=%s is_operator=%s",
+            device_id,
+            device.connection_type,
+            is_operator,
+        )
+        await websocket.close(code=4403, reason="Video access denied")
         return
+
     await websocket.accept()
     source = websocket.query_params.get("source", "auto")
     serials = await asyncio.to_thread(_adb_serials)
     serial = _resolve_adb_serial(serials, source, websocket.query_params.get("serial"))
     if not serial:
-        await websocket.close(code=4404)  # no ADB → client falls back to screenshot
+        logger.warning("[LIVE DEBUG] No available ADB serial: device_id=%s", device_id)
+        await websocket.close(code=4404, reason="No ADB device available")
         return
 
+    logger.info(
+        "[LIVE DEBUG] Starting fallback ADB stream: device_id=%s serial=%s",
+        device_id,
+        serial,
+    )
     await _stream_local_adb(websocket, serial)
 
 
