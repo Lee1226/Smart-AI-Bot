@@ -8,7 +8,7 @@ export const PROVIDER_MODELS: Record<string, string[]> = {
   bedrock: ['us.anthropic.claude-sonnet-4-6', 'us.anthropic.claude-opus-4-8', 'us.anthropic.claude-haiku-4-5-20251001-v1:0'],
   google: ['gemini-1.5-pro', 'gemini-1.5-flash', 'gemini-2.0-flash'],
   zhipuai: ['glm-4v', 'glm-4v-plus', 'glm-4-plus', 'glm-4-flash'],
-  dashscope: ['qwen3.5-flash', 'qwen3.5-plus', 'qwen-max', 'qwen-plus'],
+  dashscope: ['qwen3.8-max', 'qwen3.8-flash', 'qwen3.7-plus', 'qwen3.7-flash', 'qwen3.5-plus', 'qwen3.5-flash', 'qwen-plus'],
   groq: ['llama-3.1-70b-versatile', 'llama-3.1-8b-instant', 'mixtral-8x7b-32768'],
   ollama: ['llama3', 'llama3.1', 'qwen2', 'mistral'],
 }
