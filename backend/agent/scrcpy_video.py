@@ -18,7 +18,7 @@ from typing import Callable
 
 SCRCPY_VERSION = "4.0"
 DEVICE_SERVER_PATH = "/data/local/tmp/scrcpy-server.jar"
-DEFAULT_SERVER_PATH = Path(__file__).resolve().parents[1] / "assets" / f"scrcpy-server-v{SCRCPY_VERSION}.jar"
+DEFAULT_SERVER_PATH = Path(__file__).resolve().parents[1] / "assets" / f"scrcpy-server-v{SCRCPY_VERSION}"
 
 
 def server_path() -> Path | None:
