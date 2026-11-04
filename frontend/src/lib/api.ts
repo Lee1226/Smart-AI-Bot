@@ -112,6 +112,8 @@ export interface Settings {
   anthropic_base_url: string
   gemini_api_key: string
   zhipu_api_key: string
+  dashscope_api_key: string
+  dashscope_base_url: string
   groq_api_key: string
   ollama_base_url: string
   ark_api_key: string
