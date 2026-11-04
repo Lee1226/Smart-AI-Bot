@@ -193,7 +193,9 @@ export default function LivePanel({ device, defaultMode = 'off', storageKey = 'l
           ? usingUsb
             ? t('本地 USB · 实时录屏 H.264', 'Local USB · live recording H.264')
             : usingRemote
-            ? t('远程设备 · H.264 视频流', 'Remote device · H.264 video')
+            ? device?.connection_type === 'adb_usb'
+              ? t('本地 USB · Scrcpy H.264', 'Local USB · Scrcpy H.264')
+              : t('远程设备 · H.264 视频流', 'Remote device · H.264 video')
             : videoUnavailable ? t('视频流未就绪', 'Video not ready') : ios ? t('iOS USB · 截图刷新', 'iOS USB · screenshot refresh') : harmony ? t('鸿蒙 HDC · 截图刷新', 'Harmony HDC · screenshot refresh') : t('截图 · ~1 fps', 'Screenshot · ~1 fps')
             : ' '}
       </div>
