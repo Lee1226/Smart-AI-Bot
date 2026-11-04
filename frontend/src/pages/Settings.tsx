@@ -28,6 +28,10 @@ const PROVIDER_FIELDS: Record<string, FieldDef[]> = {
   ],
   google: [{ key: 'gemini_api_key', label: 'API Key', type: 'password' }],
   zhipuai: [{ key: 'zhipu_api_key', label: 'API Key', type: 'password' }],
+  dashscope: [
+    { key: 'dashscope_api_key', label: 'DashScope API Key', placeholder: 'sk-…', type: 'password' },
+    { key: 'dashscope_base_url', label: 'Base URL', placeholder: 'https://dashscope.aliyuncs.com/compatible-mode/v1' },
+  ],
   groq: [{ key: 'groq_api_key', label: 'API Key', type: 'password' }],
   ollama: [{ key: 'ollama_base_url', label: 'Base URL', placeholder: 'http://localhost:11434' }],
 }
