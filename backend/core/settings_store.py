@@ -35,6 +35,8 @@ DEFAULT_SETTINGS = {
     "anthropic_base_url": "",
     "gemini_api_key": "",
     "zhipu_api_key": "",
+    "dashscope_api_key": "",
+    "dashscope_base_url": "https://dashscope.aliyuncs.com/compatible-mode/v1",
     "groq_api_key": "",
     "ollama_base_url": "http://localhost:11434",
     "aws_access_key_id": "",
@@ -59,6 +61,7 @@ _KEY_MAP = {
     "gemini": "gemini_api_key",
     "zhipuai": "zhipu_api_key",
     "zhipu": "zhipu_api_key",
+    "dashscope": "dashscope_api_key",
     "groq": "groq_api_key",
     "ark": "ark_api_key",
     "ollama": "",  # no key needed
@@ -67,6 +70,7 @@ _KEY_MAP = {
 _BASE_MAP = {
     "anthropic": "anthropic_base_url",
     "ark": "ark_base_url",
+    "dashscope": "dashscope_base_url",
     "ollama": "ollama_base_url",
 }
 
@@ -205,6 +209,7 @@ def build_fallback_chain(settings: dict, primary_provider: str, primary_model: s
         ("anthropic", "anthropic_api_key", "claude-3-5-sonnet-20241022"),
         ("gemini", "gemini_api_key", "gemini-1.5-pro"),
         ("zhipuai", "zhipu_api_key", "glm-4v"),
+        ("dashscope", "dashscope_api_key", "qwen3.5-plus"),
         ("groq", "groq_api_key", "llama-3.2-90b-vision-preview"),
     ]
     chain: list = []
