@@ -37,6 +37,22 @@ from ws.video import VideoSession, sessions
 
 logger = logging.getLogger(__name__)
 _local_adb_streams: set[str] = set()
+_local_adb_sessions: dict[str, object] = {}
+
+
+async def stop_local_adb_stream(device_id: str) -> None:
+    """Stop the preview session before a local ADB device is detached."""
+    session = _local_adb_sessions.get(device_id)
+    if session is not None:
+        try:
+            await session.stop()
+        except Exception:
+            logger.exception("Failed to stop Scrcpy session during detach: device_id=%s", device_id)
+    # Let the stream task finish its finally block and release the single-viewer guard.
+    deadline = asyncio.get_running_loop().time() + 3.0
+    while device_id in _local_adb_streams and asyncio.get_running_loop().time() < deadline:
+        await asyncio.sleep(0.05)
+
 router = APIRouter(prefix="/api/devices", tags=["live"])
 
 
@@ -185,7 +201,7 @@ async def screenshot_frame(device_id: str, request: Request, source: str = "auto
     return Response(content=jpeg, media_type="image/jpeg", headers={"Cache-Control": "no-store"})
 
 
-async def _stream_local_adb(websocket: WebSocket, serial: str):
+async def _stream_local_adb(websocket: WebSocket, serial: str, device_id: str | None = None):
     """Stream a directly attached USB device through an isolated Scrcpy session.
 
     This path is selected only for connection_type == adb_usb. Portal and
@@ -207,6 +223,9 @@ async def _stream_local_adb(websocket: WebSocket, serial: str):
             logger.warning("Scrcpy startup failed for local ADB device %s: %s", serial, exc)
             await websocket.close(code=4404, reason="Scrcpy video unavailable")
             return
+
+        if device_id:
+            _local_adb_sessions[device_id] = session
 
         # Relay raw H.264 Annex-B bytes and record enough telemetry to
         # distinguish an empty Scrcpy stream from a WebSocket relay failure.
@@ -236,6 +255,8 @@ async def _stream_local_adb(websocket: WebSocket, serial: str):
     except (WebSocketDisconnect, RuntimeError, asyncio.CancelledError, OSError) as exc:
         logger.debug("Scrcpy video stream ended for %s: %s", serial, exc)
     finally:
+        if device_id and _local_adb_sessions.get(device_id) is session:
+            _local_adb_sessions.pop(device_id, None)
         await session.stop()
 
 
@@ -315,7 +336,7 @@ async def stream_h264(websocket: WebSocket, device_id: str):
             native_serial,
         )
         try:
-            await _stream_local_adb(websocket, native_serial)
+            await _stream_local_adb(websocket, native_serial, device_id=device_id)
         except (WebSocketDisconnect, RuntimeError, asyncio.CancelledError, OSError):
             raise
         except Exception:
