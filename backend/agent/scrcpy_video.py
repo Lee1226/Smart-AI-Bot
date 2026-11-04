@@ -7,6 +7,7 @@ exposes its raw Annex-B H.264 stream to the existing WebSocket route.
 from __future__ import annotations
 
 import asyncio
+import hashlib
 import logging
 import os
 import random
@@ -25,6 +26,12 @@ SERVER_CONNECT_TIMEOUT = 15.0
 FIRST_VIDEO_DATA_TIMEOUT = 20.0
 FIRST_VIDEO_READ_SIZE = 64 * 1024
 DEFAULT_SERVER_PATH = Path(__file__).resolve().parents[1] / "assets" / f"scrcpy-server-v{SCRCPY_VERSION}"
+DEVICE_SERVER_MARKER = f"{DEVICE_SERVER_PATH}.sha256"
+
+# Prevent two preview startups for the same device from racing while checking
+# or uploading the shared Scrcpy server file.
+_SERVER_CACHE_LOCKS: dict[str, threading.Lock] = {}
+_SERVER_CACHE_LOCKS_GUARD = threading.Lock()
 
 
 def server_path() -> Path | None:
@@ -71,6 +78,54 @@ def _run_adb(adb: str, serial: str, *args: str, timeout: float = 20) -> str:
     return result.stdout.decode("utf-8", errors="replace").strip()
 
 
+def _ensure_server_on_device(adb: str, serial: str, jar: Path) -> bool:
+    """Upload Scrcpy server only when the device copy is missing or stale.
+
+    A SHA-256 sidecar identifies the exact local JAR contents. This avoids
+    repeatedly transferring the JAR on preview reconnects while still
+    replacing it when the bundled/custom server file changes.
+    Returns True when an upload was performed.
+    """
+    digest = hashlib.sha256(jar.read_bytes()).hexdigest()
+    with _SERVER_CACHE_LOCKS_GUARD:
+        lock = _SERVER_CACHE_LOCKS.setdefault(serial, threading.Lock())
+
+    with lock:
+        check_script = (
+            f"if [ -s '{DEVICE_SERVER_PATH}' ] && "
+            f"[ \"$(cat '{DEVICE_SERVER_MARKER}' 2>/dev/null)\" = '{digest}' ]; "
+            "then echo CACHE_HIT; else echo CACHE_MISS; fi"
+        )
+        try:
+            cache_status = _run_adb(
+                adb, serial, "shell", check_script, timeout=10
+            )
+        except Exception as exc:
+            # If cache inspection fails, retain the safe original behavior:
+            # attempt to upload the known-good local server JAR.
+            logger.warning(
+                "[SCRCPY] Server cache check failed; uploading: serial=%s error=%s",
+                serial, exc,
+            )
+            cache_status = "CACHE_MISS"
+
+        if cache_status.strip().endswith("CACHE_HIT"):
+            logger.debug("[SCRCPY] Server cache hit: serial=%s version=%s", serial, SCRCPY_VERSION)
+            return False
+
+        _run_adb(adb, serial, "push", str(jar), DEVICE_SERVER_PATH, timeout=30)
+        _run_adb(
+            adb, serial, "shell",
+            f"echo '{digest}' > '{DEVICE_SERVER_MARKER}'",
+            timeout=10,
+        )
+        logger.info(
+            "[SCRCPY] Server uploaded: serial=%s version=%s sha256=%s",
+            serial, SCRCPY_VERSION, digest[:12],
+        )
+        return True
+
+
 class ScrcpyVideoSession:
     """Own the adb forward, temporary server process and H.264 socket."""
 
@@ -114,7 +169,7 @@ class ScrcpyVideoSession:
                 "或设置环境变量 SCRCPY_SERVER_PATH"
             )
 
-        _run_adb(self.adb, self.serial, "push", str(jar), DEVICE_SERVER_PATH, timeout=30)
+        _ensure_server_on_device(self.adb, self.serial, jar)
         socket_name = f"scrcpy_{self.scid}"
         _run_adb(
             self.adb, self.serial, "forward",
