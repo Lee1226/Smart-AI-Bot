@@ -22,6 +22,8 @@ class Settings(BaseModel):
     anthropic_base_url: Optional[str] = ""   # optional override (e.g. internal LiteLLM proxy URL)
     gemini_api_key: Optional[str] = ""
     zhipu_api_key: Optional[str] = ""
+    dashscope_api_key: Optional[str] = ""
+    dashscope_base_url: Optional[str] = "https://dashscope.aliyuncs.com/compatible-mode/v1"
     groq_api_key: Optional[str] = ""
     ollama_base_url: Optional[str] = "http://localhost:11434"
     ark_api_key: Optional[str] = ""
@@ -46,7 +48,7 @@ class Settings(BaseModel):
 
 SECRET_FIELDS = {
     "openai_api_key", "anthropic_api_key", "gemini_api_key", "zhipu_api_key",
-    "groq_api_key", "ark_api_key", "aws_access_key_id", "aws_secret_access_key",
+    "groq_api_key", "ark_api_key", "dashscope_api_key", "aws_access_key_id", "aws_secret_access_key",
     "webhook_url",
 }
 
