@@ -37,6 +37,25 @@ def _creationflags() -> int:
     return getattr(subprocess, "CREATE_NO_WINDOW", 0) if os.name == "nt" else 0
 
 
+def _video_setting(name: str, default: int, minimum: int, maximum: int) -> int:
+    """Read a bounded integer video setting from the environment."""
+    raw = os.environ.get(name, "").strip()
+    if not raw:
+        return default
+    try:
+        value = int(raw)
+    except ValueError:
+        logger.warning("Ignoring invalid %s=%r; using %d", name, raw, default)
+        return default
+    if not minimum <= value <= maximum:
+        logger.warning(
+            "Ignoring out-of-range %s=%d (allowed %d..%d); using %d",
+            name, value, minimum, maximum, default,
+        )
+        return default
+    return value
+
+
 def _run_adb(adb: str, serial: str, *args: str, timeout: float = 20) -> str:
     result = subprocess.run(
         [adb, "-s", serial, *args],
@@ -55,13 +74,21 @@ def _run_adb(adb: str, serial: str, *args: str, timeout: float = 20) -> str:
 class ScrcpyVideoSession:
     """Own the adb forward, temporary server process and H.264 socket."""
 
-    def __init__(self, adb: str, serial: str, max_size: int = 1280,
-                 bit_rate: int = 8_000_000, max_fps: int = 30):
+    def __init__(self, adb: str, serial: str, max_size: int | None = None,
+                 bit_rate: int | None = None, max_fps: int | None = None):
         self.adb = adb
         self.serial = serial
-        self.max_size = max_size
-        self.bit_rate = bit_rate
-        self.max_fps = max_fps
+        # Defaults preserve the previous 1280 / 8 Mbps / 30 FPS behavior.
+        # Operators can tune each device session without changing source code.
+        self.max_size = max_size if max_size is not None else _video_setting(
+            "SCRCPY_MAX_SIZE", 1280, 480, 2560
+        )
+        self.bit_rate = bit_rate if bit_rate is not None else _video_setting(
+            "SCRCPY_BIT_RATE", 8_000_000, 500_000, 40_000_000
+        )
+        self.max_fps = max_fps if max_fps is not None else _video_setting(
+            "SCRCPY_MAX_FPS", 30, 5, 60
+        )
         self.scid = f"{random.getrandbits(31):08x}"
         self.port = self._free_port()
         self.socket: socket.socket | None = None
