@@ -57,6 +57,15 @@ _RESOURCE_PATHS = (
 
 async def _owns_path_resource(path: str, account_id: str) -> bool:
     """Fail closed for every ID-addressed tenant resource before routing."""
+    # These are collection/host-level Local ADB endpoints, not device IDs.
+    # Keep authentication and the router-level owner/admin check; only skip
+    # the generic /api/devices/{device_id} tenant-resource lookup here.
+    if path in {
+        "/api/devices/local-adb/discover",
+        "/api/devices/local-adb/attach",
+    }:
+        return True
+
     async with AsyncSessionLocal() as db:
         for pattern, model, reserved in _RESOURCE_PATHS:
             match = pattern.match(path)
