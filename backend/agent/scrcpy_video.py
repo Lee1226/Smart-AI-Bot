@@ -126,48 +126,60 @@ class ScrcpyVideoSession:
         )
         self.server_log_thread.start()
 
-        # ADB forward can accept a local TCP connection before the remote
-        # abstract socket/server has produced any media. Therefore TCP connect
-        # alone is not considered a successful Scrcpy startup.
-        deadline = time.monotonic() + SERVER_CONNECT_TIMEOUT
+        # ADB forward may accept a local TCP connection before the remote
+        # abstract socket is ready. Such an early connection can immediately
+        # receive EOF. Retry with a NEW socket until the server produces media.
+        deadline = time.monotonic() + max(SERVER_CONNECT_TIMEOUT, FIRST_VIDEO_DATA_TIMEOUT)
         last_error: Exception | None = None
         while time.monotonic() < deadline:
             if self.server_process.poll() is not None:
                 raise self._startup_error(
                     f"Scrcpy ADB shell exited with code {self.server_process.returncode}"
                 )
+
+            candidate: socket.socket | None = None
             try:
-                self.socket = socket.create_connection(
-                    ("127.0.0.1", self.port),
-                    timeout=1,
+                candidate = socket.create_connection(("127.0.0.1", self.port), timeout=1)
+                candidate.settimeout(1.0)
+                first_data = candidate.recv(FIRST_VIDEO_READ_SIZE)
+                if not first_data:
+                    last_error = ConnectionError(
+                        "ADB forward accepted TCP but remote Scrcpy socket returned EOF"
+                    )
+                    candidate.close()
+                    candidate = None
+                    time.sleep(0.2)
+                    continue
+
+                candidate.settimeout(None)
+                self.socket = candidate
+                candidate = None
+                self.pending_data = first_data
+                self.started = True
+                logger.info(
+                    "[SCRCPY] Video ready: serial=%s scid=%s port=%s first_bytes=%d head=%s",
+                    self.serial,
+                    self.scid,
+                    self.port,
+                    len(first_data),
+                    first_data[:32].hex(" "),
                 )
-                break
+                return
+            except socket.timeout:
+                last_error = TimeoutError("connected, but no H.264 bytes arrived within 1 second")
             except OSError as exc:
                 last_error = exc
-                time.sleep(0.2)
-        else:
-            raise self._startup_error(
-                f"Timed out connecting to forwarded Scrcpy socket: {last_error}"
-            )
+            finally:
+                if candidate is not None:
+                    try:
+                        candidate.close()
+                    except OSError:
+                        pass
+            time.sleep(0.2)
 
-        # Wait for actual H.264 bytes before reporting the session as started.
-        # Preserve the first packet so the normal read() path forwards it.
-        self.socket.settimeout(FIRST_VIDEO_DATA_TIMEOUT)
-        try:
-            first_data = self.socket.recv(FIRST_VIDEO_READ_SIZE)
-        except socket.timeout as exc:
-            raise self._startup_error(
-                f"No H.264 data received within {FIRST_VIDEO_DATA_TIMEOUT:.0f}s"
-            ) from exc
-        except OSError as exc:
-            raise self._startup_error(f"Failed while waiting for first H.264 data: {exc}") from exc
-
-        if not first_data:
-            raise self._startup_error("Scrcpy socket closed before the first H.264 data")
-
-        self.pending_data = first_data
-        self.socket.settimeout(None)
-        self.started = True
+        raise self._startup_error(
+            f"Scrcpy did not produce first H.264 data before timeout: {last_error}"
+        )
         logger.info(
             "[SCRCPY] Video ready: serial=%s scid=%s port=%s first_bytes=%d head=%s",
             self.serial,
