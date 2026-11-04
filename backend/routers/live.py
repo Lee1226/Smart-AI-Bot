@@ -66,6 +66,15 @@ async def _claim_local_adb_stream(websocket: WebSocket, device_id: str) -> bool:
             except Exception:
                 logger.debug("Previous preview WebSocket already closed: device_id=%s", device_id)
 
+            # Closing the browser socket alone may not wake a worker thread
+            # blocked in Scrcpy recv(); stop the underlying session as well.
+            old_session = _local_adb_sessions.get(device_id)
+            if old_session is not None:
+                try:
+                    await old_session.stop()
+                except Exception:
+                    logger.exception("Failed to stop replaced Scrcpy session: device_id=%s", device_id)
+
             deadline = asyncio.get_running_loop().time() + _LOCAL_ADB_TAKEOVER_TIMEOUT
             while device_id in _local_adb_streams and asyncio.get_running_loop().time() < deadline:
                 await asyncio.sleep(0.05)
