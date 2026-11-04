@@ -38,6 +38,48 @@ from ws.video import VideoSession, sessions
 logger = logging.getLogger(__name__)
 _local_adb_streams: set[str] = set()
 _local_adb_sessions: dict[str, object] = {}
+_local_adb_websockets: dict[str, WebSocket] = {}
+_local_adb_claim_locks: dict[str, asyncio.Lock] = {}
+_LOCAL_ADB_TAKEOVER_TIMEOUT = 4.0
+
+
+def _local_adb_claim_lock(device_id: str) -> asyncio.Lock:
+    # Called on the event loop; no await occurs while creating the lock.
+    lock = _local_adb_claim_locks.get(device_id)
+    if lock is None:
+        lock = asyncio.Lock()
+        _local_adb_claim_locks[device_id] = lock
+    return lock
+
+
+async def _claim_local_adb_stream(websocket: WebSocket, device_id: str) -> bool:
+    """Take over a previous preview and guarantee one active stream per device."""
+    async with _local_adb_claim_lock(device_id):
+        old_websocket = _local_adb_websockets.get(device_id)
+        if device_id in _local_adb_streams and old_websocket is not None:
+            logger.info(
+                "[LIVE] Taking over existing preview: device_id=%s old_client=%s new_client=%s",
+                device_id, old_websocket.client, websocket.client,
+            )
+            try:
+                await old_websocket.close(code=4410, reason="Preview replaced by a new viewer")
+            except Exception:
+                logger.debug("Previous preview WebSocket already closed: device_id=%s", device_id)
+
+            deadline = asyncio.get_running_loop().time() + _LOCAL_ADB_TAKEOVER_TIMEOUT
+            while device_id in _local_adb_streams and asyncio.get_running_loop().time() < deadline:
+                await asyncio.sleep(0.05)
+
+        if device_id in _local_adb_streams:
+            logger.warning(
+                "[LIVE] Preview takeover timed out; existing session still active: device_id=%s",
+                device_id,
+            )
+            return False
+
+        _local_adb_streams.add(device_id)
+        _local_adb_websockets[device_id] = websocket
+        return True
 
 
 async def stop_local_adb_stream(device_id: str) -> None:
@@ -324,12 +366,9 @@ async def stream_h264(websocket: WebSocket, device_id: str):
             await websocket.close(code=4404, reason="Local ADB device is not bound")
             return
 
-        if device_id in _local_adb_streams:
-            logger.warning("[LIVE DEBUG] Video already being viewed: device_id=%s", device_id)
-            await websocket.close(code=4409, reason="Video already being viewed")
+        if not await _claim_local_adb_stream(websocket, device_id):
+            await websocket.close(code=4409, reason="Previous video session is still stopping")
             return
-
-        _local_adb_streams.add(device_id)
         logger.info(
             "[LIVE DEBUG] Starting Scrcpy stream: device_id=%s serial=%s",
             device_id,
@@ -347,7 +386,9 @@ async def stream_h264(websocket: WebSocket, device_id: str):
             )
             raise
         finally:
-            _local_adb_streams.discard(device_id)
+            if _local_adb_websockets.get(device_id) is websocket:
+                _local_adb_websockets.pop(device_id, None)
+                _local_adb_streams.discard(device_id)
         return
 
     if conn and conn.is_connected and conn.video_available:
