@@ -20,11 +20,13 @@ import Login from './pages/Login'
 import Register from './pages/Register'
 import Account from './pages/Account'
 import AutomationCatalog from './pages/AutomationCatalog'
+import DebugConsole from './pages/DebugConsole'
 
 type NavigationItem = { to: string; label: { zh: string; en: string }; icon: string; paths: string[] }
 const NAV_GROUPS: { label: { zh: string; en: string }; items: NavigationItem[] }[] = [
   { label: { zh: '测试工作台', en: 'Test workspace' }, items: [
     { to: '/', label: { zh: '设备', en: 'Devices' }, icon: '📱', paths: ['/'] },
+    { to: '/debug', label: { zh: '调试控制台', en: 'Debug console' }, icon: '⌘', paths: ['/debug'] },
     { to: '/quick', label: { zh: '任务执行', en: 'Execution' }, icon: '⚡', paths: ['/quick', '/regressions'] },
     { to: '/suites', label: { zh: '用例中心', en: 'Cases' }, icon: '🧪', paths: ['/suites', '/library', '/automation', '/recorder', '/knowledge'] },
     { to: '/runs', label: { zh: '运行结果', en: 'Results' }, icon: '▶', paths: ['/runs'] },
@@ -203,6 +205,7 @@ function AppLayout() {
         <div className="max-w-[1700px] mx-auto">
           <Routes>
             <Route path="/" element={<Devices />} />
+            <Route path="/debug" element={<DebugConsole />} />
             <Route path="/quick" element={<PageTabs section="execution"><QuickRun /></PageTabs>} />
             <Route path="/recorder" element={<PageTabs section="cases"><Recorder /></PageTabs>} />
             <Route path="/suites" element={<PageTabs section="cases"><Suites /></PageTabs>} />
