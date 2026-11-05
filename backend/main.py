@@ -14,7 +14,7 @@ from db.database import init_db
 from db import regression_models
 from core.settings_store import ensure_seeded
 from routers import appdist, automation, devices, knowledge, live, projects, recorder, serverinfo, settings, testsuites, testruns
-from routers import testaccounts
+from routers import testaccounts, debug
 from routers import auth as auth_router
 from routers import account as account_router
 from auth.middleware import AuthMiddleware
@@ -96,6 +96,7 @@ app.include_router(devices.router)
 app.include_router(testsuites.router)
 app.include_router(testsuites.nodes_router)
 app.include_router(testruns.router)
+app.include_router(debug.router)
 app.include_router(recorder.router)
 app.include_router(settings.router)
 app.include_router(appdist.router)
