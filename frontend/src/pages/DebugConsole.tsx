@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useState } from 'react'
 import { useMutation, useQuery } from '@tanstack/react-query'
 import { Device, fetchDevices, fetchSettings, startDebugSession, fetchDebugSession, stopDebugSession } from '../lib/api'
 import { PROVIDERS, PROVIDER_MODELS, DEFAULT_MODEL } from '../lib/providerConfig'
