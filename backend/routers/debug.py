@@ -2,14 +2,12 @@
 from __future__ import annotations
 
 import asyncio
-import json
 import logging
 import uuid
 from dataclasses import dataclass, field
 from typing import Optional
 
 from fastapi import APIRouter, HTTPException, Request
-from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, Field
 
 from agent.ws_device import WebSocketDevice
@@ -20,6 +18,8 @@ from core.settings_store import (
 from core.test_agent import TestCaseAgent
 from core.test_parser import TestCaseData
 from core.device_scheduler import locks
+from db.database import AsyncSessionLocal
+from db.models import Device as DeviceModel
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/api/debug", tags=["debug-console"])
@@ -72,6 +72,10 @@ async def start_debug(body: DebugStart, request: Request):
     account_id = getattr(request.state, "account_id", None)
     if not account_id:
         raise HTTPException(status_code=401, detail="未登录")
+    async with AsyncSessionLocal() as db:
+        owned_device = await db.get(DeviceModel, body.device_id)
+        if not owned_device or owned_device.account_id != account_id:
+            raise HTTPException(status_code=404, detail="设备不存在或无权访问")
     settings = await load_settings(account_id)
     default_provider, default_model = resolve_provider_model(settings)
     provider = (body.provider or default_provider).strip().lower()
@@ -135,31 +139,16 @@ async def start_debug(body: DebugStart, request: Request):
     return {"session_id": session.id, "status": session.status}
 
 
-@router.get("/sessions/{session_id}/events")
-async def debug_events(session_id: str, request: Request):
+@router.get("/sessions/{session_id}")
+async def get_debug_session(session_id: str, request: Request, after: int = 0):
     session = _owned_session(session_id, request)
-
-    async def stream():
-        index = 0
-        while True:
-            async with session.condition:
-                if index >= len(session.logs) and session.status in {"queued", "running"}:
-                    try:
-                        await asyncio.wait_for(session.condition.wait(), timeout=15)
-                    except asyncio.TimeoutError:
-                        yield ": keep-alive\\n\\n"
-                logs = session.logs[index:]
-                index = len(session.logs)
-                status = session.status
-            for line in logs:
-                yield "data: " + json.dumps({"type": "log", "message": line}, ensure_ascii=False) + "\\n\\n"
-            if status not in {"queued", "running"} and index >= len(session.logs):
-                yield "data: " + json.dumps({"type": "status", "status": status}) + "\\n\\n"
-                return
-
-    return StreamingResponse(stream(), media_type="text/event-stream", headers={
-        "Cache-Control": "no-cache", "X-Accel-Buffering": "no",
-    })
+    return {
+        "session_id": session.id,
+        "device_id": session.device_id,
+        "status": session.status,
+        "logs": session.logs[max(0, after):],
+        "next": len(session.logs),
+    }
 
 
 @router.post("/sessions/{session_id}/stop")
