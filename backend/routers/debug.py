@@ -157,4 +157,6 @@ async def stop_debug(session_id: str, request: Request):
     if session.task and not session.task.done():
         session.task.cancel()
         await asyncio.gather(session.task, return_exceptions=True)
+        if session.status in {"queued", "running"}:
+            await session.set_status("cancelled")
     return {"session_id": session.id, "status": session.status}
