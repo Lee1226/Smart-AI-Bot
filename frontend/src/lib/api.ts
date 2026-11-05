@@ -727,3 +727,23 @@ export const saveTestAccount = (projectId: string, body: TestAccountInput, id?: 
   ? api.put<ProjectTestAccount>(`/projects/${projectId}/test-accounts/${id}`, body).then(r => r.data)
   : api.post<ProjectTestAccount>(`/projects/${projectId}/test-accounts`, body).then(r => r.data)
 export const deleteTestAccount = (projectId: string, id: string) => api.delete(`/projects/${projectId}/test-accounts/${id}`)
+
+ 
+// ── Interactive debug console (isolated from formal test history) ───────────
+export interface DebugSessionStart {
+  session_id: string
+  status: string
+}
+export interface DebugSessionSnapshot {
+  session_id: string
+  device_id: string
+  status: string
+  logs: string[]
+  next: number
+}
+export const startDebugSession = (body: {
+  device_id: string; goal: string; expected?: string; provider: string; model: string; max_steps: number
+}) => api.post<DebugSessionStart>('/debug/sessions', body).then(r => r.data)
+export const fetchDebugSession = (id: string, after = 0) =>
+  api.get<DebugSessionSnapshot>(`/debug/sessions/${id}`, { params: { after } }).then(r => r.data)
+export const stopDebugSession = (id: string) => api.post<DebugSessionStart>(`/debug/sessions/${id}/stop`).then(r => r.data)
