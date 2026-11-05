@@ -15,6 +15,7 @@ export default function DebugConsole() {
   const [maxSteps, setMaxSteps] = useState(20)
   const [sessionId, setSessionId] = useState('')
   const [cursor, setCursor] = useState(0)
+  const [logLines, setLogLines] = useState<string[]>([])
   const selectedDevice = devices.find(d => d.id === deviceId) || null
   const snapshot = useQuery({
     queryKey: ['debug-session', sessionId, cursor],
@@ -34,7 +35,8 @@ export default function DebugConsole() {
     mutationFn: stopDebugSession,
   })
   useEffect(() => {
-    if (snapshot.data?.logs?.length) setCursor(snapshot.data.next)
+    if (snapshot.data?.logs?.length) setLogLines(previous => [...previous, ...snapshot.data!.logs])
+    if (snapshot.data) setCursor(snapshot.data.next)
   }, [snapshot.data?.next])
   useEffect(() => {
     if (settings) {
@@ -42,7 +44,7 @@ export default function DebugConsole() {
       setModel(settings.default_model || DEFAULT_MODEL[settings.default_provider || 'openai'] || '')
     }
   }, [settings])
-  const logs = useMemo(() => snapshot.data?.logs || [], [snapshot.data])
+  const logs = logLines
   const busy = !!sessionId && ['queued', 'running'].includes(snapshot.data?.status || 'queued')
   const canStart = !!deviceId && !!goal.trim() && !!provider && !!model.trim() && !start.isPending && !busy
   const changeProvider = (value: string) => {
@@ -85,9 +87,9 @@ export default function DebugConsole() {
           <input type="range" min={1} max={60} value={maxSteps} onChange={e => setMaxSteps(Number(e.target.value))} className="block w-full mt-2" />
         </label>
         <div className="flex gap-2">
-          <button disabled={!canStart} onClick={() => { setSessionId(''); setCursor(0); start.mutate({ device_id: deviceId, goal, expected: expected || '完成用户要求的操作，并说明执行结果', provider, model, max_steps: maxSteps }) }} className="px-5 py-2 rounded bg-primary text-white text-sm font-medium disabled:opacity-40">开始调试</button>
+          <button disabled={!canStart} onClick={() => { setSessionId(''); setCursor(0); setLogLines([]); start.mutate({ device_id: deviceId, goal, expected: expected || '完成用户要求的操作，并说明执行结果', provider, model, max_steps: maxSteps }) }} className="px-5 py-2 rounded bg-primary text-white text-sm font-medium disabled:opacity-40">开始调试</button>
           <button disabled={!busy || stop.isPending} onClick={() => stop.mutate(sessionId)} className="px-5 py-2 rounded border text-sm disabled:opacity-40">停止任务</button>
-          <button onClick={() => { setSessionId(''); setCursor(0) }} className="px-4 py-2 rounded border text-sm">清空日志视图</button>
+          <button onClick={() => { setSessionId(''); setCursor(0); setLogLines([]) }} className="px-4 py-2 rounded border text-sm">清空日志视图</button>
         </div>
         {start.isPending && <p className="text-xs text-ink-mute">正在创建调试会话…</p>}
       </section>
