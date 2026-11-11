@@ -113,11 +113,9 @@ export class WebGLRenderer {
     return shader
   }
 
-  render(frame: VideoFrame): WebGLRendererStats {
+  render(source: TexImageSource, width: number, height: number): WebGLRendererStats {
     if (this.disposed) throw new Error('WebGL Renderer 已释放')
     const gl = this.gl
-    const width = frame.displayWidth
-    const height = frame.displayHeight
     if (this.canvas.width !== width) this.canvas.width = width
     if (this.canvas.height !== height) this.canvas.height = height
     gl.viewport(0, 0, width, height)
@@ -133,7 +131,7 @@ export class WebGLRenderer {
         gl.RGBA,
         gl.RGBA,
         gl.UNSIGNED_BYTE,
-        frame as unknown as TexImageSource,
+        source,
       )
     } catch (error) {
       const detail = error instanceof Error ? error.message : String(error)
