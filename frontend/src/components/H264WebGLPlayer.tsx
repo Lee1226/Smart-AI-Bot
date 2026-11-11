@@ -4,7 +4,7 @@ import { H264AnnexB } from '../lib/h264AnnexB'
 import { WebGLRenderer } from '../lib/video/WebGLRenderer'
 
 type Metrics = {
-  decodeFps: number
+  submitFps: number
   renderFps: number
   queueSize: number
   decodedFrames: number
@@ -15,7 +15,7 @@ type Metrics = {
 }
 
 const EMPTY_METRICS: Metrics = {
-  decodeFps: 0, renderFps: 0, queueSize: 0,
+  submitFps: 0, renderFps: 0, queueSize: 0,
   decodedFrames: 0, renderedFrames: 0, droppedFrames: 0,
   width: 0, height: 0,
 }
@@ -132,10 +132,10 @@ export default function H264WebGLPlayer({
     const monitor = window.setInterval(() => {
       const now = performance.now()
       const elapsed = Math.max(1, now - previousAt)
-      const decodeFps = Math.round((decodedFrames - previousDecoded) * 1000 / elapsed)
+      const submitFps = Math.round((decodedFrames - previousDecoded) * 1000 / elapsed)
       const renderFps = Math.round((renderedFrames - previousRendered) * 1000 / elapsed)
       setMetrics({
-        decodeFps,
+        submitFps,
         renderFps,
         queueSize: decoder?.decodeQueueSize ?? 0,
         decodedFrames,
@@ -162,7 +162,7 @@ export default function H264WebGLPlayer({
     <>
       <canvas ref={canvasRef} className="absolute inset-0 w-full h-full object-contain" />
       <div className="absolute left-2 top-2 z-10 rounded bg-black/70 px-2 py-1 text-[10px] leading-4 text-white font-mono pointer-events-none">
-        <div>WebGL · Decode {metrics.decodeFps} FPS · Render {metrics.renderFps} FPS</div>
+        <div>WebGL · Submit {metrics.submitFps} FPS · Render {metrics.renderFps} FPS</div>
         <div>Queue {metrics.queueSize} · Dropped {metrics.droppedFrames}</div>
         {metrics.width > 0 && <div>{metrics.width} × {metrics.height}</div>}
       </div>
