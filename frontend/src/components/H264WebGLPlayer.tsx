@@ -78,16 +78,26 @@ export default function H264WebGLPlayer({
         if (!decoder) {
           decoder = new VideoDecoder({
             output: frame => {
-              try {
-                if (stopped || failed) return
-                const size = renderer.render(frame)
-                renderedFrames++
-                setMetrics(current => ({ ...current, width: size.width, height: size.height }))
-              } catch (error) {
-                fail(error instanceof Error ? error.message : 'WebGL 视频渲染失败')
-              } finally {
+              if (stopped || failed) {
                 frame.close()
+                return
               }
+              // WebGL texImage2D implementations do not consistently accept
+              // VideoFrame directly. ImageBitmap is a broadly supported source.
+              void createImageBitmap(frame).then(bitmap => {
+                try {
+                  if (stopped || failed) return
+                  const size = renderer.render(bitmap, frame.displayWidth, frame.displayHeight)
+                  renderedFrames++
+                  setMetrics(current => ({ ...current, width: size.width, height: size.height }))
+                } catch (error) {
+                  fail(error instanceof Error ? error.message : 'WebGL 视频渲染失败')
+                } finally {
+                  bitmap.close()
+                }
+              }).catch(error => {
+                fail(error instanceof Error ? `VideoFrame 转 ImageBitmap 失败：${error.message}` : 'VideoFrame 转 ImageBitmap 失败')
+              }).finally(() => frame.close())
             },
             error: () => fail('WebCodecs 解码失败')
           })
