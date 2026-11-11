@@ -124,15 +124,30 @@ export class WebGLRenderer {
     gl.useProgram(this.program)
     gl.activeTexture(gl.TEXTURE0)
     gl.bindTexture(gl.TEXTURE_2D, this.texture)
-    gl.texImage2D(
-      gl.TEXTURE_2D,
-      0,
-      gl.RGBA,
-      gl.RGBA,
-      gl.UNSIGNED_BYTE,
-      frame as unknown as TexImageSource,
-    )
+    // Clear stale GL errors so the diagnostic points to this frame upload.
+    while (gl.getError() !== gl.NO_ERROR) { /* drain previous errors */ }
+    try {
+      gl.texImage2D(
+        gl.TEXTURE_2D,
+        0,
+        gl.RGBA,
+        gl.RGBA,
+        gl.UNSIGNED_BYTE,
+        frame as unknown as TexImageSource,
+      )
+    } catch (error) {
+      const detail = error instanceof Error ? error.message : String(error)
+      throw new Error(`WebGL VideoFrame 纹理上传异常：${detail}`)
+    }
+    const uploadError = gl.getError()
+    if (uploadError !== gl.NO_ERROR) {
+      throw new Error(`WebGL VideoFrame 纹理上传失败，GL 错误码：0x${uploadError.toString(16)}`)
+    }
     gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4)
+    const drawError = gl.getError()
+    if (drawError !== gl.NO_ERROR) {
+      throw new Error(`WebGL 绘制失败，GL 错误码：0x${drawError.toString(16)}`)
+    }
     return { width, height }
   }
 
@@ -144,7 +159,7 @@ export class WebGLRenderer {
     gl.deleteBuffer(this.positionBuffer)
     gl.deleteBuffer(this.texCoordBuffer)
     gl.deleteProgram(this.program)
-    const lose = gl.getExtension('WEBGL_lose_context')
-    lose?.loseContext()
+    // Do not force-lose the context here. React StrictMode and source changes
+    // can run effect cleanup while the canvas is about to be initialized again.
   }
 }
