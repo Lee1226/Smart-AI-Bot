@@ -42,6 +42,116 @@ _local_adb_websockets: dict[str, WebSocket] = {}
 _local_adb_claim_locks: dict[str, asyncio.Lock] = {}
 _LOCAL_ADB_TAKEOVER_TIMEOUT = 4.0
 
+# One Scrcpy producer per local ADB device, with an independent bounded queue
+# for every browser viewer. A slow viewer is disconnected without affecting
+# the other viewers or the underlying device capture.
+_local_adb_hubs: dict[str, dict] = {}
+_local_adb_hub_locks: dict[str, asyncio.Lock] = {}
+
+
+def _local_adb_hub_lock(device_id: str) -> asyncio.Lock:
+    lock = _local_adb_hub_locks.get(device_id)
+    if lock is None:
+        lock = asyncio.Lock()
+        _local_adb_hub_locks[device_id] = lock
+    return lock
+
+
+async def _run_local_adb_hub(device_id: str, serial: str, hub: dict) -> None:
+    from agent.scrcpy_video import ScrcpyVideoSession
+
+    session = ScrcpyVideoSession(_adb_path(), serial)
+    hub["session"] = session
+    try:
+        await session.start()
+        hub["ready"].set()
+        while True:
+            chunk = await session.read(64 * 1024)
+            if not chunk:
+                raise RuntimeError("Scrcpy video stream ended")
+            # Each subscriber owns its queue: never use a shared work queue,
+            # which would distribute different frames to different tabs.
+            for viewer_id, queue in list(hub["subscribers"].items()):
+                try:
+                    queue.put_nowait(chunk)
+                except asyncio.QueueFull:
+                    hub["subscribers"].pop(viewer_id, None)
+                    ws = hub["websockets"].pop(viewer_id, None)
+                    if ws is not None:
+                        try:
+                            await ws.close(code=4408, reason="Viewer too slow; reconnect for a fresh keyframe")
+                        except Exception:
+                            pass
+    except asyncio.CancelledError:
+        raise
+    except Exception as exc:
+        hub["error"] = str(exc)
+        logger.warning("Local ADB video producer stopped: device_id=%s error=%s", device_id, exc)
+    finally:
+        hub["ready"].set()
+        try:
+            await session.stop()
+        except Exception:
+            logger.debug("Scrcpy stop failed: device_id=%s", device_id, exc_info=True)
+        if _local_adb_hubs.get(device_id) is hub:
+            _local_adb_hubs.pop(device_id, None)
+        for ws in list(hub["websockets"].values()):
+            try:
+                await ws.close(code=4404, reason="Device video producer stopped")
+            except Exception:
+                pass
+        hub["subscribers"].clear()
+        hub["websockets"].clear()
+
+
+async def _subscribe_local_adb_stream(websocket: WebSocket, device_id: str, serial: str) -> None:
+    viewer_id = uuid.uuid4().hex
+    lock = _local_adb_hub_lock(device_id)
+    async with lock:
+        hub = _local_adb_hubs.get(device_id)
+        if hub is None:
+            hub = {
+                "ready": asyncio.Event(),
+                "subscribers": {},
+                "websockets": {},
+                "session": None,
+                "task": None,
+                "error": None,
+            }
+            _local_adb_hubs[device_id] = hub
+            hub["task"] = asyncio.create_task(_run_local_adb_hub(device_id, serial, hub))
+        queue = asyncio.Queue(maxsize=64)
+        hub["subscribers"][viewer_id] = queue
+        hub["websockets"][viewer_id] = websocket
+
+    try:
+        await asyncio.wait_for(hub["ready"].wait(), timeout=15)
+        if hub["error"]:
+            await websocket.close(code=4404, reason="Scrcpy video unavailable")
+            return
+        while True:
+            chunk = await queue.get()
+            await websocket.send_bytes(chunk)
+    except (WebSocketDisconnect, RuntimeError, asyncio.CancelledError, OSError):
+        pass
+    except asyncio.TimeoutError:
+        try:
+            await websocket.close(code=4404, reason="Scrcpy startup timed out")
+        except Exception:
+            pass
+    finally:
+        task_to_stop = None
+        async with lock:
+            hub["subscribers"].pop(viewer_id, None)
+            hub["websockets"].pop(viewer_id, None)
+            if not hub["subscribers"] and _local_adb_hubs.get(device_id) is hub:
+                task_to_stop = hub["task"]
+                _local_adb_hubs.pop(device_id, None)
+        if task_to_stop and not task_to_stop.done():
+            task_to_stop.cancel()
+            await asyncio.gather(task_to_stop, return_exceptions=True)
+
+
 
 def _local_adb_claim_lock(device_id: str) -> asyncio.Lock:
     # Called on the event loop; no await occurs while creating the lock.
@@ -92,17 +202,25 @@ async def _claim_local_adb_stream(websocket: WebSocket, device_id: str) -> bool:
 
 
 async def stop_local_adb_stream(device_id: str) -> None:
-    """Stop the preview session before a local ADB device is detached."""
+    """Stop the shared Scrcpy producer before a local ADB device is detached."""
+    hub = _local_adb_hubs.pop(device_id, None)
+    if hub is not None:
+        for ws in list(hub["websockets"].values()):
+            try:
+                await ws.close(code=4404, reason="Device detached")
+            except Exception:
+                pass
+        task = hub.get("task")
+        if task and not task.done():
+            task.cancel()
+            await asyncio.gather(task, return_exceptions=True)
+    # Retain cleanup for the legacy single-viewer fallback path.
     session = _local_adb_sessions.get(device_id)
     if session is not None:
         try:
             await session.stop()
         except Exception:
-            logger.exception("Failed to stop Scrcpy session during detach: device_id=%s", device_id)
-    # Let the stream task finish its finally block and release the single-viewer guard.
-    deadline = asyncio.get_running_loop().time() + 3.0
-    while device_id in _local_adb_streams and asyncio.get_running_loop().time() < deadline:
-        await asyncio.sleep(0.05)
+            logger.exception("Failed to stop legacy Scrcpy session during detach: device_id=%s", device_id)
 
 router = APIRouter(prefix="/api/devices", tags=["live"])
 
@@ -375,29 +493,13 @@ async def stream_h264(websocket: WebSocket, device_id: str):
             await websocket.close(code=4404, reason="Local ADB device is not bound")
             return
 
-        if not await _claim_local_adb_stream(websocket, device_id):
-            await websocket.close(code=4409, reason="Previous video session is still stopping")
-            return
         logger.info(
-            "[LIVE DEBUG] Starting Scrcpy stream: device_id=%s serial=%s",
+            "[LIVE DEBUG] Subscribing to shared Scrcpy stream: device_id=%s serial=%s",
             device_id,
             native_serial,
         )
-        try:
-            await _stream_local_adb(websocket, native_serial, device_id=device_id)
-        except (WebSocketDisconnect, RuntimeError, asyncio.CancelledError, OSError):
-            raise
-        except Exception:
-            logger.exception(
-                "[LIVE DEBUG] Scrcpy stream exception: device_id=%s serial=%s",
-                device_id,
-                native_serial,
-            )
-            raise
-        finally:
-            if _local_adb_websockets.get(device_id) is websocket:
-                _local_adb_websockets.pop(device_id, None)
-                _local_adb_streams.discard(device_id)
+        await websocket.accept()
+        await _subscribe_local_adb_stream(websocket, device_id, native_serial)
         return
 
     if conn and conn.is_connected and conn.video_available:
