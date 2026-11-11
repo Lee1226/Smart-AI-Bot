@@ -498,7 +498,8 @@ async def stream_h264(websocket: WebSocket, device_id: str):
             device_id,
             native_serial,
         )
-        await websocket.accept()
+        # The local ADB branch accepted this WebSocket above, before checking
+        # the serial binding. Do not accept it a second time here.
         await _subscribe_local_adb_stream(websocket, device_id, native_serial)
         return
 
