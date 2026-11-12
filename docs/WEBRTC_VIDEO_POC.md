@@ -105,9 +105,9 @@ The isolated branch now contains the first end-to-end implementation slice:
 - The FFmpeg bridge reads raw H.264 from stdin and uses `-c:v copy`; it does not re-encode.
 - A bounded, non-blocking queue and a dedicated writer thread isolate FFmpeg backpressure from the Scrcpy reader and existing WebSocket fan-out. If the queue fills or FFmpeg exits, only the optional WebRTC publisher is disabled.
 - The existing local ADB hub sends one cached decodable GOP to the publisher, then subsequent live H.264 batches.
-- `GET /api/devices/{device_id}/webrtc` exposes the generated WHEP URL only to an authenticated owner/admin and only for a local ADB USB device.
+- `POST /api/devices/{device_id}/webrtc` acquires an authenticated WebRTC viewer reference and returns the generated WHEP URL; `DELETE` releases it. Both are restricted to owner/admin users and local ADB USB devices.
 - `WebRTCPlayer.tsx` negotiates WHEP and renders through a native browser video element. The Live panel has an explicit WebSocket / WebRTC PoC selector; WebSocket remains the default and fallback.
-- MediaMTX is configured to bind RTSP, WHEP and ICE UDP listeners to loopback only. The generated stream path is random per producer. Do not change this to a LAN bind without adding proper WHEP authentication / proxying and ICE candidate configuration.
+- MediaMTX is configured to bind RTSP, WHEP and ICE UDP listeners to loopback only; unused RTMP, HLS, SRT, API, metrics, pprof and MoQ listeners are disabled. The generated stream path is random per producer. Do not change this to a LAN bind without adding proper WHEP authentication / proxying and ICE candidate configuration.
 
 ### Windows local setup
 
@@ -132,6 +132,6 @@ $env:SMART_AI_MEDIAMTX_UDP_PORT = "8189"
 
 - This branch has not yet been built or run against the user's Windows machine and physical Android device. The implementation is committed but runtime acceptance is pending.
 - Scrcpy raw H.264 does not contain capture timestamps. FFmpeg is given the configured Scrcpy max FPS as the input frame rate; actual frame pacing and glass-to-glass latency must be measured.
-- The first version starts the Scrcpy hub through the existing authenticated WebSocket subscriber, which is retained as a lightweight lifecycle subscriber while WebRTC plays. The WebSocket renderer itself is not used for display in WebRTC mode.
+- WebRTC acquires the shared Scrcpy hub through backend reference counting. It does not open a duplicate H.264 WebSocket payload stream per tab. Existing WebSocket viewers and WebRTC viewers can coexist on the same producer.
 - WHEP HTTP signaling and ICE UDP must both work locally. If the offer succeeds but media does not flow, inspect the SDP ICE candidates and Windows Firewall UDP rule for the configured ICE port.
 - The generated MediaMTX config is validated with `mediamtx --validate-conf=...` before the server starts.
