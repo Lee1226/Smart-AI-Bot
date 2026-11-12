@@ -291,10 +291,7 @@ async def _subscribe_local_adb_stream(websocket: WebSocket, device_id: str, seri
                     }
                     _local_adb_hubs[device_id] = hub
                     hub["task"] = asyncio.create_task(_run_local_adb_hub(device_id, serial, hub))
-                # Keep only a short transport backlog. A viewer that cannot
-                # drain this queue is disconnected and can rejoin at a fresh IDR
-                # instead of watching seconds-old video.
-                queue = asyncio.Queue(maxsize=16)
+                queue = asyncio.Queue(maxsize=64)
                 bootstrap = hub["stream"].bootstrap
                 if bootstrap:
                     queue.put_nowait(bootstrap + b"\x00\x00\x00\x01")
