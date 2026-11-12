@@ -42,62 +42,104 @@ _local_adb_websockets: dict[str, WebSocket] = {}
 _local_adb_claim_locks: dict[str, asyncio.Lock] = {}
 _LOCAL_ADB_TAKEOVER_TIMEOUT = 4.0
 
-class _H264BootstrapCache:
-    """Cache SPS/PPS and the latest IDR picture from arbitrary TCP chunks."""
+class _H264AnnexBStream:
+    """Frame NAL units from arbitrary TCP reads and retain a decodable GOP.
+
+    A NAL is complete only when the next Annex-B start code arrives, or when
+    the socket has been idle long enough for the final NAL to be flushed.
+    """
+    MAX_GOP_BYTES = 32 * 1024 * 1024
+    MAX_PENDING_BYTES = 4 * 1024 * 1024
+
     def __init__(self) -> None:
         self.buffer = b""
-        self.sps = None
-        self.pps = None
-        self.idr_nals = []
-        self.bootstrap = b""
+        self.sps = b""
+        self.pps = b""
+        self.gop = bytearray()
+        self.idr_count = 0
 
     @staticmethod
-    def _marks(data):
+    def _marks(data: bytes):
         marks = []
         i = 0
         while i + 3 <= len(data):
-            if data[i:i + 3] == b"\x00\x00\x01":
-                marks.append((i, 3))
-                i += 3
-            elif i + 4 <= len(data) and data[i:i + 4] == b"\x00\x00\x00\x01":
+            if i + 4 <= len(data) and data[i:i + 4] == b"\\x00\\x00\\x00\\x01":
                 marks.append((i, 4))
                 i += 4
+            elif data[i:i + 3] == b"\\x00\\x00\\x01":
+                marks.append((i, 3))
+                i += 3
             else:
                 i += 1
         return marks
 
-    def _consume(self, nal):
+    @property
+    def bootstrap(self) -> bytes:
+        return bytes(self.gop)
+
+    def _consume(self, nal: bytes) -> bytes:
         if not nal:
-            return
+            return b""
         kind = nal[0] & 31
+        unit = b"\\x00\\x00\\x00\\x01" + nal
         if kind == 7:
-            self.sps = b"\x00\x00\x00\x01" + nal
-            return
+            if nal != self.sps:
+                self.sps = nal
+                self.gop.clear()
+            return unit
         if kind == 8:
-            self.pps = b"\x00\x00\x00\x01" + nal
-            return
+            if nal != self.pps:
+                self.pps = nal
+                self.gop.clear()
+            return unit
         if kind == 5:
             first_slice = len(nal) > 1 and bool(nal[1] & 0x80)
-            if first_slice or not self.idr_nals:
-                self.idr_nals = []
-            self.idr_nals.append(b"\x00\x00\x00\x01" + nal)
-            return
-        if kind in (1, 6, 9) and self.idr_nals:
-            if self.sps and self.pps:
-                self.bootstrap = self.sps + self.pps + b"".join(self.idr_nals)
-            self.idr_nals = []
+            if first_slice:
+                self.gop = bytearray()
+                if self.sps and self.pps:
+                    self.gop.extend(b"\\x00\\x00\\x00\\x01" + self.sps)
+                    self.gop.extend(b"\\x00\\x00\\x00\\x01" + self.pps)
+                    self.gop.extend(unit)
+                    self.idr_count += 1
+            elif self.gop:
+                self.gop.extend(unit)
+        elif self.gop:
+            self.gop.extend(unit)
 
-    def feed(self, chunk):
+        if len(self.gop) > self.MAX_GOP_BYTES:
+            logger.warning("[H264] GOP cache exceeded limit; waiting for next IDR (bytes=%d)", len(self.gop))
+            self.gop.clear()
+        return unit
+
+    def feed(self, chunk: bytes) -> bytes:
         data = self.buffer + chunk
         marks = self._marks(data)
+        units = []
         for index in range(len(marks) - 1):
             start, prefix = marks[index]
             end = marks[index + 1][0]
-            self._consume(data[start + prefix:end])
+            nal = data[start + prefix:end].rstrip(b"\\x00")
+            unit = self._consume(nal)
+            if unit:
+                units.append(unit)
         self.buffer = data[marks[-1][0]:] if marks else data
-        if len(self.buffer) > 4 * 1024 * 1024:
+        if len(self.buffer) > self.MAX_PENDING_BYTES:
+            logger.warning("[H264] Pending NAL exceeded limit; dropping incomplete NAL (%d bytes)", len(self.buffer))
             self.buffer = b""
-            self.idr_nals = []
+        return b"".join(units)
+
+    def flush(self) -> bytes:
+        """Finish the last NAL after a socket idle timeout."""
+        if not self.buffer:
+            return b""
+        marks = self._marks(self.buffer)
+        if not marks:
+            self.buffer = b""
+            return b""
+        start, prefix = marks[0]
+        nal = self.buffer[start + prefix:].rstrip(b"\\x00")
+        self.buffer = b""
+        return self._consume(nal)
 
 
 # One Scrcpy producer per local ADB device, with an independent bounded queue
@@ -120,45 +162,84 @@ async def _run_local_adb_hub(device_id: str, serial: str, hub: dict) -> None:
 
     session = ScrcpyVideoSession(_adb_path(), serial)
     hub["session"] = session
-    cache = _H264BootstrapCache()
+    stream = hub["stream"]
+    lock = _local_adb_hub_lock(device_id)
     total_bytes = 0
+    total_nals = 0
+    last_stats = asyncio.get_running_loop().time()
+
+    async def publish(data: bytes, idle_flush: bool = False) -> None:
+        nonlocal total_nals, last_stats
+        if not data:
+            return
+        close_viewers = []
+        async with lock:
+            # The parser/cache update and subscriber fan-out share one lock.
+            # A new subscriber therefore receives a GOP snapshot followed by
+            # strictly subsequent NAL batches, with no gap or duplicate batch.
+            batch = stream.feed(data) if not idle_flush else stream.flush()
+            if not batch:
+                return
+            total_nals += batch.count(b"\\x00\\x00\\x00\\x01")
+            bootstrap = stream.bootstrap
+            for viewer_id, queue in list(hub["subscribers"].items()):
+                if not hub["bootstrap_sent"].get(viewer_id, False):
+                    if bootstrap:
+                        while not queue.empty():
+                            try:
+                                queue.get_nowait()
+                            except asyncio.QueueEmpty:
+                                break
+                        queue.put_nowait(bootstrap)
+                        hub["bootstrap_sent"][viewer_id] = True
+                        logger.info(
+                            "[LIVE HUB] viewer bootstrapped: device_id=%s viewer=%s gop_bytes=%d idr_count=%d",
+                            device_id, viewer_id, len(bootstrap), stream.idr_count,
+                        )
+                    # The snapshot already includes this batch. Do not append it
+                    # again, which would duplicate the tail of the IDR/GOP.
+                    continue
+                try:
+                    queue.put_nowait(batch)
+                except asyncio.QueueFull:
+                    hub["subscribers"].pop(viewer_id, None)
+                    hub["websockets"].pop(viewer_id, None)
+                    hub["bootstrap_sent"].pop(viewer_id, None)
+                    ws = hub["websockets"].get(viewer_id)
+                    if ws is not None:
+                        close_viewers.append(ws)
+                    logger.warning("[LIVE HUB] slow viewer dropped: device_id=%s viewer=%s", device_id, viewer_id)
+
+            now = asyncio.get_running_loop().time()
+            if now - last_stats >= 5:
+                logger.info(
+                    "[H264] stream stats: device_id=%s bytes=%d nals=%d idr=%d gop_bytes=%d idle_flush=%s viewers=%d",
+                    device_id, total_bytes, total_nals, stream.idr_count,
+                    len(bootstrap), idle_flush, len(hub["subscribers"]),
+                )
+                last_stats = now
+        for ws in close_viewers:
+            try:
+                await ws.close(code=4408, reason="Viewer too slow; reconnect for a fresh keyframe")
+            except Exception:
+                pass
+
     try:
         await session.start()
         hub["ready"].set()
         logger.info("[LIVE HUB] producer ready: device_id=%s serial=%s", device_id, serial)
         while True:
             chunk = await session.read(64 * 1024)
+            if chunk is None:
+                # raw_stream has no packet lengths. On a short idle gap, flush
+                # the final NAL so a static screen's IDR is not held forever
+                # waiting for the next screen-change NAL/start code.
+                await publish(b"", idle_flush=True)
+                continue
             if not chunk:
                 raise RuntimeError("Scrcpy video stream ended")
             total_bytes += len(chunk)
-            cache.feed(chunk)
-            previous_bootstrap = hub.get("bootstrap", b"")
-            hub["bootstrap"] = cache.bootstrap
-            # A viewer that joined before the first complete IDR must not decode
-            # arbitrary delta frames. Replace its queued deltas with the decoder
-            # bootstrap, then continue with this and subsequent live chunks.
-            bootstrap_ready = bool(cache.bootstrap) and not previous_bootstrap
-            # Each subscriber owns an independent queue.
-            for viewer_id, queue in list(hub["subscribers"].items()):
-                if bootstrap_ready and not hub.get("bootstrap_sent", {}).get(viewer_id, False):
-                    while not queue.empty():
-                        try:
-                            queue.get_nowait()
-                        except asyncio.QueueEmpty:
-                            break
-                    queue.put_nowait(cache.bootstrap)
-                    hub["bootstrap_sent"][viewer_id] = True
-                try:
-                    queue.put_nowait(chunk)
-                except asyncio.QueueFull:
-                    hub["subscribers"].pop(viewer_id, None)
-                    ws = hub["websockets"].pop(viewer_id, None)
-                    logger.warning("[LIVE HUB] slow viewer dropped: device_id=%s viewer=%s bytes=%d", device_id, viewer_id, total_bytes)
-                    if ws is not None:
-                        try:
-                            await ws.close(code=4408, reason="Viewer too slow; reconnect for a fresh keyframe")
-                        except Exception:
-                            pass
+            await publish(chunk)
     except asyncio.CancelledError:
         raise
     except Exception as exc:
@@ -170,19 +251,18 @@ async def _run_local_adb_hub(device_id: str, serial: str, hub: dict) -> None:
             await session.stop()
         except Exception:
             logger.debug("Scrcpy stop failed: device_id=%s", device_id, exc_info=True)
-        # Do not permit a replacement producer until this Scrcpy session
-        # has fully stopped and released its ADB forward/socket.
-        async with _local_adb_hub_lock(device_id):
+        async with lock:
             if _local_adb_hubs.get(device_id) is hub:
                 _local_adb_hubs.pop(device_id, None)
-        for ws in list(hub["websockets"].values()):
+            viewers = list(hub["websockets"].values())
+            hub["subscribers"].clear()
+            hub["websockets"].clear()
+            hub["bootstrap_sent"].clear()
+        for ws in viewers:
             try:
                 await ws.close(code=4404, reason="Device video producer stopped")
             except Exception:
                 pass
-        hub["subscribers"].clear()
-        hub["websockets"].clear()
-        hub.get("bootstrap_sent", {}).clear()
 
 
 async def _subscribe_local_adb_stream(websocket: WebSocket, device_id: str, serial: str) -> None:
@@ -203,14 +283,14 @@ async def _subscribe_local_adb_stream(websocket: WebSocket, device_id: str, seri
                         "session": None,
                         "task": None,
                         "error": None,
-                        "bootstrap": b"",
+                        "stream": _H264AnnexBStream(),
                         "bootstrap_sent": {},
                         "stopping": False,
                     }
                     _local_adb_hubs[device_id] = hub
                     hub["task"] = asyncio.create_task(_run_local_adb_hub(device_id, serial, hub))
                 queue = asyncio.Queue(maxsize=64)
-                bootstrap = hub.get("bootstrap", b"")
+                bootstrap = hub["stream"].bootstrap
                 if bootstrap:
                     queue.put_nowait(bootstrap)
                 # If the first IDR has not arrived yet, the producer will replace
