@@ -53,6 +53,7 @@ export default function H264WebGLPlayer({
     let decoder: VideoDecoder | null = null
     let parser: H264AnnexB
     let timestamp = 0
+    let liveStartTimestamp: number | null = null
     let hasKey = false
     let pendingDecode: EncodedVideoChunk[] = []
     let stopSource: (() => void) | undefined
@@ -83,6 +84,7 @@ export default function H264WebGLPlayer({
       decoder = null
       pendingDecode = []
       timestamp = 0
+      liveStartTimestamp = null
       hasKey = false
       parser = new H264AnnexB((data, key, sps) => {
         if (stopped || failed || (!key && !hasKey)) return
@@ -93,11 +95,20 @@ export default function H264WebGLPlayer({
                 frame.close()
                 return
               }
+              // Drop cached-GOP output while still decoding it for H.264 reference
+              // state. Check again after the async bitmap conversion to avoid a
+              // historical frame rendering after the live boundary was crossed.
+              const frameTimestamp = frame.timestamp
+              if (liveStartTimestamp !== null && frameTimestamp < liveStartTimestamp) {
+                frame.close()
+                return
+              }
               // WebGL texImage2D implementations do not consistently accept
               // VideoFrame directly. ImageBitmap is a broadly supported source.
               void createImageBitmap(frame).then(bitmap => {
                 try {
                   if (stopped || failed) return
+                  if (liveStartTimestamp !== null && frameTimestamp < liveStartTimestamp) return
                   const size = renderer.render(bitmap, frame.displayWidth, frame.displayHeight)
                   renderedFrames++
                   setMetrics(current => ({ ...current, width: size.width, height: size.height }))
@@ -141,7 +152,12 @@ export default function H264WebGLPlayer({
       stopSource = source({
         reset,
         flush: () => { if (!stopped && !failed) parser.flushAccessUnit() },
-      data: chunk => {
+        bootstrapEnd: () => {
+          if (stopped || failed) return
+          parser.flushAccessUnit()
+          liveStartTimestamp = timestamp
+        },
+        data: chunk => {
           if (stopped || failed) return
           try { parser.feed(chunk) }
           catch (error) { fail(error instanceof Error ? error.message : 'H.264 数据解析失败') }
