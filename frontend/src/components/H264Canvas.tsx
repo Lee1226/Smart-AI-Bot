@@ -86,6 +86,7 @@ export default function H264Canvas({ source, onFail }: { source: H264StreamSourc
     stopSource = source({
       reset,
       flush: () => { if (!stopped && !failed) parser.flushAccessUnit() },
+      bootstrapStart: () => { liveStartTimestamp = Number.POSITIVE_INFINITY },
       bootstrapEnd: () => {
         if (stopped || failed) return
         parser.flushAccessUnit()
