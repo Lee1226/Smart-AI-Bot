@@ -41,6 +41,7 @@ _local_adb_sessions: dict[str, object] = {}
 _local_adb_websockets: dict[str, WebSocket] = {}
 _local_adb_claim_locks: dict[str, asyncio.Lock] = {}
 _LOCAL_ADB_TAKEOVER_TIMEOUT = 4.0
+_H264_BOOTSTRAP_START = object()
 _H264_BOOTSTRAP_END = object()
 
 class _H264AnnexBStream:
@@ -197,6 +198,7 @@ async def _run_local_adb_hub(device_id: str, serial: str, hub: dict) -> None:
                         # then mark the exact transition to live frames. All three
                         # queue entries are inserted under the hub lock so live data
                         # can never overtake the bootstrap boundary.
+                        queue.put_nowait(_H264_BOOTSTRAP_START)
                         queue.put_nowait(bootstrap + b"\x00\x00\x00\x01")
                         queue.put_nowait(None)
                         queue.put_nowait(_H264_BOOTSTRAP_END)
@@ -302,6 +304,7 @@ async def _subscribe_local_adb_stream(websocket: WebSocket, device_id: str, seri
                 queue = asyncio.Queue(maxsize=64)
                 bootstrap = hub["stream"].bootstrap
                 if bootstrap:
+                    queue.put_nowait(_H264_BOOTSTRAP_START)
                     queue.put_nowait(bootstrap + b"\x00\x00\x00\x01")
                     queue.put_nowait(None)  # flush the final cached access unit
                     queue.put_nowait(_H264_BOOTSTRAP_END)
@@ -324,7 +327,9 @@ async def _subscribe_local_adb_stream(websocket: WebSocket, device_id: str, seri
             return
         while True:
             chunk = await queue.get()
-            if chunk is _H264_BOOTSTRAP_END:
+            if chunk is _H264_BOOTSTRAP_START:
+                await websocket.send_text("h264_bootstrap_start")
+            elif chunk is _H264_BOOTSTRAP_END:
                 await websocket.send_text("h264_bootstrap_end")
             elif chunk is None:
                 await websocket.send_text("h264_flush")
