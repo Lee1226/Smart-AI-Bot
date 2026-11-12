@@ -29,6 +29,7 @@ export default function H264Canvas({ source, onFail }: { source: H264StreamSourc
     let decoder: VideoDecoder | null = null
     let parser: H264AnnexB
     let timestamp = 0
+    let liveStartTimestamp: number | null = null
     let hasKey = false
     let pendingDecode: EncodedVideoChunk[] = []
     let stopSource: (() => void) | undefined
@@ -53,6 +54,7 @@ export default function H264Canvas({ source, onFail }: { source: H264StreamSourc
       decoder = null
       pendingDecode = []
       timestamp = 0
+      liveStartTimestamp = null
       hasKey = false
       parser = new H264AnnexB((data, key, sps) => {
         if (stopped || failed || (!key && !hasKey)) return
@@ -61,6 +63,7 @@ export default function H264Canvas({ source, onFail }: { source: H264StreamSourc
             output: frame => {
               try {
                 if (stopped || failed) return
+                if (liveStartTimestamp !== null && frame.timestamp < liveStartTimestamp) return
                 if (canvas.width !== frame.displayWidth) canvas.width = frame.displayWidth
                 if (canvas.height !== frame.displayHeight) canvas.height = frame.displayHeight
                 ctx.drawImage(frame, 0, 0)
@@ -83,6 +86,13 @@ export default function H264Canvas({ source, onFail }: { source: H264StreamSourc
     stopSource = source({
       reset,
       flush: () => { if (!stopped && !failed) parser.flushAccessUnit() },
+      bootstrapEnd: () => {
+        if (stopped || failed) return
+        parser.flushAccessUnit()
+        // Decode the cached GOP to establish reference frames, but display only
+        // decoded frames at or after the live-stream boundary.
+        liveStartTimestamp = timestamp
+      },
       data: chunk => {
         if (stopped || failed) return
         try { parser.feed(chunk) } catch (e) { fail(e instanceof Error ? e.message : '视频解析失败') }
