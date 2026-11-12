@@ -567,6 +567,38 @@ class Capabilities(BaseModel):
     video_available: bool = False
 
 
+@router.get("/{device_id}/webrtc")
+async def webrtc_playback_info(
+    device_id: str, request: Request, db: AsyncSession = Depends(get_db)
+):
+    """Return the local WHEP URL for an authenticated local ADB USB device."""
+    from agent.webrtc_video import webrtc_enabled
+
+    device = await db.get(Device, device_id)
+    if device is None or device.connection_type != "adb_usb":
+        raise HTTPException(status_code=404, detail="仅本地 ADB USB 设备支持 WebRTC PoC")
+    if not await _local_adb_allowed(request, db):
+        raise HTTPException(status_code=403, detail="仅管理员可访问本地 ADB USB 视频")
+    if not webrtc_enabled():
+        return {"enabled": False, "reason": "SMART_AI_WEBRTC_ENABLED 未启用"}
+
+    hub = _local_adb_hubs.get(device_id)
+    publisher = hub.get("webrtc_publisher") if hub else None
+    stream_path = hub.get("webrtc_path") if hub else None
+    if not publisher or not stream_path or publisher.failed:
+        raise HTTPException(
+            status_code=503,
+            detail="WebRTC 发布流尚未就绪；请先启动本设备实时预览并确认 FFmpeg/MediaMTX 正常",
+        )
+    host = os.environ.get("SMART_AI_MEDIAMTX_HOST", "127.0.0.1")
+    port = os.environ.get("SMART_AI_MEDIAMTX_WEBRTC_PORT", "8889")
+    return {
+        "enabled": True,
+        "whep_url": f"http://{host}:{port}/{stream_path}/whep",
+        "stream_path": stream_path,
+    }
+
+
 @router.get("/{device_id}/capabilities", response_model=Capabilities)
 async def capabilities(device_id: str, request: Request, db: AsyncSession = Depends(get_db)):
     device = await db.get(Device, device_id)
