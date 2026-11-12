@@ -30,6 +30,7 @@ export default function H264Canvas({ source, onFail }: { source: H264StreamSourc
     let parser: H264AnnexB
     let timestamp = 0
     let hasKey = false
+    let pendingDecode: EncodedVideoChunk[] = []
     let stopSource: (() => void) | undefined
     const fail = (message: string) => {
       if (stopped || failed) return
@@ -37,9 +38,20 @@ export default function H264Canvas({ source, onFail }: { source: H264StreamSourc
       stopSource?.()
       onFailRef.current?.(message)
     }
+    const pumpDecode = () => {
+      if (!decoder || stopped || failed) return
+      while (pendingDecode.length && decoder.decodeQueueSize < 8) {
+        const chunk = pendingDecode.shift()!
+        try { decoder.decode(chunk) } catch (error) {
+          fail(error instanceof Error ? error.message : '视频解码提交失败')
+          return
+        }
+      }
+    }
     const reset = () => {
       try { decoder?.close() } catch { /* already closed */ }
       decoder = null
+      pendingDecode = []
       timestamp = 0
       hasKey = false
       parser = new H264AnnexB((data, key, sps) => {
@@ -57,12 +69,14 @@ export default function H264Canvas({ source, onFail }: { source: H264StreamSourc
             error: () => fail('视频解码失败，已回落截图'),
           })
           const hex = (n: number) => n.toString(16).padStart(2, '0')
+          decoder.addEventListener('dequeue', pumpDecode)
           decoder.configure({ codec: `avc1.${hex(sps[1])}${hex(sps[2])}${hex(sps[3])}`, optimizeForLatency: true })
         }
-        if (decoder.decodeQueueSize > 30) throw new Error('视频解码积压，已回落截图')
-        decoder.decode(new EncodedVideoChunk({ type: key ? 'key' : 'delta', timestamp, data }))
+        if (pendingDecode.length >= 1800) throw new Error('视频输入缓存超过上限，已回落截图')
+        pendingDecode.push(new EncodedVideoChunk({ type: key ? 'key' : 'delta', timestamp, data }))
         timestamp += Math.round(1e6 / 32)
         hasKey ||= key
+        pumpDecode()
       })
     }
     reset()
