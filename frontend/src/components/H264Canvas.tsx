@@ -31,8 +31,6 @@ export default function H264Canvas({ source, onFail }: { source: H264StreamSourc
     let timestamp = 0
     let hasKey = false
     let pendingDecode: EncodedVideoChunk[] = []
-    let waitingForKeyframe = false
-    let codec: string | undefined
     let stopSource: (() => void) | undefined
     const fail = (message: string) => {
       if (stopped || failed) return
@@ -54,12 +52,10 @@ export default function H264Canvas({ source, onFail }: { source: H264StreamSourc
       try { decoder?.close() } catch { /* already closed */ }
       decoder = null
       pendingDecode = []
-      waitingForKeyframe = false
-      codec = undefined
       timestamp = 0
       hasKey = false
       parser = new H264AnnexB((data, key, sps) => {
-        if (stopped || failed) return
+        if (stopped || failed || (!key && !hasKey)) return
         if (!decoder) {
           decoder = new VideoDecoder({
             output: frame => {
@@ -73,25 +69,10 @@ export default function H264Canvas({ source, onFail }: { source: H264StreamSourc
             error: () => fail('视频解码失败，已回落截图'),
           })
           const hex = (n: number) => n.toString(16).padStart(2, '0')
-          codec = `avc1.${hex(sps[1])}${hex(sps[2])}${hex(sps[3])}`
           decoder.addEventListener('dequeue', pumpDecode)
-          decoder.configure({ codec, optimizeForLatency: true })
+          decoder.configure({ codec: `avc1.${hex(sps[1])}${hex(sps[2])}${hex(sps[3])}`, optimizeForLatency: true })
         }
-        // Bound end-to-end latency, not just the WebCodecs internal queue.
-        // H.264 delta frames cannot be dropped independently: reset and wait
-        // for the next IDR, then resume from a clean reference frame.
-        if (!waitingForKeyframe && decoder.decodeQueueSize + pendingDecode.length >= 16) {
-          pendingDecode = []
-          decoder.reset()
-          waitingForKeyframe = true
-          hasKey = false
-        }
-        if (waitingForKeyframe) {
-          if (!key) return
-          decoder.reset()
-          decoder.configure({ codec: codec!, optimizeForLatency: true })
-          waitingForKeyframe = false
-        }
+        if (pendingDecode.length >= 1800) throw new Error('视频解码输入缓存超过上限，已回落截图')
         pendingDecode.push(new EncodedVideoChunk({ type: key ? 'key' : 'delta', timestamp, data }))
         timestamp += Math.round(1e6 / 32)
         hasKey ||= key
