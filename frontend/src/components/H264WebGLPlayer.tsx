@@ -127,9 +127,10 @@ export default function H264WebGLPlayer({
       reset()
       stopSource = source({
         reset,
-        data: chunk => {
+        flush: () => { if (!stopped && !failed) parser.flushAccessUnit() },
+      data: chunk => {
           if (stopped || failed) return
-          try { parser.feed(chunk); parser.flushAccessUnit() }
+          try { parser.feed(chunk) }
           catch (error) { fail(error instanceof Error ? error.message : 'H.264 数据解析失败') }
         },
         fail,
