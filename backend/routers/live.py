@@ -163,6 +163,20 @@ async def _run_local_adb_hub(device_id: str, serial: str, hub: dict) -> None:
     session = ScrcpyVideoSession(_adb_path(), serial)
     hub["session"] = session
     stream = hub["stream"]
+    publisher = None
+    if hub.get("webrtc_enabled"):
+        try:
+            from agent.webrtc_video import FFmpegRtspPublisher, mediamtx_manager
+            await asyncio.to_thread(mediamtx_manager.ensure_started)
+            stream_path = f"smart_ai_{uuid.uuid4().hex}"
+            publisher = FFmpegRtspPublisher(stream_path, session.max_fps)
+            await asyncio.to_thread(publisher.start)
+            hub["webrtc_publisher"] = publisher
+            hub["webrtc_path"] = stream_path
+            logger.info("[WEBRTC] publisher ready: device_id=%s path=%s", device_id, stream_path)
+        except Exception as exc:
+            logger.warning("[WEBRTC] disabled for device_id=%s: %s", device_id, exc)
+            publisher = None
     lock = _local_adb_hub_lock(device_id)
     total_bytes = 0
     total_nals = 0
@@ -181,6 +195,16 @@ async def _run_local_adb_hub(device_id: str, serial: str, hub: dict) -> None:
                 return
             total_nals += batch.count(b"\x00\x00\x00\x01")
             bootstrap = stream.bootstrap
+            # WebRTC receives a complete decodable GOP once, then only live
+            # Annex-B batches. Publisher writes are non-blocking and isolated
+            # from the Scrcpy reader / WebSocket fan-out.
+            if publisher is not None and not publisher.failed:
+                if not hub.get("webrtc_bootstrap_sent"):
+                    if bootstrap:
+                        if publisher.write(bootstrap):
+                            hub["webrtc_bootstrap_sent"] = True
+                elif batch:
+                    publisher.write(batch)
             for viewer_id, queue in list(hub["subscribers"].items()):
                 try:
                     if not hub["bootstrap_sent"].get(viewer_id, False):
@@ -249,6 +273,11 @@ async def _run_local_adb_hub(device_id: str, serial: str, hub: dict) -> None:
         logger.warning("Local ADB video producer stopped: device_id=%s error=%s", device_id, exc)
     finally:
         hub["ready"].set()
+        if publisher is not None:
+            try:
+                await asyncio.to_thread(publisher.stop)
+            except Exception:
+                logger.debug("FFmpeg publisher stop failed: device_id=%s", device_id, exc_info=True)
         try:
             await session.stop()
         except Exception:
@@ -287,6 +316,10 @@ async def _subscribe_local_adb_stream(websocket: WebSocket, device_id: str, seri
                         "error": None,
                         "stream": _H264AnnexBStream(),
                         "bootstrap_sent": {},
+                        "webrtc_enabled": False,
+                        "webrtc_publisher": None,
+                        "webrtc_path": None,
+                        "webrtc_bootstrap_sent": False,
                         "stopping": False,
                     }
                     _local_adb_hubs[device_id] = hub
