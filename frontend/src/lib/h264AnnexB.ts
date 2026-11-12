@@ -36,8 +36,8 @@ export class H264AnnexB {
     this.key ||= type === 5
   }
 
-  // Flush the final access unit at a WebSocket batch boundary. Without this,
-  // a static screen's last IDR/P frame waits forever for the next NAL start code.
+  // Flush only when the backend reports an encoder-idle boundary. Flushing on
+  // every TCP batch could split a multi-slice frame across decoder chunks.
   flushAccessUnit() {
     this.emit()
   }
