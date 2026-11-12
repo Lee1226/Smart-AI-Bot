@@ -64,6 +64,39 @@ export default function H264WebGLPlayer({
     let previousDecoded = 0
     let previousRendered = 0
     let previousAt = performance.now()
+    // ImageBitmap conversion is asynchronous. Keep at most one conversion in
+    // flight and replace any waiting frame with the newest decoded frame.
+    let bitmapBusy = false
+    let latestFrame: VideoFrame | null = null
+
+    const renderLatestFrame = (frame: VideoFrame) => {
+      bitmapBusy = true
+      void createImageBitmap(frame).then(bitmap => {
+        try {
+          if (stopped || failed) return
+          const size = renderer.render(bitmap, frame.displayWidth, frame.displayHeight)
+          renderedFrames++
+          setMetrics(current => ({ ...current, width: size.width, height: size.height }))
+        } catch (error) {
+          fail(error instanceof Error ? error.message : 'WebGL 视频渲染失败')
+        } finally {
+          bitmap.close()
+        }
+      }).catch(error => {
+        fail(error instanceof Error ? `VideoFrame 转 ImageBitmap 失败：${error.message}` : 'VideoFrame 转 ImageBitmap 失败')
+      }).finally(() => {
+        frame.close()
+        bitmapBusy = false
+        if (stopped || failed) {
+          latestFrame?.close()
+          latestFrame = null
+          return
+        }
+        const next = latestFrame
+        latestFrame = null
+        if (next) renderLatestFrame(next)
+      })
+    }
 
     const fail = (message: string) => {
       if (stopped || failed) return
@@ -98,22 +131,12 @@ export default function H264WebGLPlayer({
                 frame.close()
                 return
               }
-              // WebGL texImage2D implementations do not consistently accept
-              // VideoFrame directly. ImageBitmap is a broadly supported source.
-              void createImageBitmap(frame).then(bitmap => {
-                try {
-                  if (stopped || failed) return
-                  const size = renderer.render(bitmap, frame.displayWidth, frame.displayHeight)
-                  renderedFrames++
-                  setMetrics(current => ({ ...current, width: size.width, height: size.height }))
-                } catch (error) {
-                  fail(error instanceof Error ? error.message : 'WebGL 视频渲染失败')
-                } finally {
-                  bitmap.close()
-                }
-              }).catch(error => {
-                fail(error instanceof Error ? `VideoFrame 转 ImageBitmap 失败：${error.message}` : 'VideoFrame 转 ImageBitmap 失败')
-              }).finally(() => frame.close())
+              if (bitmapBusy) {
+                latestFrame?.close()
+                latestFrame = frame
+                return
+              }
+              renderLatestFrame(frame)
             },
             error: () => fail('WebCodecs 解码失败')
           })
@@ -192,6 +215,8 @@ export default function H264WebGLPlayer({
       window.clearInterval(monitor)
       stopSource?.()
       try { decoder?.close() } catch { /* already closed */ }
+      latestFrame?.close()
+      latestFrame = null
       renderer.dispose()
     }
   }, [source])
