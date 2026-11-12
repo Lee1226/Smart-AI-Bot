@@ -19,6 +19,21 @@ function waitForIceGathering(pc: RTCPeerConnection, timeoutMs = 5000) {
   })
 }
 
+function describeError(error: unknown): string {
+  const value = error as {
+    message?: string
+    response?: { status?: number; data?: { detail?: string; message?: string } | string }
+  }
+  const detail = value?.response?.data
+  if (typeof detail === 'string' && detail) {
+    return `HTTP ${value.response?.status ?? '?'}：${detail}`
+  }
+  if (detail && typeof detail === 'object' && (detail.detail || detail.message)) {
+    return `HTTP ${value.response?.status ?? '?'}：${detail.detail || detail.message}`
+  }
+  return value?.message || 'WebRTC 启动失败'
+}
+
 export default function WebRTCPlayer({
   deviceId,
   onFail,
@@ -33,24 +48,43 @@ export default function WebRTCPlayer({
   useEffect(() => {
     let stopped = false
     let acquired = false
+    let released = false
     let peer: RTCPeerConnection | undefined
     let whepSessionUrl: string | undefined
 
+    const release = () => {
+      if (released) return
+      released = true
+      if (whepSessionUrl) {
+        void fetch(whepSessionUrl, { method: 'DELETE' }).catch(() => {})
+        whepSessionUrl = undefined
+      }
+      peer?.close()
+      peer = undefined
+      const video = videoRef.current
+      if (video) video.srcObject = null
+      if (acquired) {
+        acquired = false
+        void api.delete(`/devices/${deviceId}/webrtc`).catch(() => {})
+      }
+    }
+
     const fail = (message: string) => {
-      if (!stopped) onFailRef.current?.(message)
+      if (stopped || released) return
+      release()
+      onFailRef.current?.(message)
     }
 
     const start = async () => {
-      // Acquire one backend-managed reference. Multiple tabs share the same
-      // Scrcpy producer and FFmpeg publisher; no duplicate H.264 WebSocket
-      // payload is sent to each WebRTC tab.
+      // One backend reference per tab; all tabs share the device's Scrcpy and
+      // FFmpeg publisher rather than receiving duplicate H.264 WebSocket data.
       const { data: info } = await api.post<PlaybackInfo>(`/devices/${deviceId}/webrtc`)
       acquired = true
       if (stopped) {
-        void api.delete(`/devices/${deviceId}/webrtc`).catch(() => {})
+        release()
         return
       }
-      if (!info.enabled || !info.whep_url) throw new Error('WebRTC 发布流未就绪')
+      if (!info.enabled || !info.whep_url) throw new Error('后端未返回有效的 WHEP 地址')
 
       const pc = new RTCPeerConnection({ iceServers: [] })
       peer = pc
@@ -59,15 +93,18 @@ export default function WebRTCPlayer({
         const video = videoRef.current
         if (video && event.streams[0]) {
           video.srcObject = event.streams[0]
-          void video.play().catch(() => {})
+          void video.play().catch(error => {
+            fail(`浏览器拒绝自动播放：${error instanceof Error ? error.message : String(error)}`)
+          })
         }
       }
       pc.onconnectionstatechange = () => {
-        if (pc.connectionState === 'failed') fail('WebRTC 连接失败，请检查 ICE/UDP 端口配置')
-        if (pc.connectionState === 'disconnected') {
+        if (pc.connectionState === 'failed') {
+          fail('ICE 连接失败：请检查 WebRTC UDP 端口 8189、Windows 防火墙及 SDP candidate')
+        } else if (pc.connectionState === 'disconnected') {
           window.setTimeout(() => {
-            if (!stopped && pc.connectionState === 'disconnected') {
-              fail('WebRTC 连接已断开')
+            if (!stopped && !released && pc.connectionState === 'disconnected') {
+              fail('WebRTC ICE 连接持续断开')
             }
           }, 2500)
         }
@@ -76,13 +113,27 @@ export default function WebRTCPlayer({
       const offer = await pc.createOffer()
       await pc.setLocalDescription(offer)
       await waitForIceGathering(pc)
-      if (stopped) return
-      const response = await fetch(info.whep_url, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/sdp', Accept: 'application/sdp' },
-        body: pc.localDescription?.sdp,
-      })
-      if (!response.ok) throw new Error(`WHEP 协商失败：HTTP ${response.status}`)
+      if (stopped) {
+        release()
+        return
+      }
+
+      let response: Response
+      try {
+        response = await fetch(info.whep_url, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/sdp', Accept: 'application/sdp' },
+          body: pc.localDescription?.sdp,
+        })
+      } catch (error) {
+        throw new Error(
+          `无法访问 WHEP 地址 ${info.whep_url}。请确认浏览器与后端运行在同一台电脑、端口 8889 可访问且未被防火墙拦截；浏览器跨域错误也会导致此请求失败。原始错误：${error instanceof Error ? error.message : String(error)}`,
+        )
+      }
+      if (!response.ok) {
+        const detail = (await response.text().catch(() => '')).slice(0, 1200)
+        throw new Error(`WHEP 协商失败：HTTP ${response.status}${detail ? `，${detail}` : ''}`)
+      }
       const answer = await response.text()
       const locationHeader = response.headers.get('Location')
       whepSessionUrl = locationHeader
@@ -92,20 +143,13 @@ export default function WebRTCPlayer({
     }
 
     void start().catch(error => {
-      if (!stopped) fail(error instanceof Error ? error.message : 'WebRTC 启动失败')
+      if (!stopped) fail(describeError(error))
+      else release()
     })
 
     return () => {
       stopped = true
-      if (whepSessionUrl) {
-        void fetch(whepSessionUrl, { method: 'DELETE' }).catch(() => {})
-      }
-      peer?.close()
-      const video = videoRef.current
-      if (video) video.srcObject = null
-      if (acquired) {
-        void api.delete(`/devices/${deviceId}/webrtc`).catch(() => {})
-      }
+      release()
     }
   }, [deviceId])
 
