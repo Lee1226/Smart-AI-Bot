@@ -632,7 +632,6 @@ async def start_webrtc_playback(
         if wait_for_stopping_hub is not None and not wait_for_stopping_hub.done():
             await asyncio.gather(wait_for_stopping_hub, return_exceptions=True)
 
-    acquired = True
     try:
         await asyncio.wait_for(hub["ready"].wait(), timeout=25)
         if hub.get("error"):
@@ -657,7 +656,6 @@ async def start_webrtc_playback(
         }
     except asyncio.TimeoutError as exc:
         await _release_local_adb_webrtc_viewer(device_id)
-        acquired = False
         raise HTTPException(status_code=504, detail="等待 Scrcpy/WebRTC 视频源超时") from exc
     except Exception as exc:
         await _release_local_adb_webrtc_viewer(device_id)
