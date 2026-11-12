@@ -298,6 +298,49 @@ async def _run_local_adb_hub(device_id: str, serial: str, hub: dict) -> None:
                 pass
 
 
+def _new_local_adb_hub(device_id: str, serial: str) -> dict:
+    """Create one shared Scrcpy producer; caller must hold the device hub lock."""
+    hub = {
+        "ready": asyncio.Event(),
+        "subscribers": {},
+        "websockets": {},
+        "session": None,
+        "task": None,
+        "error": None,
+        "stream": _H264AnnexBStream(),
+        "bootstrap_sent": {},
+        "webrtc_enabled": False,
+        "webrtc_publisher": None,
+        "webrtc_path": None,
+        "webrtc_bootstrap_sent": False,
+        "webrtc_viewers": 0,
+        "stopping": False,
+    }
+    _local_adb_hubs[device_id] = hub
+    hub["task"] = asyncio.create_task(_run_local_adb_hub(device_id, serial, hub))
+    return hub
+
+
+async def _release_local_adb_webrtc_viewer(device_id: str) -> None:
+    lock = _local_adb_hub_lock(device_id)
+    task_to_stop = None
+    async with lock:
+        hub = _local_adb_hubs.get(device_id)
+        if hub is None:
+            return
+        hub["webrtc_viewers"] = max(0, hub.get("webrtc_viewers", 0) - 1)
+        if (
+            not hub["subscribers"]
+            and hub["webrtc_viewers"] == 0
+            and _local_adb_hubs.get(device_id) is hub
+        ):
+            hub["stopping"] = True
+            task_to_stop = hub.get("task")
+    if task_to_stop and not task_to_stop.done():
+        task_to_stop.cancel()
+        await asyncio.gather(task_to_stop, return_exceptions=True)
+
+
 async def _subscribe_local_adb_stream(websocket: WebSocket, device_id: str, serial: str) -> None:
     viewer_id = uuid.uuid4().hex
     lock = _local_adb_hub_lock(device_id)
@@ -309,23 +352,7 @@ async def _subscribe_local_adb_stream(websocket: WebSocket, device_id: str, seri
                 wait_for_stopping_hub = hub.get("task")
             else:
                 if hub is None:
-                    hub = {
-                        "ready": asyncio.Event(),
-                        "subscribers": {},
-                        "websockets": {},
-                        "session": None,
-                        "task": None,
-                        "error": None,
-                        "stream": _H264AnnexBStream(),
-                        "bootstrap_sent": {},
-                        "webrtc_enabled": False,
-                        "webrtc_publisher": None,
-                        "webrtc_path": None,
-                        "webrtc_bootstrap_sent": False,
-                        "stopping": False,
-                    }
-                    _local_adb_hubs[device_id] = hub
-                    hub["task"] = asyncio.create_task(_run_local_adb_hub(device_id, serial, hub))
+                    hub = _new_local_adb_hub(device_id, serial)
                 queue = asyncio.Queue(maxsize=64)
                 bootstrap = hub["stream"].bootstrap
                 if bootstrap:
@@ -368,7 +395,11 @@ async def _subscribe_local_adb_stream(websocket: WebSocket, device_id: str, seri
             hub["subscribers"].pop(viewer_id, None)
             hub["websockets"].pop(viewer_id, None)
             hub.get("bootstrap_sent", {}).pop(viewer_id, None)
-            if not hub["subscribers"] and _local_adb_hubs.get(device_id) is hub:
+            if (
+                not hub["subscribers"]
+                and hub.get("webrtc_viewers", 0) == 0
+                and _local_adb_hubs.get(device_id) is hub
+            ):
                 hub["stopping"] = True
                 task_to_stop = hub["task"]
         if task_to_stop and not task_to_stop.done():
@@ -567,11 +598,11 @@ class Capabilities(BaseModel):
     video_available: bool = False
 
 
-@router.get("/{device_id}/webrtc")
-async def webrtc_playback_info(
+@router.post("/{device_id}/webrtc")
+async def start_webrtc_playback(
     device_id: str, request: Request, db: AsyncSession = Depends(get_db)
 ):
-    """Return the local WHEP URL for an authenticated local ADB USB device."""
+    """Acquire a WebRTC viewer reference and return its local WHEP endpoint."""
     from agent.webrtc_video import webrtc_enabled
 
     device = await db.get(Device, device_id)
@@ -580,23 +611,71 @@ async def webrtc_playback_info(
     if not await _local_adb_allowed(request, db):
         raise HTTPException(status_code=403, detail="仅管理员可访问本地 ADB USB 视频")
     if not webrtc_enabled():
-        return {"enabled": False, "reason": "SMART_AI_WEBRTC_ENABLED 未启用"}
+        raise HTTPException(status_code=409, detail="SMART_AI_WEBRTC_ENABLED 未启用")
 
-    hub = _local_adb_hubs.get(device_id)
-    publisher = hub.get("webrtc_publisher") if hub else None
-    stream_path = hub.get("webrtc_path") if hub else None
-    if not publisher or not stream_path or publisher.failed:
-        raise HTTPException(
-            status_code=503,
-            detail="WebRTC 发布流尚未就绪；请先启动本设备实时预览并确认 FFmpeg/MediaMTX 正常",
-        )
-    host = "127.0.0.1"
-    port = os.environ.get("SMART_AI_MEDIAMTX_WEBRTC_PORT", "8889")
-    return {
-        "enabled": True,
-        "whep_url": f"http://{host}:{port}/{stream_path}/whep",
-        "stream_path": stream_path,
-    }
+    serial = local_adb.serial_for(device_id)
+    if not serial:
+        raise HTTPException(status_code=409, detail="本地 ADB USB 设备当前未连接")
+
+    lock = _local_adb_hub_lock(device_id)
+    while True:
+        wait_for_stopping_hub = None
+        async with lock:
+            hub = _local_adb_hubs.get(device_id)
+            if hub is not None and hub.get("stopping"):
+                wait_for_stopping_hub = hub.get("task")
+            else:
+                if hub is None:
+                    hub = _new_local_adb_hub(device_id, serial)
+                hub["webrtc_viewers"] = hub.get("webrtc_viewers", 0) + 1
+                break
+        if wait_for_stopping_hub is not None and not wait_for_stopping_hub.done():
+            await asyncio.gather(wait_for_stopping_hub, return_exceptions=True)
+
+    acquired = True
+    try:
+        await asyncio.wait_for(hub["ready"].wait(), timeout=25)
+        if hub.get("error"):
+            raise RuntimeError(hub["error"])
+        deadline = asyncio.get_running_loop().time() + 20
+        while (
+            not hub.get("webrtc_bootstrap_sent")
+            and hub.get("webrtc_publisher") is not None
+            and not hub["webrtc_publisher"].failed
+            and asyncio.get_running_loop().time() < deadline
+        ):
+            await asyncio.sleep(0.1)
+        publisher = hub.get("webrtc_publisher")
+        stream_path = hub.get("webrtc_path")
+        if not publisher or publisher.failed or not stream_path or not hub.get("webrtc_bootstrap_sent"):
+            raise RuntimeError("WebRTC 发布流未就绪，请检查 FFmpeg/MediaMTX 和 Scrcpy 视频源")
+        port = os.environ.get("SMART_AI_MEDIAMTX_WEBRTC_PORT", "8889")
+        return {
+            "enabled": True,
+            "whep_url": f"http://127.0.0.1:{port}/{stream_path}/whep",
+            "stream_path": stream_path,
+        }
+    except asyncio.TimeoutError as exc:
+        await _release_local_adb_webrtc_viewer(device_id)
+        acquired = False
+        raise HTTPException(status_code=504, detail="等待 Scrcpy/WebRTC 视频源超时") from exc
+    except Exception as exc:
+        await _release_local_adb_webrtc_viewer(device_id)
+        acquired = False
+        raise HTTPException(status_code=503, detail=str(exc)) from exc
+
+
+@router.delete("/{device_id}/webrtc", status_code=204)
+async def stop_webrtc_playback(
+    device_id: str, request: Request, db: AsyncSession = Depends(get_db)
+):
+    device = await db.get(Device, device_id)
+    if device is None or device.connection_type != "adb_usb":
+        raise HTTPException(status_code=404, detail="本地 ADB USB 设备不存在")
+    if not await _local_adb_allowed(request, db):
+        raise HTTPException(status_code=403, detail="仅管理员可关闭本地 ADB USB 视频")
+    await _release_local_adb_webrtc_viewer(device_id)
+    return Response(status_code=204)
 
 
 @router.get("/{device_id}/capabilities", response_model=Capabilities)
