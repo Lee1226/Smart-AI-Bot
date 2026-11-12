@@ -68,9 +68,10 @@ export default function H264Canvas({ source, onFail }: { source: H264StreamSourc
     reset()
     stopSource = source({
       reset,
+      flush: () => { if (!stopped && !failed) parser.flushAccessUnit() },
       data: chunk => {
         if (stopped || failed) return
-        try { parser.feed(chunk); parser.flushAccessUnit() } catch (e) { fail(e instanceof Error ? e.message : '视频解析失败') }
+        try { parser.feed(chunk) } catch (e) { fail(e instanceof Error ? e.message : '视频解析失败') }
       },
       fail,
     })
