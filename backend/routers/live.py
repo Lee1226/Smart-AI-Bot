@@ -41,6 +41,7 @@ _local_adb_sessions: dict[str, object] = {}
 _local_adb_websockets: dict[str, WebSocket] = {}
 _local_adb_claim_locks: dict[str, asyncio.Lock] = {}
 _LOCAL_ADB_TAKEOVER_TIMEOUT = 4.0
+_H264_BOOTSTRAP_END = object()
 
 class _H264AnnexBStream:
     """Frame NAL units from arbitrary TCP reads and retain a decodable GOP.
@@ -183,6 +184,7 @@ async def _run_local_adb_hub(device_id: str, serial: str, hub: dict) -> None:
             bootstrap = stream.bootstrap
             for viewer_id, queue in list(hub["subscribers"].items()):
                 try:
+                    just_bootstrapped = False
                     if not hub["bootstrap_sent"].get(viewer_id, False):
                         if not bootstrap:
                             continue
@@ -191,8 +193,15 @@ async def _run_local_adb_hub(device_id: str, serial: str, hub: dict) -> None:
                                 queue.get_nowait()
                             except asyncio.QueueEmpty:
                                 break
+                        # Send the complete cached GOP, flush its final access unit,
+                        # then mark the exact transition to live frames. All three
+                        # queue entries are inserted under the hub lock so live data
+                        # can never overtake the bootstrap boundary.
                         queue.put_nowait(bootstrap + b"\x00\x00\x00\x01")
+                        queue.put_nowait(None)
+                        queue.put_nowait(_H264_BOOTSTRAP_END)
                         hub["bootstrap_sent"][viewer_id] = True
+                        just_bootstrapped = True
                         logger.info(
                             "[LIVE HUB] viewer bootstrapped: device_id=%s viewer=%s gop_bytes=%d idr_count=%d",
                             device_id, viewer_id, len(bootstrap), stream.idr_count,
@@ -200,10 +209,9 @@ async def _run_local_adb_hub(device_id: str, serial: str, hub: dict) -> None:
                     elif batch:
                         queue.put_nowait(batch + b"\x00\x00\x00\x01")
 
-                    # A text control message tells the browser to flush its last
-                    # assembled access unit. Do this only on socket idle, not at
-                    # every arbitrary TCP read (a frame may contain many slices).
-                    if idle_flush and hub["bootstrap_sent"].get(viewer_id, False):
+                    # Flush ordinary live access units only at an encoder-idle
+                    # boundary. The bootstrap path already inserted its own flush.
+                    if idle_flush and hub["bootstrap_sent"].get(viewer_id, False) and not just_bootstrapped:
                         queue.put_nowait(None)
                 except asyncio.QueueFull:
                     hub["subscribers"].pop(viewer_id, None)
@@ -296,6 +304,7 @@ async def _subscribe_local_adb_stream(websocket: WebSocket, device_id: str, seri
                 if bootstrap:
                     queue.put_nowait(bootstrap + b"\x00\x00\x00\x01")
                     queue.put_nowait(None)  # flush the final cached access unit
+                    queue.put_nowait(_H264_BOOTSTRAP_END)
                 # If the first IDR has not arrived yet, the producer will replace
                 # queued deltas with bootstrap as soon as SPS/PPS + IDR are complete.
                 hub["bootstrap_sent"][viewer_id] = bool(bootstrap)
@@ -315,7 +324,9 @@ async def _subscribe_local_adb_stream(websocket: WebSocket, device_id: str, seri
             return
         while True:
             chunk = await queue.get()
-            if chunk is None:
+            if chunk is _H264_BOOTSTRAP_END:
+                await websocket.send_text("h264_bootstrap_end")
+            elif chunk is None:
                 await websocket.send_text("h264_flush")
             else:
                 await websocket.send_bytes(chunk)
