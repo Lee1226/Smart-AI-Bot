@@ -179,7 +179,7 @@ async def _run_local_adb_hub(device_id: str, serial: str, hub: dict) -> None:
             batch = stream.feed(data) if data else stream.flush()
             if not batch and not idle_flush:
                 return
-            total_nals += batch.count(b"\\x00\\x00\\x00\\x01")
+            total_nals += batch.count(b"\x00\x00\x00\x01")
             bootstrap = stream.bootstrap
             for viewer_id, queue in list(hub["subscribers"].items()):
                 try:
@@ -191,14 +191,14 @@ async def _run_local_adb_hub(device_id: str, serial: str, hub: dict) -> None:
                                 queue.get_nowait()
                             except asyncio.QueueEmpty:
                                 break
-                        queue.put_nowait(bootstrap + b"\\x00\\x00\\x00\\x01")
+                        queue.put_nowait(bootstrap + b"\x00\x00\x00\x01")
                         hub["bootstrap_sent"][viewer_id] = True
                         logger.info(
                             "[LIVE HUB] viewer bootstrapped: device_id=%s viewer=%s gop_bytes=%d idr_count=%d",
                             device_id, viewer_id, len(bootstrap), stream.idr_count,
                         )
                     elif batch:
-                        queue.put_nowait(batch + b"\\x00\\x00\\x00\\x01")
+                        queue.put_nowait(batch + b"\x00\x00\x00\x01")
 
                     # A text control message tells the browser to flush its last
                     # assembled access unit. Do this only on socket idle, not at
@@ -279,7 +279,7 @@ async def _subscribe_local_adb_stream(websocket: WebSocket, device_id: str, seri
                 queue = asyncio.Queue(maxsize=64)
                 bootstrap = hub["stream"].bootstrap
                 if bootstrap:
-                    queue.put_nowait(bootstrap + b"\\x00\\x00\\x00\\x01")
+                    queue.put_nowait(bootstrap + b"\x00\x00\x00\x01")
                     queue.put_nowait(None)  # flush the final cached access unit
                 # If the first IDR has not arrived yet, the producer will replace
                 # queued deltas with bootstrap as soon as SPS/PPS + IDR are complete.
