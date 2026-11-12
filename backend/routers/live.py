@@ -671,7 +671,6 @@ async def start_webrtc_playback(
         raise HTTPException(status_code=504, detail="等待 Scrcpy/WebRTC 视频源超时") from exc
     except Exception as exc:
         await _release_local_adb_webrtc_viewer(device_id)
-        acquired = False
         raise HTTPException(status_code=503, detail=str(exc)) from exc
 
 
