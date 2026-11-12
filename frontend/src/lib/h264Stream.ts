@@ -1,5 +1,6 @@
 export type H264StreamHandlers = {
   data: (chunk: Uint8Array) => void
+  flush?: () => void
   reset: () => void
   fail: (message: string) => void
 }
@@ -25,10 +26,13 @@ export function websocketH264Source(url: string): H264StreamSource {
         }
       }, 20000)
       current.onmessage = e => {
-        if (!stopped && ws === current && e.data instanceof ArrayBuffer) {
+        if (stopped || ws !== current) return
+        if (e.data instanceof ArrayBuffer) {
           clearTimeout(firstFrame)
           retryCount = 0
           handlers.data(new Uint8Array(e.data))
+        } else if (e.data === 'h264_flush') {
+          handlers.flush?.()
         }
       }
       current.onclose = e => {
