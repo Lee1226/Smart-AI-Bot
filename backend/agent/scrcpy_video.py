@@ -233,10 +233,10 @@ class ScrcpyVideoSession:
                     time.sleep(0.2)
                     continue
 
-                # Windows SelectorEventLoop can fail with WinError 10038
-                # if a socket registered by sock_recv() is closed concurrently.
-                # Keep this socket blocking and perform reads in a worker thread.
-                candidate.settimeout(None)
+                # Keep reads in a worker thread, but use a short socket timeout.
+                # raw_stream has no packet lengths; the hub uses this idle signal
+                # to flush the final Annex-B NAL on an otherwise static screen.
+                candidate.settimeout(0.25)
                 self.socket = candidate
                 candidate = None
                 self.pending_data = first_data
@@ -289,7 +289,7 @@ class ScrcpyVideoSession:
     async def start(self) -> None:
         await asyncio.to_thread(self._start)
 
-    def _recv(self, size: int) -> bytes:
+    def _recv(self, size: int) -> bytes | None:
         if self.pending_data:
             data = self.pending_data[:size]
             self.pending_data = self.pending_data[size:]
@@ -299,13 +299,15 @@ class ScrcpyVideoSession:
             return b""
         try:
             return sock.recv(size)
+        except socket.timeout:
+            return None
         except OSError:
             # Socket shutdown/close during stop is an expected lifecycle event.
             if self.socket is not sock or sock.fileno() < 0:
                 return b""
             raise
 
-    async def read(self, size: int = 64 * 1024) -> bytes:
+    async def read(self, size: int = 64 * 1024) -> bytes | None:
         # Preserve the proven Windows-compatible blocking socket path. The
         # blocking recv runs in a worker thread, never on the event loop.
         return await asyncio.to_thread(self._recv, size)
