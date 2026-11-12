@@ -70,6 +70,8 @@ async def lifespan(app: FastAPI):
         await shutdown()
         from routers.ios_local import shutdown as shutdown_ios
         await shutdown_ios()
+        from agent.webrtc_video import stop_webrtc_media_server
+        await __import__("asyncio").to_thread(stop_webrtc_media_server)
 
 
 app = FastAPI(title="smart-ai-bot", version="1.1.1", lifespan=lifespan)
