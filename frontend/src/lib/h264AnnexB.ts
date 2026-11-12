@@ -36,6 +36,12 @@ export class H264AnnexB {
     this.key ||= type === 5
   }
 
+  // Flush the final access unit at a WebSocket batch boundary. Without this,
+  // a static screen's last IDR/P frame waits forever for the next NAL start code.
+  flushAccessUnit() {
+    this.emit()
+  }
+
   feed(chunk: Uint8Array) {
     if (this.buffer.length + chunk.length > 16 * 1024 * 1024) throw new Error('H.264 数据过大或格式不支持')
     const bytes = new Uint8Array(this.buffer.length + chunk.length)
