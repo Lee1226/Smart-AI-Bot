@@ -1,24 +1,7 @@
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useRef } from 'react'
 import type { H264StreamSource } from '../lib/h264Stream'
 import { H264AnnexB } from '../lib/h264AnnexB'
 import { WebGLRenderer } from '../lib/video/WebGLRenderer'
-
-type Metrics = {
-  submitFps: number
-  renderFps: number
-  queueSize: number
-  decodedFrames: number
-  renderedFrames: number
-  droppedFrames: number
-  width: number
-  height: number
-}
-
-const EMPTY_METRICS: Metrics = {
-  submitFps: 0, renderFps: 0, queueSize: 0,
-  decodedFrames: 0, renderedFrames: 0, droppedFrames: 0,
-  width: 0, height: 0,
-}
 
 export default function H264WebGLPlayer({
   source,
@@ -29,7 +12,6 @@ export default function H264WebGLPlayer({
 }) {
   const canvasRef = useRef<HTMLCanvasElement>(null)
   const onFailRef = useRef(onFail)
-  const [metrics, setMetrics] = useState<Metrics>(EMPTY_METRICS)
   onFailRef.current = onFail
 
   useEffect(() => {
@@ -57,12 +39,6 @@ export default function H264WebGLPlayer({
     let hasKey = false
     let pendingDecode: EncodedVideoChunk[] = []
     let stopSource: (() => void) | undefined
-    let decodedFrames = 0
-    let renderedFrames = 0
-    let droppedFrames = 0
-    let previousDecoded = 0
-    let previousRendered = 0
-    let previousAt = performance.now()
     const fail = (message: string) => {
       if (stopped || failed) return
       failed = true
@@ -110,8 +86,7 @@ export default function H264WebGLPlayer({
                   if (stopped || failed) return
                   if (liveStartTimestamp !== null && frameTimestamp < liveStartTimestamp) return
                   const size = renderer.render(bitmap, frame.displayWidth, frame.displayHeight)
-                  renderedFrames++
-                  setMetrics(current => ({ ...current, width: size.width, height: size.height }))
+                  renderer.render(bitmap, frame.displayWidth, frame.displayHeight)
                 } catch (error) {
                   fail(error instanceof Error ? error.message : 'WebGL 视频渲染失败')
                 } finally {
@@ -131,7 +106,6 @@ export default function H264WebGLPlayer({
           })
         }
         if (pendingDecode.length >= 1800) {
-          droppedFrames++
           throw new Error('视频解码输入缓存超过上限，已回落旧播放器')
         }
         pendingDecode.push(new EncodedVideoChunk({
@@ -141,10 +115,8 @@ export default function H264WebGLPlayer({
         }))
         timestamp += Math.round(1e6 / 32)
         hasKey ||= key
-        decodedFrames++
         pumpDecode()
       })
-      setMetrics(EMPTY_METRICS)
     }
 
     try {
@@ -170,43 +142,13 @@ export default function H264WebGLPlayer({
       fail(error instanceof Error ? error.message : '视频流启动失败')
     }
 
-    const monitor = window.setInterval(() => {
-      const now = performance.now()
-      const elapsed = Math.max(1, now - previousAt)
-      const submitFps = Math.round((decodedFrames - previousDecoded) * 1000 / elapsed)
-      const renderFps = Math.round((renderedFrames - previousRendered) * 1000 / elapsed)
-      setMetrics({
-        submitFps,
-        renderFps,
-        queueSize: decoder?.decodeQueueSize ?? 0,
-        decodedFrames,
-        renderedFrames,
-        droppedFrames,
-        width: canvas.width,
-        height: canvas.height,
-      })
-      previousDecoded = decodedFrames
-      previousRendered = renderedFrames
-      previousAt = now
-    }, 1000)
-
     return () => {
       stopped = true
-      window.clearInterval(monitor)
       stopSource?.()
       try { decoder?.close() } catch { /* already closed */ }
       renderer.dispose()
     }
   }, [source])
 
-  return (
-    <>
-      <canvas ref={canvasRef} className="absolute inset-0 w-full h-full object-contain" />
-      <div className="absolute left-2 top-2 z-10 rounded bg-black/70 px-2 py-1 text-[10px] leading-4 text-white font-mono pointer-events-none">
-        <div>WebGL · Submit {metrics.submitFps} FPS · Render {metrics.renderFps} FPS</div>
-        <div>Queue {metrics.queueSize} · Dropped {metrics.droppedFrames}</div>
-        {metrics.width > 0 && <div>{metrics.width} × {metrics.height}</div>}
-      </div>
-    </>
-  )
+  return <canvas ref={canvasRef} className="absolute inset-0 w-full h-full object-contain" />
 }
