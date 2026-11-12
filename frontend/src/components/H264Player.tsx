@@ -15,6 +15,7 @@ export default function H264Player({ source, onFail }: { source: H264StreamSourc
 
     let closedByUs = false
     let bootstrapPending = false
+    let bootstrapHidden = false
     let muxer: JMuxer | undefined
 
     // flushingTime must be a positive number: jmuxer does `flushingTime || 1500`,
@@ -24,6 +25,9 @@ export default function H264Player({ source, onFail }: { source: H264StreamSourc
     // stream carries no timestamps, so jmuxer times frames by this value.
     const reset = () => {
       muxer?.destroy()
+      bootstrapPending = false
+      bootstrapHidden = false
+      node.style.visibility = ''
       muxer = new JMuxer({ node, mode: 'video', flushingTime: 1, fps: 32, clearBuffer: true, debug: false,
         onError: () => fail('视频播放失败，已回落截图') })
     }
@@ -40,6 +44,8 @@ export default function H264Player({ source, onFail }: { source: H264StreamSourc
         node.currentTime = Math.max(start, end - 0.05)
         node.playbackRate = 1.0
         bootstrapPending = false
+        if (bootstrapHidden) node.style.visibility = ''
+        bootstrapHidden = false
         return
       }
       const lag = end - node.currentTime
@@ -65,6 +71,11 @@ export default function H264Player({ source, onFail }: { source: H264StreamSourc
     node.addEventListener('error', mediaError)
     stopSource = source({
       reset,
+      bootstrapStart: () => {
+        bootstrapPending = true
+        bootstrapHidden = true
+        node.style.visibility = 'hidden'
+      },
       bootstrapEnd: () => { bootstrapPending = true },
       data: video => {
         if (closedByUs || failed) return
