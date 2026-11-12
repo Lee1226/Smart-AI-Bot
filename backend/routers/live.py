@@ -159,7 +159,9 @@ def _local_adb_hub_lock(device_id: str) -> asyncio.Lock:
 
 async def _run_local_adb_hub(device_id: str, serial: str, hub: dict) -> None:
     from agent.scrcpy_video import ScrcpyVideoSession
+    from agent.webrtc_video import webrtc_enabled
 
+    hub["webrtc_enabled"] = webrtc_enabled()
     session = ScrcpyVideoSession(_adb_path(), serial)
     hub["session"] = session
     stream = hub["stream"]
