@@ -188,32 +188,42 @@ async def _run_local_adb_hub(device_id: str, serial: str, hub: dict) -> None:
 async def _subscribe_local_adb_stream(websocket: WebSocket, device_id: str, serial: str) -> None:
     viewer_id = uuid.uuid4().hex
     lock = _local_adb_hub_lock(device_id)
-    async with lock:
-        hub = _local_adb_hubs.get(device_id)
-        if hub is None:
-            hub = {
-                "ready": asyncio.Event(),
-                "subscribers": {},
-                "websockets": {},
-                "session": None,
-                "task": None,
-                "error": None,
-                "bootstrap": b"",
-            }
-            _local_adb_hubs[device_id] = hub
-            hub["task"] = asyncio.create_task(_run_local_adb_hub(device_id, serial, hub))
-        queue = asyncio.Queue(maxsize=64)
-        bootstrap = hub.get("bootstrap", b"")
-        if bootstrap:
-            queue.put_nowait(bootstrap)
-        # If the first IDR has not arrived yet, the producer will replace any
-        # queued deltas with the bootstrap as soon as SPS/PPS + IDR are complete.
-        hub["bootstrap_sent"] = hub.get("bootstrap_sent", {})
-        hub["bootstrap_sent"][viewer_id] = bool(bootstrap)
-        hub["subscribers"][viewer_id] = queue
-        hub["websockets"][viewer_id] = websocket
-        logger.info("[LIVE HUB] viewer subscribed: device_id=%s viewer=%s count=%d bootstrap=%s",
-                    device_id, viewer_id, len(hub["subscribers"]), bool(bootstrap))
+    while True:
+        wait_for_stopping_hub = None
+        async with lock:
+            hub = _local_adb_hubs.get(device_id)
+            if hub is not None and hub.get("stopping"):
+                wait_for_stopping_hub = hub.get("task")
+            else:
+                if hub is None:
+                    hub = {
+                        "ready": asyncio.Event(),
+                        "subscribers": {},
+                        "websockets": {},
+                        "session": None,
+                        "task": None,
+                        "error": None,
+                        "bootstrap": b"",
+                        "bootstrap_sent": {},
+                        "stopping": False,
+                    }
+                    _local_adb_hubs[device_id] = hub
+                    hub["task"] = asyncio.create_task(_run_local_adb_hub(device_id, serial, hub))
+                queue = asyncio.Queue(maxsize=64)
+                bootstrap = hub.get("bootstrap", b"")
+                if bootstrap:
+                    queue.put_nowait(bootstrap)
+                # If the first IDR has not arrived yet, the producer will replace
+                # queued deltas with bootstrap as soon as SPS/PPS + IDR are complete.
+                hub["bootstrap_sent"][viewer_id] = bool(bootstrap)
+                hub["subscribers"][viewer_id] = queue
+                hub["websockets"][viewer_id] = websocket
+                logger.info("[LIVE HUB] viewer subscribed: device_id=%s viewer=%s count=%d bootstrap=%s",
+                            device_id, viewer_id, len(hub["subscribers"]), bool(bootstrap))
+        if wait_for_stopping_hub is None:
+            break
+        if not wait_for_stopping_hub.done():
+            await asyncio.gather(wait_for_stopping_hub, return_exceptions=True)
 
     try:
         await asyncio.wait_for(hub["ready"].wait(), timeout=15)
@@ -223,8 +233,9 @@ async def _subscribe_local_adb_stream(websocket: WebSocket, device_id: str, seri
         while True:
             chunk = await queue.get()
             await websocket.send_bytes(chunk)
-    except (WebSocketDisconnect, RuntimeError, asyncio.CancelledError, OSError):
-        pass
+    except (WebSocketDisconnect, RuntimeError, asyncio.CancelledError, OSError) as exc:
+        logger.info("[LIVE HUB] viewer send ended: device_id=%s viewer=%s error=%s",
+                    device_id, viewer_id, exc)
     except asyncio.TimeoutError:
         try:
             await websocket.close(code=4404, reason="Scrcpy startup timed out")
@@ -237,6 +248,7 @@ async def _subscribe_local_adb_stream(websocket: WebSocket, device_id: str, seri
             hub["websockets"].pop(viewer_id, None)
             hub.get("bootstrap_sent", {}).pop(viewer_id, None)
             if not hub["subscribers"] and _local_adb_hubs.get(device_id) is hub:
+                hub["stopping"] = True
                 task_to_stop = hub["task"]
         if task_to_stop and not task_to_stop.done():
             task_to_stop.cancel()
