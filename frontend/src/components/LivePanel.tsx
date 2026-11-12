@@ -14,14 +14,7 @@ import { websocketH264Source } from '../lib/h264Stream'
 const CAN_WEBCODECS =
   typeof window !== 'undefined' && window.isSecureContext && 'VideoDecoder' in window
 
-type Mode = 'auto' | 'video' | 'screenshot' | 'off'
-
-const MODES: { key: Mode; label: string; labelEn: string }[] = [
-  { key: 'auto', label: '自动', labelEn: 'Auto' },
-  { key: 'video', label: '视频流', labelEn: 'Video' },
-  { key: 'screenshot', label: '截图', labelEn: 'Screenshot' },
-  { key: 'off', label: '关', labelEn: 'Off' },
-]
+type Mode = 'on' | 'off'
 
 // H.264 screenrecord stream over WebSocket (under /v1 — already ws-proxied).
 function h264WsUrl(id: string): string {
@@ -87,9 +80,13 @@ export function ScreenshotView({ deviceId, source }: { deviceId: string; source:
 
 export default function LivePanel({ device, defaultMode = 'off', storageKey = 'live-mode' }: { device: Device | null; defaultMode?: Mode; storageKey?: string }) {
   const t = useT()
-  const [mode, setMode] = useState<Mode>(
-    () => { const saved = localStorage.getItem(storageKey); return MODES.some(m => m.key === saved) ? saved as Mode : defaultMode },
-  )
+  const [mode, setMode] = useState<Mode>(() => {
+    const saved = localStorage.getItem(storageKey)
+    // Migrate the previous auto/video/screenshot selections to the new On state.
+    if (saved === 'off') return 'off'
+    if (saved === 'auto' || saved === 'video' || saved === 'screenshot' || saved === 'on') return 'on'
+    return defaultMode
+  })
   const [reloadKey, setReloadKey] = useState(0)
   const [adbFailed, setAdbFailed] = useState(false)
   const [streamError, setStreamError] = useState('')
@@ -118,40 +115,31 @@ export default function LivePanel({ device, defaultMode = 'off', storageKey = 'l
   const harmony = device?.connection_type === 'hdc_bridge'
   const ios = device?.connection_type === 'ios_bridge'
   const screenshotsOnly = harmony || ios
-  const wantsVideo = !screenshotsOnly && (mode === 'auto' || mode === 'video')
+  const wantsVideo = mode === 'on' && !screenshotsOnly
   const remoteVideo = !!caps?.video_available
   const usingUsb = wantsVideo && localUsb && !adbFailed
   const usingLocalAdb = wantsVideo && !!localAdb && !adbFailed
   const usingRemote = wantsVideo && remoteVideo && !localUsb && !localAdb && !adbFailed
-  const videoUnavailable = !screenshotsOnly && mode === 'video' && !(usingUsb || usingLocalAdb || usingRemote)
+  const videoUnavailable = mode === 'on' && (screenshotsOnly || !(usingUsb || usingLocalAdb || usingRemote))
   const videoSource = useMemo(() => device
     ? localUsb ? browserUsbH264Source(device.id) : websocketH264Source(h264WsUrl(device.id))
     : undefined, [device?.id, localUsb, remoteVideo, mode, reloadKey])
   const videoFailed = (message: string) => { setStreamError(message); setAdbFailed(true) }
   const webglFailed = (message: string) => { setStreamError(message); setRenderer('canvas'); localStorage.setItem('h264-renderer', 'canvas') }
   const chooseRenderer = (value: 'canvas' | 'webgl') => { setRenderer(value); localStorage.setItem('h264-renderer', value); setReloadKey(k => k + 1) }
-  const canStream = !!device && mode !== 'off' && online
+  const canStream = !!device && mode === 'on' && online
 
   return (
     <div className="bg-white border rounded-lg p-3 lg:sticky lg:top-6">
       <div className="flex flex-wrap gap-2 items-center justify-between mb-3">
         <span className="text-sm font-semibold">{t('实时画面', 'Live screen')}</span>
         <div className="flex rounded-md border overflow-hidden text-xs">
-          {MODES.map(m => (
-            <button
-              key={m.key}
-              onClick={() => pick(m.key)}
-              disabled={screenshotsOnly && m.key === 'video'}
-              title={screenshotsOnly && m.key === 'video' ? '当前 USB 桥接使用截图刷新' : undefined}
-              className={`px-2.5 py-1 transition-colors ${
-                mode === m.key
-                  ? 'bg-primary text-white'
-                  : 'bg-white text-ink-mute hover:bg-gray-50 disabled:opacity-40'
-              }`}
-            >
-              {t(m.label, m.labelEn)}
-            </button>
-          ))}
+          <button onClick={() => pick('on')} className={`px-3 py-1 transition-colors ${mode === 'on' ? 'bg-primary text-white' : 'bg-white text-ink-mute hover:bg-gray-50'}`}>
+            {t('开启', 'On')}
+          </button>
+          <button onClick={() => pick('off')} className={`px-3 py-1 transition-colors ${mode === 'off' ? 'bg-primary text-white' : 'bg-white text-ink-mute hover:bg-gray-50'}`}>
+            {t('关闭', 'Off')}
+          </button>
         </div>
       </div>
 
@@ -166,11 +154,11 @@ export default function LivePanel({ device, defaultMode = 'off', storageKey = 'l
         {!device ? (
           <Placeholder text={t('选择左侧一台设备', 'Select a device on the left')} />
         ) : mode === 'off' ? (
-          <Placeholder text={t('已关闭 — 选择视频流或截图开启', 'Off — choose Video or Screenshot to start')} />
+          <Placeholder text={t('实时画面已关闭', 'Live view is off')} />
         ) : !canStream ? (
           <Placeholder text={t('设备离线，无法取流', 'Device offline, cannot stream')} />
         ) : videoUnavailable ? (
-          <Placeholder text={streamError || t('视频未就绪。远程 App 请先在手机开启远程视频并授权录屏；也可切换截图。', 'Video not ready. Enable remote video and authorize screen capture in the phone app, or select Screenshot.')} />
+          <Placeholder text={streamError || (screenshotsOnly ? t('当前连接方式暂不支持实时视频', 'Live video is not supported by this connection type') : t('实时视频流不可用。远程 App 请先在手机开启远程视频并授权录屏。', 'Live video is unavailable. Enable remote video and authorize screen capture in the phone app.'))} />
         ) : (usingUsb || usingLocalAdb || usingRemote) && videoSource ? (
           CAN_WEBCODECS ? (
             renderer === 'webgl' ? <H264WebGLPlayer key={`${device.id}-webgl-${reloadKey}`} source={videoSource} onFail={webglFailed} /> : <H264Canvas
@@ -186,11 +174,7 @@ export default function LivePanel({ device, defaultMode = 'off', storageKey = 'l
             />
           )
         ) : (
-          <ScreenshotView
-            key={`${device.id}-shot-${reloadKey}`}
-            deviceId={device.id}
-            source="screenshot"
-          />
+          <Placeholder text={t('实时视频流不可用', 'Live video unavailable')} />
         )}
       </div>
 
@@ -203,11 +187,11 @@ export default function LivePanel({ device, defaultMode = 'off', storageKey = 'l
             ? t('浏览器 USB · H.264 视频流', 'Browser USB · H.264 video')
             : usingRemote
             ? t('远程设备 · H.264 视频流', 'Remote device · H.264 video')
-            : videoUnavailable ? t('视频流未就绪', 'Video not ready') : ios ? t('iOS USB · 截图刷新', 'iOS USB · screenshot refresh') : harmony ? t('鸿蒙 HDC · 截图刷新', 'Harmony HDC · screenshot refresh') : t('截图 · ~1 fps', 'Screenshot · ~1 fps')
+            : videoUnavailable ? (screenshotsOnly ? t('当前连接不支持实时视频', 'Live video unsupported') : t('视频流未就绪', 'Video not ready')) : ' '
             : ' '}
       </div>
       {device?.connection_type === 'portal' && !remoteVideo && wantsVideo && <p className="mt-1 text-center text-xs text-ink-mute">{t('远程视频需要新版 App，并在手机点击「开启远程视频」授权录屏。', 'Remote video requires the updated app and screen capture authorization on the phone.')}</p>}
-      {streamError && mode === 'auto' && <p className="mt-1 text-center text-xs text-amber-600">{t('视频不可用，已回落截图；重试请再次点「自动」。', 'Video unavailable; using screenshots. Select Auto again to retry.')}</p>}
+      {streamError && mode === 'on' && <p className="mt-1 text-center text-xs text-amber-600">{streamError}</p>}
     </div>
   )
 }
