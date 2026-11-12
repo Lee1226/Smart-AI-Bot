@@ -58,7 +58,7 @@ export default function DeviceWall({ devices, selectedId, onSelect }: {
         </button>)}
         {!shown.length && <div className="col-span-full bg-white border border-dashed rounded-xl p-10 text-center text-sm text-ink-mute">{t('暂无在线设备，请在下方连接手机。', 'No online devices. Connect a phone below.')}</div>}
       </div>
-      <LivePanel device={selected} defaultMode="screenshot" storageKey="device-wall-live-mode" />
+      <LivePanel device={selected} defaultMode="on" storageKey="device-wall-live-mode" />
     </div>
   </section>
 }
