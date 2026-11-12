@@ -152,6 +152,7 @@ export default function H264WebGLPlayer({
       stopSource = source({
         reset,
         flush: () => { if (!stopped && !failed) parser.flushAccessUnit() },
+        bootstrapStart: () => { liveStartTimestamp = Number.POSITIVE_INFINITY },
         bootstrapEnd: () => {
           if (stopped || failed) return
           parser.flushAccessUnit()
