@@ -42,6 +42,64 @@ _local_adb_websockets: dict[str, WebSocket] = {}
 _local_adb_claim_locks: dict[str, asyncio.Lock] = {}
 _LOCAL_ADB_TAKEOVER_TIMEOUT = 4.0
 
+class _H264BootstrapCache:
+    """Cache SPS/PPS and the latest IDR picture from arbitrary TCP chunks."""
+    def __init__(self) -> None:
+        self.buffer = b""
+        self.sps = None
+        self.pps = None
+        self.idr_nals = []
+        self.bootstrap = b""
+
+    @staticmethod
+    def _marks(data):
+        marks = []
+        i = 0
+        while i + 3 <= len(data):
+            if data[i:i + 3] == b"\x00\x00\x01":
+                marks.append((i, 3))
+                i += 3
+            elif i + 4 <= len(data) and data[i:i + 4] == b"\x00\x00\x00\x01":
+                marks.append((i, 4))
+                i += 4
+            else:
+                i += 1
+        return marks
+
+    def _consume(self, nal):
+        if not nal:
+            return
+        kind = nal[0] & 31
+        if kind == 7:
+            self.sps = b"\x00\x00\x00\x01" + nal
+            return
+        if kind == 8:
+            self.pps = b"\x00\x00\x00\x01" + nal
+            return
+        if kind == 5:
+            first_slice = len(nal) > 1 and bool(nal[1] & 0x80)
+            if first_slice or not self.idr_nals:
+                self.idr_nals = []
+            self.idr_nals.append(b"\x00\x00\x00\x01" + nal)
+            return
+        if kind in (1, 6, 9) and self.idr_nals:
+            if self.sps and self.pps:
+                self.bootstrap = self.sps + self.pps + b"".join(self.idr_nals)
+            self.idr_nals = []
+
+    def feed(self, chunk):
+        data = self.buffer + chunk
+        marks = self._marks(data)
+        for index in range(len(marks) - 1):
+            start, prefix = marks[index]
+            end = marks[index + 1][0]
+            self._consume(data[start + prefix:end])
+        self.buffer = data[marks[-1][0]:] if marks else data
+        if len(self.buffer) > 4 * 1024 * 1024:
+            self.buffer = b""
+            self.idr_nals = []
+
+
 # One Scrcpy producer per local ADB device, with an independent bounded queue
 # for every browser viewer. A slow viewer is disconnected without affecting
 # the other viewers or the underlying device capture.
@@ -62,21 +120,27 @@ async def _run_local_adb_hub(device_id: str, serial: str, hub: dict) -> None:
 
     session = ScrcpyVideoSession(_adb_path(), serial)
     hub["session"] = session
+    cache = _H264BootstrapCache()
+    total_bytes = 0
     try:
         await session.start()
         hub["ready"].set()
+        logger.info("[LIVE HUB] producer ready: device_id=%s serial=%s", device_id, serial)
         while True:
             chunk = await session.read(64 * 1024)
             if not chunk:
                 raise RuntimeError("Scrcpy video stream ended")
-            # Each subscriber owns its queue: never use a shared work queue,
-            # which would distribute different frames to different tabs.
+            total_bytes += len(chunk)
+            cache.feed(chunk)
+            hub["bootstrap"] = cache.bootstrap
+            # Each subscriber owns an independent queue.
             for viewer_id, queue in list(hub["subscribers"].items()):
                 try:
                     queue.put_nowait(chunk)
                 except asyncio.QueueFull:
                     hub["subscribers"].pop(viewer_id, None)
                     ws = hub["websockets"].pop(viewer_id, None)
+                    logger.warning("[LIVE HUB] slow viewer dropped: device_id=%s viewer=%s bytes=%d", device_id, viewer_id, total_bytes)
                     if ws is not None:
                         try:
                             await ws.close(code=4408, reason="Viewer too slow; reconnect for a fresh keyframe")
@@ -93,8 +157,11 @@ async def _run_local_adb_hub(device_id: str, serial: str, hub: dict) -> None:
             await session.stop()
         except Exception:
             logger.debug("Scrcpy stop failed: device_id=%s", device_id, exc_info=True)
-        if _local_adb_hubs.get(device_id) is hub:
-            _local_adb_hubs.pop(device_id, None)
+        # Do not permit a replacement producer until this Scrcpy session
+        # has fully stopped and released its ADB forward/socket.
+        async with _local_adb_hub_lock(device_id):
+            if _local_adb_hubs.get(device_id) is hub:
+                _local_adb_hubs.pop(device_id, None)
         for ws in list(hub["websockets"].values()):
             try:
                 await ws.close(code=4404, reason="Device video producer stopped")
@@ -117,12 +184,20 @@ async def _subscribe_local_adb_stream(websocket: WebSocket, device_id: str, seri
                 "session": None,
                 "task": None,
                 "error": None,
+                "bootstrap": b"",
             }
             _local_adb_hubs[device_id] = hub
             hub["task"] = asyncio.create_task(_run_local_adb_hub(device_id, serial, hub))
         queue = asyncio.Queue(maxsize=64)
+        bootstrap = hub.get("bootstrap", b"")
+        if bootstrap:
+            queue.put_nowait(bootstrap)
+        # Queue seeding and registration happen without an await, so live fan-out
+        # cannot slip between the bootstrap snapshot and subscriber registration.
         hub["subscribers"][viewer_id] = queue
         hub["websockets"][viewer_id] = websocket
+        logger.info("[LIVE HUB] viewer subscribed: device_id=%s viewer=%s count=%d bootstrap=%s",
+                    device_id, viewer_id, len(hub["subscribers"]), bool(bootstrap))
 
     try:
         await asyncio.wait_for(hub["ready"].wait(), timeout=15)
@@ -146,7 +221,6 @@ async def _subscribe_local_adb_stream(websocket: WebSocket, device_id: str, seri
             hub["websockets"].pop(viewer_id, None)
             if not hub["subscribers"] and _local_adb_hubs.get(device_id) is hub:
                 task_to_stop = hub["task"]
-                _local_adb_hubs.pop(device_id, None)
         if task_to_stop and not task_to_stop.done():
             task_to_stop.cancel()
             await asyncio.gather(task_to_stop, return_exceptions=True)
