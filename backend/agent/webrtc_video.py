@@ -71,9 +71,19 @@ logDestinations: [stdout]
 rtsp: true
 rtspAddress: {self.host}:{self.rtsp_port}
 rtspTransports: [tcp]
+rtmp: false
+hls: false
+srt: false
+playback: false
+api: false
+metrics: false
+pprof: false
+moq: false
 webrtc: true
 webrtcAddress: {self.host}:{self.webrtc_port}
 webrtcLocalUDPAddress: {self.host}:{self.udp_port}
+webrtcIPsFromInterfaces: false
+webrtcAdditionalHosts: ["127.0.0.1"]
 webrtcAllowOrigins: ["*"]
 authMethod: internal
 authInternalUsers:
@@ -245,7 +255,10 @@ class FFmpegRtspPublisher:
         )
 
     def write(self, data: bytes) -> bool:
-        if not data or self.failed or self.process is None or self.process.poll() is not None:
+        if not data or self.failed or self.process is None:
+            return False
+        if self.process.poll() is not None:
+            self._mark_failed(f"FFmpeg 已退出，code={self.process.returncode}")
             return False
         try:
             self.queue.put_nowait(data)
