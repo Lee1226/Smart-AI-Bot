@@ -5,6 +5,7 @@ import { useT } from '../lib/i18n'
 import H264Canvas from './H264Canvas'
 import H264WebGLPlayer from './H264WebGLPlayer'
 import H264Player from './H264Player'
+import WebRTCPlayer from './WebRTCPlayer'
 import { browserUsbH264Source, subscribeUsb, usbSnapshot } from '../lib/browserUsb'
 import { websocketH264Source } from '../lib/h264Stream'
 
@@ -94,6 +95,7 @@ export default function LivePanel({ device, defaultMode = 'off', storageKey = 'l
   const [adbFailed, setAdbFailed] = useState(false)
   const [streamError, setStreamError] = useState('')
   const [renderer, setRenderer] = useState<'canvas' | 'webgl'>(() => localStorage.getItem('h264-renderer') === 'webgl' ? 'webgl' : 'canvas')
+  const [transport, setTransport] = useState<'websocket' | 'webrtc'>(() => localStorage.getItem('live-transport') === 'webrtc' ? 'webrtc' : 'websocket')
   const usb = useSyncExternalStore(subscribeUsb, usbSnapshot)
   const localUsb = device?.connection_type === 'browser_usb' && usb.phase === 'online' && usb.deviceId === device.id
   const localAdb = device?.connection_type === 'adb_usb'
@@ -130,6 +132,11 @@ export default function LivePanel({ device, defaultMode = 'off', storageKey = 'l
   const videoFailed = (message: string) => { setStreamError(message); setAdbFailed(true) }
   const webglFailed = (message: string) => { setStreamError(message); setRenderer('canvas'); localStorage.setItem('h264-renderer', 'canvas') }
   const chooseRenderer = (value: 'canvas' | 'webgl') => { setRenderer(value); localStorage.setItem('h264-renderer', value); setReloadKey(k => k + 1) }
+  const chooseTransport = (value: 'websocket' | 'webrtc') => { setTransport(value); localStorage.setItem('live-transport', value); setReloadKey(k => k + 1) }
+  const webRtcFailed = (message: string) => {
+    setStreamError(message)
+    chooseTransport('websocket')
+  }
   const canStream = !!device && mode !== 'off' && online
 
   return (
@@ -157,6 +164,7 @@ export default function LivePanel({ device, defaultMode = 'off', storageKey = 'l
 
       {device && <p className="text-sm font-medium mb-3 truncate" title={device.name}>{device.name}</p>}
       {CAN_WEBCODECS && wantsVideo && <div className="flex items-center justify-end gap-2 mb-2 text-xs"><span className="text-ink-mute">渲染器</span><button onClick={() => chooseRenderer('canvas')} className={`px-2 py-1 rounded border ${renderer === 'canvas' ? 'bg-primary text-white border-primary' : 'bg-white'}`}>Canvas 2D</button><button onClick={() => chooseRenderer('webgl')} className={`px-2 py-1 rounded border ${renderer === 'webgl' ? 'bg-primary text-white border-primary' : 'bg-white'}`}>WebGL</button></div>}
+      {usingLocalAdb && wantsVideo && <div className="flex items-center justify-end gap-2 mb-2 text-xs"><span className="text-ink-mute">传输</span><button onClick={() => chooseTransport('websocket')} className={`px-2 py-1 rounded border ${transport === 'websocket' ? 'bg-primary text-white border-primary' : 'bg-white'}`}>WebSocket</button><button onClick={() => chooseTransport('webrtc')} className={`px-2 py-1 rounded border ${transport === 'webrtc' ? 'bg-primary text-white border-primary' : 'bg-white'}`}>WebRTC PoC</button></div>}
 
       {/* Portrait phone frame */}
       <div
@@ -171,6 +179,8 @@ export default function LivePanel({ device, defaultMode = 'off', storageKey = 'l
           <Placeholder text={t('设备离线，无法取流', 'Device offline, cannot stream')} />
         ) : videoUnavailable ? (
           <Placeholder text={streamError || t('视频未就绪。远程 App 请先在手机开启远程视频并授权录屏；也可切换截图。', 'Video not ready. Enable remote video and authorize screen capture in the phone app, or select Screenshot.')} />
+        ) : usingLocalAdb && transport === 'webrtc' ? (
+          <WebRTCPlayer key={`${device.id}-webrtc-${reloadKey}`} deviceId={device.id} onFail={webRtcFailed} />
         ) : (usingUsb || usingLocalAdb || usingRemote) && videoSource ? (
           CAN_WEBCODECS ? (
             renderer === 'webgl' ? <H264WebGLPlayer key={`${device.id}-webgl-${reloadKey}`} source={videoSource} onFail={webglFailed} /> : <H264Canvas
@@ -198,7 +208,7 @@ export default function LivePanel({ device, defaultMode = 'off', storageKey = 'l
       <div className="mt-2 text-center text-xs text-gray-400 font-mono">
         {device && mode !== 'off' && canStream
           ? usingLocalAdb
-            ? t('本地 USB · Scrcpy H.264', 'Local USB · Scrcpy H.264')
+            ? transport === 'webrtc' ? t('本地 USB · WebRTC', 'Local USB · WebRTC') : t('本地 USB · Scrcpy H.264', 'Local USB · Scrcpy H.264')
             : usingUsb
             ? t('浏览器 USB · H.264 视频流', 'Browser USB · H.264 video')
             : usingRemote
