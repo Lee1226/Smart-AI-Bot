@@ -95,3 +95,43 @@ Do not assume the development Vite proxy automatically proxies WHEP/WebRTC media
 ## Important implementation caveat
 
 Scrcpy raw H.264 does not carry capture timestamps. FFmpeg must synthesize a frame cadence for the input; the chosen input frame rate must match the configured Scrcpy capture rate. This can affect pacing and measured latency. The first PoC must verify real output timing instead of assuming that switching to WebRTC alone removes upstream buffering.
+
+
+## Implemented PoC slice (2026-11-12)
+
+The isolated branch now contains the first end-to-end implementation slice:
+
+- `backend/agent/webrtc_video.py`: starts a locally managed MediaMTX process, validates its generated configuration, and starts one FFmpeg RTSP publisher per active local ADB device.
+- The FFmpeg bridge reads raw H.264 from stdin and uses `-c:v copy`; it does not re-encode.
+- A bounded, non-blocking queue and a dedicated writer thread isolate FFmpeg backpressure from the Scrcpy reader and existing WebSocket fan-out. If the queue fills or FFmpeg exits, only the optional WebRTC publisher is disabled.
+- The existing local ADB hub sends one cached decodable GOP to the publisher, then subsequent live H.264 batches.
+- `GET /api/devices/{device_id}/webrtc` exposes the generated WHEP URL only to an authenticated owner/admin and only for a local ADB USB device.
+- `WebRTCPlayer.tsx` negotiates WHEP and renders through a native browser video element. The Live panel has an explicit WebSocket / WebRTC PoC selector; WebSocket remains the default and fallback.
+- MediaMTX is configured to bind RTSP, WHEP and ICE UDP listeners to loopback only. The generated stream path is random per producer. Do not change this to a LAN bind without adding proper WHEP authentication / proxying and ICE candidate configuration.
+
+### Windows local setup
+
+1. Download the Windows MediaMTX executable from the official MediaMTX releases and place it in a stable local tools directory.
+2. Install a Windows FFmpeg build that includes the RTSP muxer.
+3. Configure the backend process environment before starting Uvicorn:
+
+```powershell
+$env:SMART_AI_WEBRTC_ENABLED = "1"
+$env:MEDIAMTX_PATH = "E:\\tools\\mediamtx\\mediamtx.exe"
+$env:FFMPEG_PATH = "E:\\tools\\ffmpeg\\bin\\ffmpeg.exe"
+# Optional ports (defaults shown)
+$env:SMART_AI_MEDIAMTX_RTSP_PORT = "8554"
+$env:SMART_AI_MEDIAMTX_WEBRTC_PORT = "8889"
+$env:SMART_AI_MEDIAMTX_UDP_PORT = "8189"
+```
+
+4. Restart the backend, connect a local ADB USB Android device, open its live preview, then choose **WebRTC PoC** in the transport selector.
+5. Keep the browser on the same Windows machine for this loopback-only PoC. For a browser on another machine, the signaling and ICE address design must be changed first.
+
+### Current limitations / verification still required
+
+- This branch has not yet been built or run against the user's Windows machine and physical Android device. The implementation is committed but runtime acceptance is pending.
+- Scrcpy raw H.264 does not contain capture timestamps. FFmpeg is given the configured Scrcpy max FPS as the input frame rate; actual frame pacing and glass-to-glass latency must be measured.
+- The first version starts the Scrcpy hub through the existing authenticated WebSocket subscriber, which is retained as a lightweight lifecycle subscriber while WebRTC plays. The WebSocket renderer itself is not used for display in WebRTC mode.
+- WHEP HTTP signaling and ICE UDP must both work locally. If the offer succeeds but media does not flow, inspect the SDP ICE candidates and Windows Firewall UDP rule for the configured ICE port.
+- The generated MediaMTX config is validated with `mediamtx --validate-conf=...` before the server starts.
