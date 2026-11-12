@@ -377,17 +377,30 @@ async def _claim_local_adb_stream(websocket: WebSocket, device_id: str) -> bool:
 
 async def stop_local_adb_stream(device_id: str) -> None:
     """Stop the shared Scrcpy producer before a local ADB device is detached."""
-    hub = _local_adb_hubs.pop(device_id, None)
-    if hub is not None:
-        for ws in list(hub["websockets"].values()):
-            try:
-                await ws.close(code=4404, reason="Device detached")
-            except Exception:
-                pass
-        task = hub.get("task")
-        if task and not task.done():
-            task.cancel()
-            await asyncio.gather(task, return_exceptions=True)
+    lock = _local_adb_hub_lock(device_id)
+    async with lock:
+        hub = _local_adb_hubs.get(device_id)
+        if hub is not None:
+            hub["stopping"] = True
+            viewers = list(hub["websockets"].values())
+            task = hub.get("task")
+        else:
+            viewers = []
+            task = None
+    # Keep the stopping hub registered until its producer has released Scrcpy
+    # and the ADB forward. Concurrent subscribers wait on this task instead of
+    # accidentally starting a second producer for the same device.
+    for ws in viewers:
+        try:
+            await ws.close(code=4404, reason="Device detached")
+        except Exception:
+            pass
+    if task and not task.done():
+        task.cancel()
+        await asyncio.gather(task, return_exceptions=True)
+    async with lock:
+        if hub is not None and _local_adb_hubs.get(device_id) is hub:
+            _local_adb_hubs.pop(device_id, None)
     # Retain cleanup for the legacy single-viewer fallback path.
     session = _local_adb_sessions.get(device_id)
     if session is not None:
