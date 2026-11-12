@@ -117,8 +117,8 @@ The isolated branch now contains the first end-to-end implementation slice:
 
 ```powershell
 $env:SMART_AI_WEBRTC_ENABLED = "1"
-$env:MEDIAMTX_PATH = "E:\\tools\\mediamtx\\mediamtx.exe"
-$env:FFMPEG_PATH = "E:\\tools\\ffmpeg\\bin\\ffmpeg.exe"
+$env:MEDIAMTX_PATH = "E:\tools\mediamtx\mediamtx.exe"
+$env:FFMPEG_PATH = "E:\tools\ffmpeg\bin\ffmpeg.exe"
 # Optional ports (defaults shown)
 $env:SMART_AI_MEDIAMTX_RTSP_PORT = "8554"
 $env:SMART_AI_MEDIAMTX_WEBRTC_PORT = "8889"
