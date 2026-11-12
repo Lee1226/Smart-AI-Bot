@@ -5,6 +5,7 @@ import { useT } from './lib/i18n'
 import { fetchMe, getToken, clearToken } from './lib/api'
 import { disconnectUsb } from './lib/browserUsb'
 import Devices from './pages/Devices'
+import Workbench from './pages/Workbench'
 import Suites from './pages/Suites'
 import SuiteDetail from './pages/SuiteDetail'
 import Runs from './pages/Runs'
@@ -25,7 +26,8 @@ import DebugConsole from './pages/DebugConsole'
 type NavigationItem = { to: string; label: { zh: string; en: string }; icon: string; paths: string[] }
 const NAV_GROUPS: { label: { zh: string; en: string }; items: NavigationItem[] }[] = [
   { label: { zh: '测试工作台', en: 'Test workspace' }, items: [
-    { to: '/', label: { zh: '设备', en: 'Devices' }, icon: '📱', paths: ['/'] },
+    { to: '/', label: { zh: '工作台', en: 'Workbench' }, icon: '▦', paths: ['/'] },
+    { to: '/devices', label: { zh: '设备管理', en: 'Devices' }, icon: '📱', paths: ['/devices'] },
     { to: '/debug', label: { zh: '调试控制台', en: 'Debug console' }, icon: '⌘', paths: ['/debug'] },
     { to: '/quick', label: { zh: '任务执行', en: 'Execution' }, icon: '⚡', paths: ['/quick', '/regressions'] },
     { to: '/suites', label: { zh: '用例中心', en: 'Cases' }, icon: '🧪', paths: ['/suites', '/library', '/automation', '/recorder', '/knowledge'] },
@@ -204,7 +206,8 @@ function AppLayout() {
       <main className="flex-1 min-w-0 px-8 py-8">
         <div className="max-w-[1700px] mx-auto">
           <Routes>
-            <Route path="/" element={<Devices />} />
+            <Route path="/" element={<Workbench />} />
+            <Route path="/devices" element={<Devices />} />
             <Route path="/debug" element={<DebugConsole />} />
             <Route path="/quick" element={<PageTabs section="execution"><QuickRun /></PageTabs>} />
             <Route path="/recorder" element={<PageTabs section="cases"><Recorder /></PageTabs>} />
