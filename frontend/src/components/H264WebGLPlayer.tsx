@@ -55,6 +55,8 @@ export default function H264WebGLPlayer({
     let timestamp = 0
     let hasKey = false
     let pendingDecode: EncodedVideoChunk[] = []
+    let waitingForKeyframe = false
+    let codec: string | undefined
     let stopSource: (() => void) | undefined
     let decodedFrames = 0
     let renderedFrames = 0
@@ -83,10 +85,12 @@ export default function H264WebGLPlayer({
       try { decoder?.close() } catch { /* already closed */ }
       decoder = null
       pendingDecode = []
+      waitingForKeyframe = false
+      codec = undefined
       timestamp = 0
       hasKey = false
       parser = new H264AnnexB((data, key, sps) => {
-        if (stopped || failed || (!key && !hasKey)) return
+        if (stopped || failed) return
         if (!decoder) {
           decoder = new VideoDecoder({
             output: frame => {
@@ -114,15 +118,24 @@ export default function H264WebGLPlayer({
             error: () => fail('WebCodecs 解码失败')
           })
           const hex = (n: number) => n.toString(16).padStart(2, '0')
+          codec = `avc1.${hex(sps[1])}${hex(sps[2])}${hex(sps[3])}`
           decoder.addEventListener('dequeue', pumpDecode)
-          decoder.configure({
-            codec: `avc1.${hex(sps[1])}${hex(sps[2])}${hex(sps[3])}`,
-            optimizeForLatency: true,
-          })
+          decoder.configure({ codec, optimizeForLatency: true })
         }
-        if (pendingDecode.length >= 1800) {
+        // Prefer the newest decodable picture over replaying stale frames.
+        // Never discard arbitrary H.264 P frames: reset and resume at IDR.
+        if (!waitingForKeyframe && decoder.decodeQueueSize + pendingDecode.length >= 16) {
+          pendingDecode = []
+          decoder.reset()
+          waitingForKeyframe = true
+          hasKey = false
           droppedFrames++
-          throw new Error('视频输入缓存超过上限，已回落旧播放器')
+        }
+        if (waitingForKeyframe) {
+          if (!key) return
+          decoder.reset()
+          decoder.configure({ codec: codec!, optimizeForLatency: true })
+          waitingForKeyframe = false
         }
         pendingDecode.push(new EncodedVideoChunk({
           type: key ? 'key' : 'delta',
