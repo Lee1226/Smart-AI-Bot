@@ -63,10 +63,10 @@ class _H264AnnexBStream:
         marks = []
         i = 0
         while i + 3 <= len(data):
-            if i + 4 <= len(data) and data[i:i + 4] == b"\\x00\\x00\\x00\\x01":
+            if i + 4 <= len(data) and data[i:i + 4] == b"\x00\x00\x00\x01":
                 marks.append((i, 4))
                 i += 4
-            elif data[i:i + 3] == b"\\x00\\x00\\x01":
+            elif data[i:i + 3] == b"\x00\x00\x01":
                 marks.append((i, 3))
                 i += 3
             else:
@@ -81,7 +81,7 @@ class _H264AnnexBStream:
         if not nal:
             return b""
         kind = nal[0] & 31
-        unit = b"\\x00\\x00\\x00\\x01" + nal
+        unit = b"\x00\x00\x00\x01" + nal
         if kind == 7:
             if nal != self.sps:
                 self.sps = nal
@@ -97,8 +97,8 @@ class _H264AnnexBStream:
             if first_slice:
                 self.gop = bytearray()
                 if self.sps and self.pps:
-                    self.gop.extend(b"\\x00\\x00\\x00\\x01" + self.sps)
-                    self.gop.extend(b"\\x00\\x00\\x00\\x01" + self.pps)
+                    self.gop.extend(b"\x00\x00\x00\x01" + self.sps)
+                    self.gop.extend(b"\x00\x00\x00\x01" + self.pps)
                     self.gop.extend(unit)
                     self.idr_count += 1
             elif self.gop:
@@ -118,7 +118,7 @@ class _H264AnnexBStream:
         for index in range(len(marks) - 1):
             start, prefix = marks[index]
             end = marks[index + 1][0]
-            nal = data[start + prefix:end].rstrip(b"\\x00")
+            nal = data[start + prefix:end].rstrip(b"\x00")
             unit = self._consume(nal)
             if unit:
                 units.append(unit)
@@ -137,7 +137,7 @@ class _H264AnnexBStream:
             self.buffer = b""
             return b""
         start, prefix = marks[0]
-        nal = self.buffer[start + prefix:].rstrip(b"\\x00")
+        nal = self.buffer[start + prefix:].rstrip(b"\x00")
         self.buffer = b""
         return self._consume(nal)
 
@@ -180,7 +180,7 @@ async def _run_local_adb_hub(device_id: str, serial: str, hub: dict) -> None:
             batch = stream.feed(data) if not idle_flush else stream.flush()
             if not batch:
                 return
-            total_nals += batch.count(b"\\x00\\x00\\x00\\x01")
+            total_nals += batch.count(b"\x00\x00\x00\x01")
             bootstrap = stream.bootstrap
             for viewer_id, queue in list(hub["subscribers"].items()):
                 if not hub["bootstrap_sent"].get(viewer_id, False):
@@ -190,7 +190,7 @@ async def _run_local_adb_hub(device_id: str, serial: str, hub: dict) -> None:
                                 queue.get_nowait()
                             except asyncio.QueueEmpty:
                                 break
-                        queue.put_nowait(bootstrap + b"\\x00\\x00\\x00\\x01")
+                        queue.put_nowait(bootstrap + b"\x00\x00\x00\x01")
                         hub["bootstrap_sent"][viewer_id] = True
                         logger.info(
                             "[LIVE HUB] viewer bootstrapped: device_id=%s viewer=%s gop_bytes=%d idr_count=%d",
@@ -200,7 +200,7 @@ async def _run_local_adb_hub(device_id: str, serial: str, hub: dict) -> None:
                     # again, which would duplicate the tail of the IDR/GOP.
                     continue
                 try:
-                    queue.put_nowait(batch + b"\\x00\\x00\\x00\\x01")
+                    queue.put_nowait(batch + b"\x00\x00\x00\x01")
                 except asyncio.QueueFull:
                     hub["subscribers"].pop(viewer_id, None)
                     ws = hub["websockets"].pop(viewer_id, None)
@@ -584,6 +584,10 @@ async def _stream_local_adb(websocket: WebSocket, serial: str, device_id: str | 
         first_data_logged = False
         while True:
             chunk = await session.read(64 * 1024)
+            if chunk is None:
+                # Idle timeout is used by the shared Annex-B parser to flush
+                # static-screen NALs; the legacy relay simply keeps waiting.
+                continue
             if not chunk:
                 logger.warning(
                     "[SCRCPY DEBUG] Stream ended: serial=%s total_bytes=%d",
