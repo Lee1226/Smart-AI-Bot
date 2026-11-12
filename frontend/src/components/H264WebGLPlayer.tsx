@@ -55,8 +55,6 @@ export default function H264WebGLPlayer({
     let timestamp = 0
     let hasKey = false
     let pendingDecode: EncodedVideoChunk[] = []
-    let waitingForKeyframe = false
-    let codec: string | undefined
     let stopSource: (() => void) | undefined
     let decodedFrames = 0
     let renderedFrames = 0
@@ -64,40 +62,6 @@ export default function H264WebGLPlayer({
     let previousDecoded = 0
     let previousRendered = 0
     let previousAt = performance.now()
-    // ImageBitmap conversion is asynchronous. Keep at most one conversion in
-    // flight and replace any waiting frame with the newest decoded frame.
-    let bitmapBusy = false
-    let latestFrame: VideoFrame | null = null
-
-    const renderLatestFrame = (frame: VideoFrame) => {
-      bitmapBusy = true
-      void createImageBitmap(frame).then(bitmap => {
-        try {
-          if (stopped || failed) return
-          const size = renderer.render(bitmap, frame.displayWidth, frame.displayHeight)
-          renderedFrames++
-          setMetrics(current => ({ ...current, width: size.width, height: size.height }))
-        } catch (error) {
-          fail(error instanceof Error ? error.message : 'WebGL 视频渲染失败')
-        } finally {
-          bitmap.close()
-        }
-      }).catch(error => {
-        fail(error instanceof Error ? `VideoFrame 转 ImageBitmap 失败：${error.message}` : 'VideoFrame 转 ImageBitmap 失败')
-      }).finally(() => {
-        frame.close()
-        bitmapBusy = false
-        if (stopped || failed) {
-          latestFrame?.close()
-          latestFrame = null
-          return
-        }
-        const next = latestFrame
-        latestFrame = null
-        if (next) renderLatestFrame(next)
-      })
-    }
-
     const fail = (message: string) => {
       if (stopped || failed) return
       failed = true
@@ -118,12 +82,10 @@ export default function H264WebGLPlayer({
       try { decoder?.close() } catch { /* already closed */ }
       decoder = null
       pendingDecode = []
-      waitingForKeyframe = false
-      codec = undefined
       timestamp = 0
       hasKey = false
       parser = new H264AnnexB((data, key, sps) => {
-        if (stopped || failed) return
+        if (stopped || failed || (!key && !hasKey)) return
         if (!decoder) {
           decoder = new VideoDecoder({
             output: frame => {
@@ -131,34 +93,35 @@ export default function H264WebGLPlayer({
                 frame.close()
                 return
               }
-              if (bitmapBusy) {
-                latestFrame?.close()
-                latestFrame = frame
-                return
-              }
-              renderLatestFrame(frame)
+              // WebGL texImage2D implementations do not consistently accept
+              // VideoFrame directly. ImageBitmap is a broadly supported source.
+              void createImageBitmap(frame).then(bitmap => {
+                try {
+                  if (stopped || failed) return
+                  const size = renderer.render(bitmap, frame.displayWidth, frame.displayHeight)
+                  renderedFrames++
+                  setMetrics(current => ({ ...current, width: size.width, height: size.height }))
+                } catch (error) {
+                  fail(error instanceof Error ? error.message : 'WebGL 视频渲染失败')
+                } finally {
+                  bitmap.close()
+                }
+              }).catch(error => {
+                fail(error instanceof Error ? `VideoFrame 转 ImageBitmap 失败：${error.message}` : 'VideoFrame 转 ImageBitmap 失败')
+              }).finally(() => frame.close())
             },
             error: () => fail('WebCodecs 解码失败')
           })
           const hex = (n: number) => n.toString(16).padStart(2, '0')
-          codec = `avc1.${hex(sps[1])}${hex(sps[2])}${hex(sps[3])}`
           decoder.addEventListener('dequeue', pumpDecode)
-          decoder.configure({ codec, optimizeForLatency: true })
+          decoder.configure({
+            codec: `avc1.${hex(sps[1])}${hex(sps[2])}${hex(sps[3])}`,
+            optimizeForLatency: true,
+          })
         }
-        // Prefer the newest decodable picture over replaying stale frames.
-        // Never discard arbitrary H.264 P frames: reset and resume at IDR.
-        if (!waitingForKeyframe && decoder.decodeQueueSize + pendingDecode.length >= 16) {
-          pendingDecode = []
-          decoder.reset()
-          waitingForKeyframe = true
-          hasKey = false
+        if (pendingDecode.length >= 1800) {
           droppedFrames++
-        }
-        if (waitingForKeyframe) {
-          if (!key) return
-          decoder.reset()
-          decoder.configure({ codec: codec!, optimizeForLatency: true })
-          waitingForKeyframe = false
+          throw new Error('视频解码输入缓存超过上限，已回落旧播放器')
         }
         pendingDecode.push(new EncodedVideoChunk({
           type: key ? 'key' : 'delta',
@@ -215,8 +178,6 @@ export default function H264WebGLPlayer({
       window.clearInterval(monitor)
       stopSource?.()
       try { decoder?.close() } catch { /* already closed */ }
-      latestFrame?.close()
-      latestFrame = null
       renderer.dispose()
     }
   }, [source])
