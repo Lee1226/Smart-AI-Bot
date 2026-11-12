@@ -590,7 +590,7 @@ async def webrtc_playback_info(
             status_code=503,
             detail="WebRTC 发布流尚未就绪；请先启动本设备实时预览并确认 FFmpeg/MediaMTX 正常",
         )
-    host = os.environ.get("SMART_AI_MEDIAMTX_HOST", "127.0.0.1")
+    host = "127.0.0.1"
     port = os.environ.get("SMART_AI_MEDIAMTX_WEBRTC_PORT", "8889")
     return {
         "enabled": True,
