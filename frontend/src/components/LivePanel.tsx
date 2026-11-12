@@ -93,7 +93,7 @@ export default function LivePanel({ device, defaultMode = 'off', storageKey = 'l
   const [reloadKey, setReloadKey] = useState(0)
   const [adbFailed, setAdbFailed] = useState(false)
   const [streamError, setStreamError] = useState('')
-  const [renderer, setRenderer] = useState<'canvas' | 'webgl'>(() => localStorage.getItem('h264-renderer') === 'webgl' ? 'webgl' : 'canvas')
+  const [renderer, setRenderer] = useState<'canvas' | 'webgl'>(() => localStorage.getItem('h264-renderer') === 'canvas' ? 'canvas' : 'webgl')
   const usb = useSyncExternalStore(subscribeUsb, usbSnapshot)
   const localUsb = device?.connection_type === 'browser_usb' && usb.phase === 'online' && usb.deviceId === device.id
   const localAdb = device?.connection_type === 'adb_usb'
@@ -156,7 +156,7 @@ export default function LivePanel({ device, defaultMode = 'off', storageKey = 'l
       </div>
 
       {device && <p className="text-sm font-medium mb-3 truncate" title={device.name}>{device.name}</p>}
-      {CAN_WEBCODECS && wantsVideo && <div className="flex items-center justify-end gap-2 mb-2 text-xs"><span className="text-ink-mute">渲染器</span><button onClick={() => chooseRenderer('canvas')} className={`px-2 py-1 rounded border ${renderer === 'canvas' ? 'bg-primary text-white border-primary' : 'bg-white'}`}>Canvas 2D</button><button onClick={() => chooseRenderer('webgl')} className={`px-2 py-1 rounded border ${renderer === 'webgl' ? 'bg-primary text-white border-primary' : 'bg-white'}`}>WebGL</button></div>}
+      {CAN_WEBCODECS && wantsVideo && <label className="flex items-center justify-end gap-2 mb-2 text-xs"><span className="text-ink-mute">渲染器</span><select aria-label="视频渲染器" value={renderer} onChange={e => chooseRenderer(e.target.value as 'canvas' | 'webgl')} className="border rounded px-2 py-1 bg-white text-ink"><option value="webgl">WebGL（默认）</option><option value="canvas">Canvas 2D</option></select></label>}
 
       {/* Portrait phone frame */}
       <div
