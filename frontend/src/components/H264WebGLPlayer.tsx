@@ -85,7 +85,6 @@ export default function H264WebGLPlayer({
                 try {
                   if (stopped || failed) return
                   if (liveStartTimestamp !== null && frameTimestamp < liveStartTimestamp) return
-                  const size = renderer.render(bitmap, frame.displayWidth, frame.displayHeight)
                   renderer.render(bitmap, frame.displayWidth, frame.displayHeight)
                 } catch (error) {
                   fail(error instanceof Error ? error.message : 'WebGL 视频渲染失败')
