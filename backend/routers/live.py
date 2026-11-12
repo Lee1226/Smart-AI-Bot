@@ -227,6 +227,21 @@ async def _run_local_adb_hub(device_id: str, serial: str, hub: dict) -> None:
             except Exception:
                 pass
 
+    try:
+        await session.start()
+        hub["ready"].set()
+        logger.info("[LIVE HUB] producer ready: device_id=%s serial=%s", device_id, serial)
+        while True:
+            chunk = await session.read(64 * 1024)
+            if chunk is None:
+                # A socket idle timeout means the final Annex-B NAL can now be
+                # completed even when the phone screen remains unchanged.
+                await publish(b"", idle_flush=True)
+                continue
+            if not chunk:
+                raise RuntimeError("Scrcpy video stream ended")
+            total_bytes += len(chunk)
+            await publish(chunk)
     except asyncio.CancelledError:
         raise
     except Exception as exc:
