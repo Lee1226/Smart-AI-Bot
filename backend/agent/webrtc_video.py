@@ -57,7 +57,7 @@ class MediaMTXManager:
         self._process: subprocess.Popen | None = None
         self._config_path: str | None = None
         self._owned = False
-        self.host = os.environ.get("SMART_AI_MEDIAMTX_HOST", "127.0.0.1")
+        self.host = "127.0.0.1"  # Keep PoC listeners local-only; do not expose unauthenticated WHEP/RTSP to LAN.
         self.rtsp_port = int(os.environ.get("SMART_AI_MEDIAMTX_RTSP_PORT", "8554"))
         self.webrtc_port = int(os.environ.get("SMART_AI_MEDIAMTX_WEBRTC_PORT", "8889"))
         self.udp_port = int(os.environ.get("SMART_AI_MEDIAMTX_UDP_PORT", "8189"))
@@ -114,6 +114,14 @@ paths:
 
             flags = getattr(subprocess, "CREATE_NO_WINDOW", 0) if os.name == "nt" else 0
             try:
+                validation = subprocess.run(
+                    [executable, f"--validate-conf={self._config_path}"],
+                    capture_output=True, text=True, timeout=8, check=False,
+                    creationflags=flags,
+                )
+                if validation.returncode:
+                    detail = (validation.stderr or validation.stdout or "").strip()
+                    raise RuntimeError(f"MediaMTX 配置校验失败：{detail}")
                 self._process = subprocess.Popen(
                     [executable, self._config_path],
                     stdin=subprocess.DEVNULL,
