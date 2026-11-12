@@ -71,7 +71,7 @@ logDestinations: [stdout]
 rtsp: true
 rtspAddress: {self.host}:{self.rtsp_port}
 rtspTransports: [tcp]
-webrtc: yes
+webrtc: true
 webrtcAddress: {self.host}:{self.webrtc_port}
 webrtcLocalUDPAddress: {self.host}:{self.udp_port}
 webrtcAllowOrigins: ["*"]
