@@ -132,9 +132,22 @@ async def _run_local_adb_hub(device_id: str, serial: str, hub: dict) -> None:
                 raise RuntimeError("Scrcpy video stream ended")
             total_bytes += len(chunk)
             cache.feed(chunk)
+            previous_bootstrap = hub.get("bootstrap", b"")
             hub["bootstrap"] = cache.bootstrap
+            # A viewer that joined before the first complete IDR must not decode
+            # arbitrary delta frames. Replace its queued deltas with the decoder
+            # bootstrap, then continue with this and subsequent live chunks.
+            bootstrap_ready = bool(cache.bootstrap) and not previous_bootstrap
             # Each subscriber owns an independent queue.
             for viewer_id, queue in list(hub["subscribers"].items()):
+                if bootstrap_ready and not hub.get("bootstrap_sent", {}).get(viewer_id, False):
+                    while not queue.empty():
+                        try:
+                            queue.get_nowait()
+                        except asyncio.QueueEmpty:
+                            break
+                    queue.put_nowait(cache.bootstrap)
+                    hub["bootstrap_sent"][viewer_id] = True
                 try:
                     queue.put_nowait(chunk)
                 except asyncio.QueueFull:
@@ -169,6 +182,7 @@ async def _run_local_adb_hub(device_id: str, serial: str, hub: dict) -> None:
                 pass
         hub["subscribers"].clear()
         hub["websockets"].clear()
+        hub.get("bootstrap_sent", {}).clear()
 
 
 async def _subscribe_local_adb_stream(websocket: WebSocket, device_id: str, serial: str) -> None:
@@ -192,8 +206,10 @@ async def _subscribe_local_adb_stream(websocket: WebSocket, device_id: str, seri
         bootstrap = hub.get("bootstrap", b"")
         if bootstrap:
             queue.put_nowait(bootstrap)
-        # Queue seeding and registration happen without an await, so live fan-out
-        # cannot slip between the bootstrap snapshot and subscriber registration.
+        # If the first IDR has not arrived yet, the producer will replace any
+        # queued deltas with the bootstrap as soon as SPS/PPS + IDR are complete.
+        hub["bootstrap_sent"] = hub.get("bootstrap_sent", {})
+        hub["bootstrap_sent"][viewer_id] = bool(bootstrap)
         hub["subscribers"][viewer_id] = queue
         hub["websockets"][viewer_id] = websocket
         logger.info("[LIVE HUB] viewer subscribed: device_id=%s viewer=%s count=%d bootstrap=%s",
@@ -219,6 +235,7 @@ async def _subscribe_local_adb_stream(websocket: WebSocket, device_id: str, seri
         async with lock:
             hub["subscribers"].pop(viewer_id, None)
             hub["websockets"].pop(viewer_id, None)
+            hub.get("bootstrap_sent", {}).pop(viewer_id, None)
             if not hub["subscribers"] and _local_adb_hubs.get(device_id) is hub:
                 task_to_stop = hub["task"]
         if task_to_stop and not task_to_stop.done():
