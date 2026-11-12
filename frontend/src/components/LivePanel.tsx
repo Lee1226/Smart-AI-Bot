@@ -133,9 +133,11 @@ export default function LivePanel({ device, defaultMode = 'off', storageKey = 'l
   const webglFailed = (message: string) => { setStreamError(message); setRenderer('canvas'); localStorage.setItem('h264-renderer', 'canvas') }
   const chooseRenderer = (value: 'canvas' | 'webgl') => { setRenderer(value); localStorage.setItem('h264-renderer', value); setReloadKey(k => k + 1) }
   const chooseTransport = (value: 'websocket' | 'webrtc') => { setTransport(value); localStorage.setItem('live-transport', value); setReloadKey(k => k + 1) }
+  // During the WebRTC PoC, keep the selected transport on screen when startup
+  // fails. Silent fallback hides the actual WHEP/ICE error and makes debugging
+  // impossible; the user can explicitly switch back to WebSocket.
   const webRtcFailed = (message: string) => {
     setStreamError(message)
-    chooseTransport('websocket')
   }
   const canStream = !!device && mode !== 'off' && online
 
@@ -180,7 +182,14 @@ export default function LivePanel({ device, defaultMode = 'off', storageKey = 'l
         ) : videoUnavailable ? (
           <Placeholder text={streamError || t('视频未就绪。远程 App 请先在手机开启远程视频并授权录屏；也可切换截图。', 'Video not ready. Enable remote video and authorize screen capture in the phone app, or select Screenshot.')} />
         ) : usingLocalAdb && transport === 'webrtc' ? (
-          <WebRTCPlayer key={`${device.id}-webrtc-${reloadKey}`} deviceId={device.id} onFail={webRtcFailed} />
+          <>
+            <WebRTCPlayer key={`${device.id}-webrtc-${reloadKey}`} deviceId={device.id} onFail={webRtcFailed} />
+            {streamError && <div className="absolute inset-x-2 bottom-2 z-10 rounded-md bg-black/80 p-3 text-left text-xs text-white">
+              <div className="font-semibold text-amber-300 mb-1">WebRTC 启动失败</div>
+              <div className="break-words">{streamError}</div>
+              <button onClick={() => chooseTransport('webrtc')} className="mt-2 rounded border border-white/40 px-2 py-1 hover:bg-white/10">重试 WebRTC</button>
+            </div>}
+          </>
         ) : (usingUsb || usingLocalAdb || usingRemote) && videoSource ? (
           CAN_WEBCODECS ? (
             renderer === 'webgl' ? <H264WebGLPlayer key={`${device.id}-webgl-${reloadKey}`} source={videoSource} onFail={webglFailed} /> : <H264Canvas
