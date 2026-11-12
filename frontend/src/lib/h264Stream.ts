@@ -1,6 +1,7 @@
 export type H264StreamHandlers = {
   data: (chunk: Uint8Array) => void
   flush?: () => void
+  bootstrapStart?: () => void
   bootstrapEnd?: () => void
   reset: () => void
   fail: (message: string) => void
@@ -34,6 +35,8 @@ export function websocketH264Source(url: string): H264StreamSource {
           handlers.data(new Uint8Array(e.data))
         } else if (e.data === 'h264_flush') {
           handlers.flush?.()
+        } else if (e.data === 'h264_bootstrap_start') {
+          handlers.bootstrapStart?.()
         } else if (e.data === 'h264_bootstrap_end') {
           handlers.bootstrapEnd?.()
         }
