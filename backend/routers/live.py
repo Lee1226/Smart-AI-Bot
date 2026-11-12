@@ -190,7 +190,7 @@ async def _run_local_adb_hub(device_id: str, serial: str, hub: dict) -> None:
                                 queue.get_nowait()
                             except asyncio.QueueEmpty:
                                 break
-                        queue.put_nowait(bootstrap)
+                        queue.put_nowait(bootstrap + b"\\x00\\x00\\x00\\x01")
                         hub["bootstrap_sent"][viewer_id] = True
                         logger.info(
                             "[LIVE HUB] viewer bootstrapped: device_id=%s viewer=%s gop_bytes=%d idr_count=%d",
@@ -200,12 +200,11 @@ async def _run_local_adb_hub(device_id: str, serial: str, hub: dict) -> None:
                     # again, which would duplicate the tail of the IDR/GOP.
                     continue
                 try:
-                    queue.put_nowait(batch)
+                    queue.put_nowait(batch + b"\\x00\\x00\\x00\\x01")
                 except asyncio.QueueFull:
                     hub["subscribers"].pop(viewer_id, None)
-                    hub["websockets"].pop(viewer_id, None)
+                    ws = hub["websockets"].pop(viewer_id, None)
                     hub["bootstrap_sent"].pop(viewer_id, None)
-                    ws = hub["websockets"].get(viewer_id)
                     if ws is not None:
                         close_viewers.append(ws)
                     logger.warning("[LIVE HUB] slow viewer dropped: device_id=%s viewer=%s", device_id, viewer_id)
