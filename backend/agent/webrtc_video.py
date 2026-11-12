@@ -68,7 +68,7 @@ class MediaMTXManager:
         # from the LAN because all MediaMTX listeners bind to 127.0.0.1.
         return f"""logLevel: info
 logDestinations: [stdout]
-rtsp: yes
+rtsp: true
 rtspAddress: {self.host}:{self.rtsp_port}
 rtspTransports: [tcp]
 webrtc: yes
