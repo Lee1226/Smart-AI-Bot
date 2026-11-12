@@ -14,6 +14,7 @@ export default function H264Player({ source, onFail }: { source: H264StreamSourc
     if (!node) return
 
     let closedByUs = false
+    let bootstrapPending = false
     let muxer: JMuxer | undefined
 
     // flushingTime must be a positive number: jmuxer does `flushingTime || 1500`,
@@ -34,6 +35,13 @@ export default function H264Player({ source, onFail }: { source: H264StreamSourc
       const b = node.buffered
       if (b.length === 0) return
       const end = b.end(b.length - 1)
+      const start = b.start(0)
+      if (bootstrapPending) {
+        node.currentTime = Math.max(start, end - 0.05)
+        node.playbackRate = 1.0
+        bootstrapPending = false
+        return
+      }
       const lag = end - node.currentTime
       if (lag > 1.0) {
         node.currentTime = end - 0.05   // too far behind → jump to live edge
@@ -57,6 +65,7 @@ export default function H264Player({ source, onFail }: { source: H264StreamSourc
     node.addEventListener('error', mediaError)
     stopSource = source({
       reset,
+      bootstrapEnd: () => { bootstrapPending = true },
       data: video => {
         if (closedByUs || failed) return
         try { muxer?.feed({ video }) } catch { fail('视频播放失败，已回落截图') }
