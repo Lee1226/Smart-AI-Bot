@@ -599,7 +599,7 @@ export default function Recorder() {
             <div className="border-b xl:border-b-0 xl:border-r p-3 min-w-0">
               <div className="flex items-center justify-between mb-2">
                 <div className="text-xs font-semibold text-gray-500">{t('事件画面', 'EVENT FRAME')}</div>
-                {selectedEvent && <span className="text-[11px] text-gray-400">{eventScreenshot ? t('已关联截图', 'Screenshot attached') : t('暂无事件截图', 'No event screenshot')}</span>}
+                {selectedEvent && <span className="text-[11px] text-gray-400">{eventScreenshot ? (selectedEvent.source === 'portal_touch' ? t('附近截图 · 非精确帧', 'Nearby frame · approximate') : t('操作后截图', 'Post-action frame')) : t('暂无事件截图', 'No event screenshot')}</span>}
               </div>
               {eventScreenshot ? (
                 <div className="flex items-center justify-center rounded-lg bg-slate-100 p-2 min-h-[260px] overflow-hidden">
