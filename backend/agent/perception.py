@@ -57,6 +57,7 @@ def _format_node(
     index_counter: List[int],
     elements: List[Dict[str, Any]],
     level: int = 0,
+    parent_path: Optional[List[str]] = None,
 ) -> str:
     """Recursively format an a11y tree node into one indented text line.
 
@@ -100,10 +101,19 @@ def _format_node(
         elements.append({
             "index": idx,
             "text": text or resource_id or short_class,
+            "contentDescription": node.get("contentDescription", "") or "",
             "className": short_class,
             "resourceId": resource_id,
             "cx": cx,
             "cy": cy,
+            "bounds": {"left": l, "top": t, "right": r, "bottom": b} if isinstance(bounds_raw, dict) else None,
+            "clickable": bool(node.get("isClickable") or is_button_like),
+            "enabled": bool(node.get("isEnabled", True)),
+            "visible": bool(node.get("isVisibleToUser", True)),
+            "scrollable": bool(node.get("isScrollable")),
+            "selected": bool(node.get("isSelected")),
+            "checked": bool(node.get("isChecked")),
+            "parentPath": list(parent_path or []),
         })
     else:
         idx = None  # container-only node — no index assigned
@@ -135,7 +145,8 @@ def _format_node(
 
     line = indent + " ".join(parts)
     children_lines = [
-        _format_node(child, index_counter, elements, level + 1)
+        _format_node(child, index_counter, elements, level + 1,
+                     (parent_path or []) + [text or resource_id or short_class])
         for child in node.get("children", [])
     ]
     return "\n".join([line] + children_lines) if children_lines else line
