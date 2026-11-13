@@ -328,6 +328,66 @@ async def snapshot(device_id: str, request: Request):
     return await _snapshot(device)
 
 
+@router.post("/gesture")
+async def execute_recorder_gesture(req: ActionRequest, request: Request):
+    """Low-latency mouse gesture path: capture pre-action semantics, execute,
+    append the event, and leave screenshot refresh to the live preview."""
+    await _authorize_device(request, req.device_id)
+    if req.action not in {"tap", "swipe"}:
+        raise HTTPException(status_code=400, detail="仅支持 tap / swipe 手势")
+    from core.device_scheduler import locks
+    lock = locks.setdefault(req.device_id, asyncio.Lock())
+    if lock.locked():
+        raise HTTPException(status_code=409, detail="设备正在执行任务，请先取消任务或等待完成")
+    async with lock:
+        device = _get_device(req.device_id)
+        args = req.args
+        try:
+            _, pre_elements = await device.get_ui_state()
+        except Exception:
+            pre_elements = []
+        try:
+            coordinate_space = args.get("coordinate_space") or args.get("coordinateSpace")
+            if req.action == "tap":
+                if coordinate_space == "device_px":
+                    result = await device.tap_absolute(args["x"], args["y"])
+                else:
+                    result = await device.tap(args["x"], args["y"])
+                tap_x, tap_y = args.get("x"), args.get("y")
+                target_element = None
+                if isinstance(tap_x, (int, float)) and isinstance(tap_y, (int, float)):
+                    target_element = next((element for element in reversed(pre_elements)
+                        if isinstance(element.get("bounds"), dict)
+                        and element["bounds"].get("left", 0) <= tap_x <= element["bounds"].get("right", 0)
+                        and element["bounds"].get("top", 0) <= tap_y <= element["bounds"].get("bottom", 0)), None)
+            else:
+                coords = (args["x1"], args["y1"], args["x2"], args["y2"])
+                if coordinate_space == "device_px":
+                    result = await device.swipe_absolute(*coords, duration_ms=args.get("duration_ms", 450))
+                else:
+                    result = await device.swipe(*coords, duration_ms=args.get("duration_ms", 450))
+                target_element = None
+        except Exception as exc:
+            raise HTTPException(status_code=500, detail=str(exc))
+        description = _step_description(req.action, args, pre_elements)
+        event_payload = {"kind": req.action, **args, "description": description}
+        if target_element:
+            label = target_element.get("text") or target_element.get("contentDescription") or target_element.get("resourceId")
+            if label:
+                description = f'点击「{label}」'
+                event_payload["description"] = description
+            event_payload.update({
+                "text": target_element.get("text", ""),
+                "contentDescription": target_element.get("contentDescription", ""),
+                "resourceId": target_element.get("resourceId", ""),
+                "className": target_element.get("className", ""),
+                "target": target_element,
+            })
+        event = recorder_engine.append(req.device_id, event_payload)
+        return {"ok": True, "result": result, "description": description,
+                "event": event, "target": target_element}
+
+
 @router.post("/action", response_model=ActionResponse)
 async def execute_action(req: ActionRequest, request: Request):
     """Execute one action while holding the same device lock as scheduled runs."""
