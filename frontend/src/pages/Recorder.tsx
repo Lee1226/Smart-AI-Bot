@@ -40,7 +40,7 @@ interface RecordEvent {
   timestamp_ms?: number
   received_at_ms?: number
   coordinates?: { space?: string; x?: number; y?: number; x1?: number; y1?: number; x2?: number; y2?: number }
-  target?: { text?: string; content_description?: string; resource_id?: string; class_name?: string; css_selector?: string; test_id?: string }
+  target?: { text?: string; content_description?: string; resource_id?: string; class_name?: string; css_selector?: string; test_id?: string; bounds?: { left: number; top: number; right: number; bottom: number }; clickable?: boolean; parentPath?: string[]; parent_path?: string[] }
   text?: string
   contentDescription?: string
   resourceId?: string
@@ -171,6 +171,22 @@ export default function Recorder() {
       .catch(() => { if (alive) setVideoAvailable(false) })
     return () => { alive = false }
   }, [deviceId])
+
+  // Some USB/Harmony bridges expose screenshots but not the H.264 live stream.
+  // Keep the same interaction surface usable with a rate-limited screenshot fallback.
+  useEffect(() => {
+    if (!recording || videoAvailable || !deviceId) return
+    let alive = true
+    const refresh = async () => {
+      try {
+        const { data } = await api.get<SnapshotData>(`/recorder/snapshot?device_id=${deviceId}`)
+        if (alive) applySnapshot(data)
+      } catch { /* retry on the next interval */ }
+    }
+    void refresh()
+    const timer = window.setInterval(refresh, 1500)
+    return () => { alive = false; window.clearInterval(timer) }
+  }, [recording, videoAvailable, deviceId])
 
   const screenPoint = (event: React.PointerEvent<HTMLDivElement>) => {
     const rect = event.currentTarget.getBoundingClientRect()
@@ -505,7 +521,7 @@ export default function Recorder() {
                   <div className="flex items-center gap-2"><span>{screenSize.width} × {screenSize.height}</span>
                     <select aria-label="视频渲染器" value={renderer} onChange={event => { const value = event.target.value as 'webgl' | 'canvas'; setRenderer(value); localStorage.setItem('h264-renderer', value) }} className="rounded border border-slate-600 bg-slate-800 px-2 py-1 text-xs text-white">
                       <option value="webgl">WebGL</option><option value="canvas">Canvas 2D</option></select></div></div>
-                <div ref={screenRef} className="relative mx-auto overflow-hidden rounded-lg bg-black touch-none select-none" style={{ aspectRatio: `${screenSize.width} / ${screenSize.height}`, width: 'min(100%, 420px)', maxHeight: '72vh' }} onPointerDown={handleScreenPointerDown} onPointerUp={handleScreenPointerUp} onPointerCancel={() => { pointerStart.current = null }}>
+                <div ref={screenRef} className="relative mx-auto overflow-hidden rounded-lg bg-black touch-none select-none" style={{ aspectRatio: `${screenSize.width} / ${screenSize.height}`, width: 'min(100%, 420px)' }} onPointerDown={handleScreenPointerDown} onPointerUp={handleScreenPointerUp} onPointerCancel={() => { pointerStart.current = null }}>
                   {videoAvailable && liveVideoSource ? (renderer === 'webgl' ? <H264WebGLPlayer source={liveVideoSource} onFail={() => setVideoAvailable(false)} /> : <H264Canvas source={liveVideoSource} onFail={() => setVideoAvailable(false)} />) : screenshot ? <img src={`data:image/png;base64,${screenshot}`} alt="device screen" className="absolute inset-0 h-full w-full object-fill" /> : null}
                   {!videoAvailable && !screenshot && <div className="absolute inset-0 flex items-center justify-center text-sm text-slate-400">{t('正在获取手机画面…', 'Waiting for device screen…')}</div>}
                   {!recording && <div className="absolute inset-0 flex items-center justify-center bg-black/35 text-sm text-white">{t('开始录制后可用鼠标操作手机', 'Start recording to control the phone with your mouse')}</div>}
@@ -614,6 +630,12 @@ export default function Recorder() {
                         {el.resourceId && (
                           <div className="text-xs text-gray-400 truncate">{el.resourceId}</div>
                         )}
+                        {el.bounds && <div className="mt-1 text-[10px] text-gray-400 font-mono">[{el.bounds.left},{el.bounds.top}]–[{el.bounds.right},{el.bounds.bottom}]</div>}
+                        <div className="mt-1 flex flex-wrap gap-1 text-[10px] text-gray-400">
+                          {el.clickable && <span className="rounded bg-emerald-50 px-1 text-emerald-700">clickable</span>}
+                          {el.scrollable && <span className="rounded bg-blue-50 px-1 text-blue-700">scrollable</span>}
+                          {el.selected && <span className="rounded bg-amber-50 px-1 text-amber-700">selected</span>}
+                        </div>
                       </div>
                     </div>
                   </button>
@@ -728,7 +750,12 @@ export default function Recorder() {
                     <div><div className="text-gray-400">{t('事件序号', 'Sequence')}</div><div className="font-mono mt-1">{selectedEvent.sequence ?? selectedEvent.seq ?? selectedEventIndex}</div></div>
                     <div><div className="text-gray-400">{t('采集时间', 'Timestamp')}</div><div className="font-mono mt-1">{formatTime(selectedEvent.timestamp_ms ?? selectedEvent.received_at_ms)}</div></div>
                   </div>
-                  {eventTarget && <div className="text-xs space-y-1"><div className="text-gray-400">{t('目标控件', 'Target')}</div><div className="rounded bg-gray-50 p-2 break-all">{eventTarget.text || eventTarget.content_description || eventTarget.resource_id || eventTarget.css_selector || t('尚未识别语义控件', 'No semantic target detected')}</div></div>}
+                  {eventTarget && <div className="text-xs space-y-2"><div className="text-gray-400">{t('目标控件', 'Target')}</div><div className="rounded bg-gray-50 p-2 break-all">{eventTarget.text || eventTarget.content_description || eventTarget.resource_id || eventTarget.css_selector || t('尚未识别语义控件', 'No semantic target detected')}</div>
+                    {eventTarget.resource_id && <div><span className="text-gray-400">Resource ID：</span><span className="font-mono">{eventTarget.resource_id}</span></div>}
+                    {eventTarget.class_name && <div><span className="text-gray-400">Class：</span><span className="font-mono">{eventTarget.class_name}</span></div>}
+                    {eventTarget.bounds && <div><span className="text-gray-400">Bounds：</span><span className="font-mono">{JSON.stringify(eventTarget.bounds)}</span></div>}
+                    {(eventTarget.parent_path || eventTarget.parentPath)?.length ? <div><span className="text-gray-400">Parent：</span>{(eventTarget.parent_path || eventTarget.parentPath)?.join(' / ')}</div> : null}
+                  </div>}
                   <details className="rounded-lg border">
                     <summary className="cursor-pointer px-3 py-2 text-xs font-medium text-gray-600">{t('查看原始事件 JSON', 'View raw event JSON')}</summary>
                     <pre className="max-h-64 overflow-auto border-t bg-slate-50 p-3 text-[11px] leading-relaxed whitespace-pre-wrap break-all">{JSON.stringify(selectedEvent, null, 2)}</pre>
