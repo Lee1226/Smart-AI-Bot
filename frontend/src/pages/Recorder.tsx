@@ -1,7 +1,10 @@
-import { useState, useEffect, useRef } from 'react'
+import { useState, useEffect, useRef, useMemo } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { useNavigate } from 'react-router-dom'
-import { api, fetchDevices } from '../lib/api'
+import { api, fetchDevices, getToken } from '../lib/api'
+import H264WebGLPlayer from '../components/H264WebGLPlayer'
+import H264Canvas from '../components/H264Canvas'
+import { websocketH264Source } from '../lib/h264Stream'
 import { useT } from '../lib/i18n'
 
 interface Element {
@@ -11,6 +14,15 @@ interface Element {
   resourceId: string
   cx: number
   cy: number
+  contentDescription?: string
+  bounds?: { left: number; top: number; right: number; bottom: number } | null
+  clickable?: boolean
+  enabled?: boolean
+  visible?: boolean
+  scrollable?: boolean
+  selected?: boolean
+  checked?: boolean
+  parentPath?: string[]
 }
 
 interface Step {
@@ -50,6 +62,8 @@ interface SnapshotData {
   screenshot_b64: string
   ui_text: string
   elements: Element[]
+  screen_width?: number
+  screen_height?: number
 }
 
 interface ActionData extends SnapshotData {
@@ -93,6 +107,11 @@ export default function Recorder() {
   const [webEvents, setWebEvents] = useState<RecordEvent[]>([])
   const [selectedEventIndex, setSelectedEventIndex] = useState(0)
   const [previewSize, setPreviewSize] = useState({ width: 0, height: 0 })
+  const [screenSize, setScreenSize] = useState({ width: 1080, height: 2400 })
+  const [videoAvailable, setVideoAvailable] = useState(false)
+  const [renderer, setRenderer] = useState<'webgl' | 'canvas'>(() => localStorage.getItem('h264-renderer') === 'canvas' ? 'canvas' : 'webgl')
+  const pointerStart = useRef<{ x: number; y: number } | null>(null)
+  const screenRef = useRef<HTMLDivElement>(null)
   const realEventsCursor = useRef(0)
 
   // Poll captured events while real-recording is active.
@@ -133,6 +152,48 @@ export default function Recorder() {
   const applySnapshot = (data: SnapshotData) => {
     setScreenshot(data.screenshot_b64)
     setElements(data.elements)
+    if ((data.screen_width ?? 0) > 0 && (data.screen_height ?? 0) > 0) setScreenSize({ width: data.screen_width!, height: data.screen_height! })
+  }
+
+  const liveVideoSource = useMemo(() => {
+    if (!deviceId) return undefined
+    const protocol = location.protocol === 'https:' ? 'wss:' : 'ws:'
+    const token = getToken()
+    const query = `?source=device${token ? `&token=${encodeURIComponent(token)}` : ''}`
+    return websocketH264Source(`${protocol}//${location.host}/v1/devices/${deviceId}/live${query}`)
+  }, [deviceId])
+
+  useEffect(() => {
+    if (!deviceId) { setVideoAvailable(false); return }
+    let alive = true
+    api.get<{ video_available?: boolean }>(`/devices/${deviceId}/capabilities`)
+      .then(({ data }) => { if (alive) setVideoAvailable(!!data.video_available) })
+      .catch(() => { if (alive) setVideoAvailable(false) })
+    return () => { alive = false }
+  }, [deviceId])
+
+  const screenPoint = (event: React.PointerEvent<HTMLDivElement>) => {
+    const rect = event.currentTarget.getBoundingClientRect()
+    return {
+      x: Math.max(0, Math.min(screenSize.width, Math.round((event.clientX - rect.left) / rect.width * screenSize.width))),
+      y: Math.max(0, Math.min(screenSize.height, Math.round((event.clientY - rect.top) / rect.height * screenSize.height))),
+    }
+  }
+  const handleScreenPointerDown = (event: React.PointerEvent<HTMLDivElement>) => {
+    if (!recording || loading) return
+    pointerStart.current = screenPoint(event)
+    event.currentTarget.setPointerCapture(event.pointerId)
+  }
+  const handleScreenPointerUp = (event: React.PointerEvent<HTMLDivElement>) => {
+    const start = pointerStart.current
+    pointerStart.current = null
+    if (!start || !recording || loading) return
+    const end = screenPoint(event)
+    if (Math.hypot(end.x - start.x, end.y - start.y) < 12) {
+      void doAction('tap', { ...end, coordinate_space: 'device_px' })
+    } else {
+      void doAction('swipe', { x1: start.x, y1: start.y, x2: end.x, y2: end.y, duration_ms: 450, coordinate_space: 'device_px' })
+    }
   }
 
   // ── API calls ───────────────────────────────────────────────────────────────
@@ -174,11 +235,19 @@ export default function Recorder() {
             y1: typeof args.y1 === 'number' ? args.y1 : undefined,
             x2: typeof args.x2 === 'number' ? args.x2 : undefined,
             y2: typeof args.y2 === 'number' ? args.y2 : undefined,
-            space: 'model_image_px',
+            space: typeof args.coordinate_space === 'string' ? args.coordinate_space : 'model_image_px',
           },
         } : {}),
         screenshot_b64: data.screenshot_b64,
         screenshot_captured_at_ms: now,
+        ...(action === 'tap' || action === 'tap_element' ? (() => {
+          const target = action === 'tap_element'
+            ? elements.find(el => el.index === args.index)
+            : [...elements].reverse().find(el => !!el.bounds && typeof args.x === 'number' && typeof args.y === 'number'
+              && el.bounds.left <= (args.x as number) && el.bounds.right >= (args.x as number)
+              && el.bounds.top <= (args.y as number) && el.bounds.bottom >= (args.y as number))
+          return target ? { target: { text: target.text, resource_id: target.resourceId, class_name: target.className, bounds: target.bounds, clickable: target.clickable, parent_path: target.parentPath } } : {}
+        })() : {}),
       }])
     } catch (e: unknown) {
       setError((e as Error).message ?? 'Action failed')
@@ -430,17 +499,20 @@ export default function Recorder() {
           <div className="grid grid-cols-[1fr_340px] gap-5 mb-6">
             {/* Left: screenshot + action bar */}
             <div>
-              {screenshot ? (
-                <img
-                  src={`data:image/png;base64,${screenshot}`}
-                  alt="screen"
-                  className="w-full rounded-lg border shadow-sm mb-3"
-                />
-              ) : (
-                <div className="h-64 bg-gray-100 rounded-lg flex items-center justify-center text-gray-400 text-sm mb-3">
-                  {t('截图加载中…', 'Loading screenshot…')}
+              <div className="mb-3 rounded-xl border bg-slate-950 p-3">
+                <div className="mb-2 flex flex-wrap items-center justify-between gap-2 text-xs text-slate-300">
+                  <span>{t('实时手机画面 · 鼠标直接操作', 'Live device screen · click or drag to control')}</span>
+                  <div className="flex items-center gap-2"><span>{screenSize.width} × {screenSize.height}</span>
+                    <select aria-label="视频渲染器" value={renderer} onChange={event => { const value = event.target.value as 'webgl' | 'canvas'; setRenderer(value); localStorage.setItem('h264-renderer', value) }} className="rounded border border-slate-600 bg-slate-800 px-2 py-1 text-xs text-white">
+                      <option value="webgl">WebGL</option><option value="canvas">Canvas 2D</option></select></div></div>
+                <div ref={screenRef} className="relative mx-auto overflow-hidden rounded-lg bg-black touch-none select-none" style={{ aspectRatio: `${screenSize.width} / ${screenSize.height}`, width: 'min(100%, 420px)', maxHeight: '72vh' }} onPointerDown={handleScreenPointerDown} onPointerUp={handleScreenPointerUp} onPointerCancel={() => { pointerStart.current = null }}>
+                  {videoAvailable && liveVideoSource ? (renderer === 'webgl' ? <H264WebGLPlayer source={liveVideoSource} onFail={() => setVideoAvailable(false)} /> : <H264Canvas source={liveVideoSource} onFail={() => setVideoAvailable(false)} />) : screenshot ? <img src={`data:image/png;base64,${screenshot}`} alt="device screen" className="absolute inset-0 h-full w-full object-fill" /> : null}
+                  {!videoAvailable && !screenshot && <div className="absolute inset-0 flex items-center justify-center text-sm text-slate-400">{t('正在获取手机画面…', 'Waiting for device screen…')}</div>}
+                  {!recording && <div className="absolute inset-0 flex items-center justify-center bg-black/35 text-sm text-white">{t('开始录制后可用鼠标操作手机', 'Start recording to control the phone with your mouse')}</div>}
+                  {recording && <div className="pointer-events-none absolute left-2 top-2 rounded bg-emerald-600/90 px-2 py-1 text-[10px] text-white">LIVE · CONTROL ENABLED</div>}
                 </div>
-              )}
+                <p className="mt-2 text-center text-[11px] text-slate-400">{t('单击 = 点击 · 按住拖动 = 滑动；点击后自动关联 UI Tree 控件信息。', 'Click = tap · drag = swipe; UI tree metadata is attached automatically.')}</p>
+              </div>
 
               {/* Action bar */}
               <div className="bg-white border rounded-lg p-3 shadow-sm space-y-2">
