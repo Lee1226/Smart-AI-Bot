@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef, useMemo } from 'react'
+import { useState, useEffect, useRef, useMemo, type PointerEvent } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { useNavigate } from 'react-router-dom'
 import { api, fetchDevices, getToken } from '../lib/api'
@@ -188,7 +188,7 @@ export default function Recorder() {
     return () => { alive = false; window.clearInterval(timer) }
   }, [recording, videoAvailable, deviceId])
 
-  const screenPoint = (event: React.PointerEvent<HTMLDivElement>) => {
+  const screenPoint = (event: PointerEvent<HTMLDivElement>) => {
     const rect = event.currentTarget.getBoundingClientRect()
     return {
       x: Math.max(0, Math.min(screenSize.width, Math.round((event.clientX - rect.left) / rect.width * screenSize.width))),
