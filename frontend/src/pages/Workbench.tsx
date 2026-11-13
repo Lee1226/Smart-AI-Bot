@@ -42,7 +42,7 @@ function deviceKind(device: Device) {
 
 export default function Workbench() {
   const devicesQuery = useQuery({ queryKey: ['devices'], queryFn: fetchDevices, refetchInterval: 5000 })
-  const runsQuery = useQuery({ queryKey: ['runs'], queryFn: fetchRuns, refetchInterval: 15000 })
+  const runsQuery = useQuery({ queryKey: ['runs'], queryFn: () => fetchRuns(), refetchInterval: 15000 })
   const suitesQuery = useQuery({ queryKey: ['suites', 'workbench'], queryFn: () => fetchSuites({ page: 1, page_size: 100 }), refetchInterval: 60000 })
   const devices = devicesQuery.data || []
   const runs = runsQuery.data || []
