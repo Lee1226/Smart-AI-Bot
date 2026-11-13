@@ -365,10 +365,16 @@ async def _execute_action(req: ActionRequest):
         elif action == "scroll":
             result = await device.scroll(args["direction"], args.get("distance", "medium"))
         elif action == "swipe":
-            result = await device.swipe(
-                args["x1"], args["y1"], args["x2"], args["y2"],
-                args.get("duration_ms", 500),
-            )
+            if (args.get("coordinate_space") or args.get("coordinateSpace")) == "device_px":
+                result = await device.swipe_absolute(
+                    args["x1"], args["y1"], args["x2"], args["y2"],
+                    args.get("duration_ms", 500),
+                )
+            else:
+                result = await device.swipe(
+                    args["x1"], args["y1"], args["x2"], args["y2"],
+                    args.get("duration_ms", 500),
+                )
         elif action == "global_action":
             result = await device.global_action(args["action"])
         elif action == "press_key":
@@ -402,10 +408,12 @@ async def _execute_action(req: ActionRequest):
         )
     elif action == "tap":
         tap_x, tap_y = args.get("x"), args.get("y")
-        target_element = next((element for element in reversed(pre_elements)
-            if isinstance(element.get("bounds"), dict)
-            and element["bounds"].get("left", 0) <= tap_x <= element["bounds"].get("right", 0)
-            and element["bounds"].get("top", 0) <= tap_y <= element["bounds"].get("bottom", 0)), None)
+        target_element = None
+        if isinstance(tap_x, (int, float)) and isinstance(tap_y, (int, float)):
+            target_element = next((element for element in reversed(pre_elements)
+                if isinstance(element.get("bounds"), dict)
+                and element["bounds"].get("left", 0) <= tap_x <= element["bounds"].get("right", 0)
+                and element["bounds"].get("top", 0) <= tap_y <= element["bounds"].get("bottom", 0)), None)
     else:
         target_element = None
     if target_element:
