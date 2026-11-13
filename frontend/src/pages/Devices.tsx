@@ -144,10 +144,34 @@ export default function Devices() {
     }
   }
 
+  const onlineCount = devices.filter(device => device.status === 'online').length
+  const androidCount = devices.filter(device => device.platform === 'android' || ['adb_usb', 'adb_bridge', 'portal', 'browser_usb'].includes(device.connection_type)).length
+  const usbCount = devices.filter(device => ['adb_usb', 'adb_bridge', 'hdc_bridge', 'ios_bridge'].includes(device.connection_type)).length
+
   return (
-    <div>
+    <div className="space-y-6">
+      <header className="flex flex-wrap items-end justify-between gap-4">
+        <div>
+          <div className="text-xs font-semibold uppercase tracking-[0.18em] text-primary">DEVICE FLEET MANAGEMENT</div>
+          <h1 className="mt-2 text-2xl font-semibold tracking-tight text-ink">{t('设备管理', 'Device management')}</h1>
+          <p className="mt-1 text-sm text-ink-mute">{t('统一接入、监控和管理 Android、HarmonyOS 与 iOS 测试终端。', 'Connect, monitor and manage Android, HarmonyOS and iOS test devices.')}</p>
+        </div>
+        <div className="text-xs text-ink-mute">{t('设备状态每 5 秒自动刷新', 'Device status refreshes every 5 seconds')}</div>
+      </header>
+      <section className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+        {[
+          { label: t('接入设备', 'Registered devices'), value: devices.length, note: t('平台已登记终端', 'Devices registered'), tone: 'text-ink' },
+          { label: t('在线设备', 'Online devices'), value: onlineCount, note: t('当前可连接与调试', 'Available for testing'), tone: 'text-emerald-700' },
+          { label: t('Android 设备', 'Android devices'), value: androidCount, note: t('ADB / Portal 接入', 'ADB / Portal'), tone: 'text-sky-700' },
+          { label: t('USB 桥接设备', 'USB bridge devices'), value: usbCount, note: t('本机或桥接连接', 'Local or bridge transport'), tone: 'text-violet-700' },
+        ].map(item => <div key={item.label} className="rounded-xl border border-hairline bg-white p-4 shadow-sm">
+          <div className="text-xs text-ink-mute">{item.label}</div>
+          <div className={`mt-2 text-2xl font-semibold tabular-nums ${item.tone}`}>{item.value}</div>
+          <div className="mt-1 text-[11px] text-ink-mute">{item.note}</div>
+        </div>)}
+      </section>
       <DeviceWall devices={devices} selectedId={selectedId} onSelect={setSelectedId} />
-      <div className="bg-white border rounded-lg p-4 mb-5">
+      <section className="rounded-xl border border-hairline bg-white p-5 shadow-sm">
         <div className="flex items-center justify-between gap-4">
           <div>
             <h2 className="font-semibold">{t('Android · 本机 ADB USB 直连', 'Android · Local ADB USB')}</h2>
@@ -178,10 +202,13 @@ export default function Devices() {
         <p className="text-xs text-gray-400 mt-2">{t('设备发现每 5 秒自动刷新。物理拔出后设备会显示离线；未手动断开时，重新插入会自动恢复绑定。点击设备卡片的「断开 USB」会暂停自动连接，可通过「重新连接」恢复。', 'Device discovery refreshes every 5 seconds. Physically unplugged devices show offline and reconnect automatically unless manually detached. Use Reconnect to resume after a manual detach.')}</p>
         <p className="text-xs text-gray-400 mt-1">{t('支持截图、UI 树、点击/滑动、按键、应用启动与 H.264 画面。当前 ADB 原生输入暂不支持中文/Unicode，URL 安装 APK 也尚未接入。', 'Supports screenshots, UI hierarchy, tap/swipe, keys, app launch and H.264 preview. Native ADB text entry currently does not support Chinese/Unicode; URL-based APK installation is not yet integrated.')}</p>
         {(attachAdbMut.isError || detachAdbMut.isError) && <p className="text-sm text-red-600 mt-2">{String((attachAdbMut.error || detachAdbMut.error)?.message || 'ADB operation failed')}</p>}
-      </div>
+      </section>
+      <section className="space-y-3"><div><h2 className="text-lg font-semibold text-ink">{t('其他连接方式', 'Other connection methods')}</h2><p className="text-sm text-ink-mute">{t('按终端平台选择对应的桥接接入方式。', 'Choose the appropriate bridge transport for each platform.')}</p></div>
       <AdbBridgeSetup devices={devices} server={import.meta.env.DEV ? `${location.protocol}//${location.hostname}:${backendPort || 8000}` : location.origin} />
       <AdbBridgeSetup transport="ios" devices={devices} server={import.meta.env.DEV ? `${location.protocol}//${location.hostname}:${backendPort || 8000}` : location.origin} />
       <AdbBridgeSetup transport="hdc" devices={devices} server={import.meta.env.DEV ? `${location.protocol}//${location.hostname}:${backendPort || 8000}` : location.origin} />
+      </section>
+      <section className="rounded-xl border border-hairline bg-white p-5 shadow-sm space-y-4">
       <div className="flex items-center justify-between mb-6">
         <h1 className="text-2xl font-bold">{t('远程模式 · App 配对', 'Remote mode · App pairing')}</h1>
         <div className="flex gap-2">
@@ -402,6 +429,7 @@ export default function Devices() {
         </div>
       )}
 
+      </section>
       {showDownload && (
         <div
           className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4"
