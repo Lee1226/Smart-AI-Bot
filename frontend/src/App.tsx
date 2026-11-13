@@ -31,7 +31,7 @@ const NAV_GROUPS: { label: { zh: string; en: string }; items: NavigationItem[] }
     { to: '/debug', label: { zh: '调试控制台', en: 'Debug console' }, icon: '⌘', paths: ['/debug'] },
     { to: '/quick', label: { zh: '任务执行', en: 'Execution' }, icon: '⚡', paths: ['/quick', '/regressions'] },
     { to: '/suites', label: { zh: '用例中心', en: 'Cases' }, icon: '🧪', paths: ['/suites', '/library', '/automation', '/recorder', '/knowledge'] },
-    { to: '/runs', label: { zh: '运行结果', en: 'Results' }, icon: '▶', paths: ['/runs'] },
+    { to: '/runs', label: { zh: '测试任务', en: 'Test tasks' }, icon: '▶', paths: ['/runs'] },
   ] },
   { label: { zh: '管理', en: 'Manage' }, items: [
     { to: '/settings', label: { zh: '设置与账号', en: 'Settings & account' }, icon: '⚙', paths: ['/settings', '/account'] },
@@ -50,7 +50,7 @@ const PAGE_TABS = {
     { to: '/knowledge', zh: '知识库', en: 'Knowledge' },
   ],
   results: [
-    { to: '/runs', zh: '运行记录', en: 'Run history' },
+    { to: '/runs', zh: '任务管理', en: 'Task management' },
     { to: '/runs/compare', zh: '结果对比', en: 'Compare' },
   ],
   settings: [
