@@ -232,7 +232,7 @@ export default function Recorder() {
     pointerStart.current = screenPoint(event)
     event.currentTarget.setPointerCapture(event.pointerId)
   }
-  const handleScreenPointerUp = (event: React.PointerEvent<HTMLDivElement>) => {
+  const handleScreenPointerUp = (event: PointerEvent<HTMLDivElement>) => {
     const start = pointerStart.current
     pointerStart.current = null
     if (!start || !recording || loading) return
