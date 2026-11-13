@@ -109,7 +109,8 @@ export default function Recorder() {
           try {
             const snapshot = await api.get<SnapshotData>(`/recorder/snapshot?device_id=${deviceId}`)
             nearbyScreenshot = snapshot.data.screenshot_b64
-            applySnapshot(snapshot.data)
+            setScreenshot(snapshot.data.screenshot_b64)
+            setElements(snapshot.data.elements)
           } catch { /* event capture must continue if screenshot capture fails */ }
           setRealEvents(prev => [...prev, ...events.map((event, index) => ({
             ...event,
