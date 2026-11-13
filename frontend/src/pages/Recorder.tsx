@@ -92,7 +92,6 @@ export default function Recorder() {
   const [webEvents, setWebEvents] = useState<RecordEvent[]>([])
   const [selectedEventIndex, setSelectedEventIndex] = useState(0)
   const [previewSize, setPreviewSize] = useState({ width: 0, height: 0 })
-  const webScreenshots = useRef<string[]>([])
   const realEventsCursor = useRef(0)
 
   // Poll captured events while real-recording is active.
@@ -192,7 +191,6 @@ export default function Recorder() {
     setWebEvents([])
     setRealEvents([])
     setSelectedEventIndex(0)
-    webScreenshots.current = []
     setSaved(null)
     setError('')
     setLoading(true)
