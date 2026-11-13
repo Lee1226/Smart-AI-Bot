@@ -237,6 +237,9 @@ async def start_web_session(device_id: str, request: Request):
 async def stop_web_session(device_id: str, request: Request):
     """Stop a browser-action recording session and return its normalized events."""
     await _authorize_device(request, device_id)
+    info = recorder_engine.session_info(device_id)
+    if info and info["recording"] and info["source"] != "web_action":
+        raise HTTPException(status_code=409, detail="当前设备正在使用其他录制来源")
     events = recorder_engine.stop(device_id)
     return {"ok": True, "events": events,
             "session": recorder_engine.session_info(device_id)}
@@ -275,6 +278,9 @@ async def stop_record(device_id: str, request: Request):
     device = _get_device(device_id)
     if local_adb.is_bound(device_id):
         return {"ok": True, "events": [], "mode": "manual"}
+    info = recorder_engine.session_info(device_id)
+    if info and info["recording"] and info["source"] != "portal_touch":
+        raise HTTPException(status_code=409, detail="当前设备正在使用其他录制来源")
     try:
         await device._rpc("stop_record", {})
     except Exception as e:
