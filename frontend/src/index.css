@@ -7,17 +7,85 @@
     font-family: theme('fontFamily.sans');
     -webkit-font-smoothing: antialiased;
     text-rendering: optimizeLegibility;
+    color-scheme: light;
   }
+
   body {
     @apply bg-canvas-soft text-ink;
+    background-image:
+      radial-gradient(ellipse at 8% 0%, rgba(40, 120, 208, 0.055), transparent 34%),
+      radial-gradient(ellipse at 92% 8%, rgba(19, 166, 181, 0.045), transparent 30%);
+    background-attachment: fixed;
   }
+
   code, pre, kbd, samp {
     font-family: theme('fontFamily.mono');
+  }
+
+  ::selection {
+    background: rgba(40, 120, 208, 0.18);
+    color: #1B2B3D;
+  }
+
+  :focus-visible {
+    outline: 2px solid rgba(40, 120, 208, 0.72);
+    outline-offset: 2px;
   }
 }
 
 @layer components {
-  /* Dark terminal block — logs / JSON-RPC / commands / diff */
+  /* Standard solid card: crisp surface, fine border and restrained depth. */
+  .surface-card {
+    @apply bg-white border border-hairline rounded-card shadow-card;
+  }
+
+  .surface-card-hover {
+    @apply transition-all duration-200;
+  }
+
+  .surface-card-hover:hover {
+    @apply -translate-y-0.5 shadow-pop border-hairline-strong;
+  }
+
+  /* Tinted solid cards — deliberately opaque, never glass or backdrop blur. */
+  .surface-card-blue {
+    @apply rounded-card border;
+    background: linear-gradient(145deg, #F2F8FE 0%, #E7F1FC 100%);
+    border-color: #D7E7F7;
+    box-shadow: 0 2px 8px rgba(40, 120, 208, 0.07), inset 0 1px 0 rgba(255,255,255,0.82);
+  }
+
+  .surface-card-cyan {
+    @apply rounded-card border;
+    background: linear-gradient(145deg, #F0FBF9 0%, #E2F5F2 100%);
+    border-color: #D0ECE7;
+    box-shadow: 0 2px 8px rgba(19, 166, 181, 0.065), inset 0 1px 0 rgba(255,255,255,0.82);
+  }
+
+  .surface-card-green {
+    @apply rounded-card border;
+    background: linear-gradient(145deg, #F2FAF5 0%, #E5F4EB 100%);
+    border-color: #D7EBDD;
+    box-shadow: 0 2px 8px rgba(34, 164, 119, 0.06), inset 0 1px 0 rgba(255,255,255,0.82);
+  }
+
+  .surface-card-orange {
+    @apply rounded-card border;
+    background: linear-gradient(145deg, #FFFAF2 0%, #FFF0D9 100%);
+    border-color: #F4E2C4;
+    box-shadow: 0 2px 8px rgba(233, 154, 50, 0.065), inset 0 1px 0 rgba(255,255,255,0.82);
+  }
+
+  .icon-tile-blue { @apply bg-[#DCEBFA] text-[#2878D0] rounded-xl; }
+  .icon-tile-cyan { @apply bg-[#D5F0EC] text-[#0E8794] rounded-xl; }
+  .icon-tile-green { @apply bg-[#D9F0E3] text-[#16865F] rounded-xl; }
+  .icon-tile-orange { @apply bg-[#FCE8C9] text-[#B9771D] rounded-xl; }
+
+  .section-eyebrow {
+    @apply text-[11px] font-semibold uppercase tracking-[0.12em] text-ink-faint;
+  }
+
+  /* Dark terminal block — logs / JSON-RPC / commands / diff. */
   .terminal {
     @apply bg-terminal text-terminal-text font-mono text-xs rounded-md p-3 overflow-auto;
   }
