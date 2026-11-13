@@ -21,6 +21,12 @@ interface Step {
 
 interface RecordEvent {
   kind: string
+  action?: string
+  source?: string
+  sequence?: number
+  timestamp_ms?: number
+  received_at_ms?: number
+  coordinates?: { space?: string }
   text?: string
   contentDescription?: string
   resourceId?: string
@@ -185,14 +191,17 @@ export default function Recorder() {
 
   const eventToDescription = (e: RecordEvent): string => {
     const label = e.text || e.contentDescription
-    switch (e.kind) {
+    switch (e.action || e.kind) {
       case 'tap':
+      case 'click':
+      case 'touch':
         return label ? `点击 "${label}"` : `点击坐标 (${e.x}, ${e.y})`
       case 'touch':
         return `触摸坐标 (${e.x}, ${e.y})`
       case 'scroll':
         return `滚动${e.className ? ` (${e.className})` : ''}`
       case 'input':
+      case 'input_text':
         return `输入文本`
       default:
         return e.kind
@@ -223,14 +232,21 @@ export default function Recorder() {
       // Convert captured events into recordable steps (reuse the save flow),
       // deriving inter-action delay_ms from each event's wall-clock timestamp.
       setSteps(events.map((e, i) => {
-        const delayMs = i === 0 ? 0 : Math.max(0, Math.round(((e as any).ts - (events[i - 1] as any).ts) * 1000))
-        const args: Record<string, unknown> = { ...e, delay_ms: delayMs }
-        // Portal reports device-pixel coordinates; the runner's device.tap()
-        // expects half-size (img) coordinates, so scale down to match.
-        if (typeof e.x === 'number') args.x = Math.round(e.x / 2)
-        if (typeof e.y === 'number') args.y = Math.round(e.y / 2)
+        const currentTs = e.timestamp_ms ?? e.received_at_ms ?? (typeof e.ts === 'number' ? e.ts * 1000 : 0)
+        const previous = events[i - 1]
+        const previousTs = previous
+          ? (previous.timestamp_ms ?? previous.received_at_ms ?? (typeof previous.ts === 'number' ? previous.ts * 1000 : currentTs))
+          : currentTs
+        const delayMs = i === 0 ? 0 : Math.max(0, Math.round(currentTs - previousTs))
+        const args: Record<string, unknown> = {
+          ...e,
+          delay_ms: delayMs,
+          coordinate_space: e.coordinates?.space || 'device_px',
+        }
+        // Keep Portal coordinates in their native device-pixel space. Replay
+        // dispatches them through tap_absolute/swipe_absolute; never assume 2x.
         return {
-          action: e.kind,
+          action: e.action || e.kind,
           args,
           description: eventToDescription(e),
         }
