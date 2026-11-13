@@ -511,10 +511,10 @@ export default function Recorder() {
             disabled={!deviceId || loading || realRecording || ios || harmony}
             onClick={startRealRecording}
           >
-            {t('📱 真机录制', '📱 Record on device')}
+            {t('手机端触摸采集（Portal）', 'Phone-side touch capture (Portal)')}
           </button>
           <p className="w-full text-xs text-gray-400">
-            {t('录制模式：选择设备后，在网页上操作即可控制手机并同步记录步骤，完成后保存为可重复运行的测试用例。', 'Recording mode: after selecting a device, operate in the browser to control the phone and record steps in sync, then save as a repeatable test case.')}
+            {t('开始录制后，左侧显示手机实时画面；直接用鼠标点击或拖动即可操控手机，系统自动记录坐标和对应 UI 信息。', 'Start recording to view the live phone screen on the left. Click or drag with your mouse to control the phone; coordinates and matching UI metadata are recorded automatically.')}
           </p>
         </div>
       )}
