@@ -366,10 +366,25 @@ async def _execute_action(req: ActionRequest):
     description = _step_description(action, args, pre_elements)
     # The recorder engine is the common event sink for browser actions and
     # external adapters. If no recording session is active this is a no-op.
-    recorder_engine.append(
-        req.device_id,
-        {"kind": action, **args, "description": description},
-    )
+    event_payload = {"kind": action, **args, "description": description}
+    # Enrich element-based browser actions with the element metadata and its
+    # center point from the pre-action UI tree. Coordinates stay in the
+    # screenshot/model-image space used by this recorder surface.
+    if action == "tap_element":
+        target_element = next(
+            (element for element in pre_elements if element.get("index") == args.get("index")),
+            None,
+        )
+        if target_element:
+            event_payload.update({
+                "x": target_element.get("cx"),
+                "y": target_element.get("cy"),
+                "text": target_element.get("text", ""),
+                "resourceId": target_element.get("resourceId", ""),
+                "className": target_element.get("className", ""),
+                "coordinate_space": "model_image_px",
+            })
+    recorder_engine.append(req.device_id, event_payload)
     snap = await _snapshot(device)
 
     return ActionResponse(
