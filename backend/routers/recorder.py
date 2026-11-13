@@ -247,12 +247,39 @@ async def start_web_session(device_id: str, request: Request):
     """Start a unified session for actions issued by the browser recorder."""
     await _authorize_device(request, device_id)
     _get_device(device_id)
+    # Make browser recording startup idempotent. A page refresh or a lost
+    # stop request must not strand the device in a state where it can never
+    # start another browser recording.
+    current = recorder_engine.session_info(device_id)
+    if current and current["recording"]:
+        if current["source"] == "web_action":
+            return {
+                "ok": True,
+                "device_id": device_id,
+                "session_id": current["session_id"],
+                "source": current["source"],
+                "reused": True,
+            }
+        raise HTTPException(
+            status_code=409,
+            detail=f"设备当前已有录制会话（{current['source']}），请先停止该录制会话",
+        )
     try:
         session = recorder_engine.start(device_id, source="web_action")
     except RuntimeError as e:
+        # Protect against a concurrent start between session_info and start().
+        current = recorder_engine.session_info(device_id)
+        if current and current["recording"] and current["source"] == "web_action":
+            return {
+                "ok": True,
+                "device_id": device_id,
+                "session_id": current["session_id"],
+                "source": current["source"],
+                "reused": True,
+            }
         raise HTTPException(status_code=409, detail=str(e))
     return {"ok": True, "device_id": device_id, "session_id": session.session_id,
-            "source": session.source}
+            "source": session.source, "reused": False}
 
 
 @router.post("/session/stop")
