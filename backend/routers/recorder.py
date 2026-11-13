@@ -417,6 +417,10 @@ async def _execute_action(req: ActionRequest):
     else:
         target_element = None
     if target_element:
+        target_label = target_element.get("text") or target_element.get("contentDescription") or target_element.get("resourceId")
+        if target_label:
+            description = f'点击「{target_label}」'
+            event_payload["description"] = description
         event_payload.update({
             "text": target_element.get("text", ""),
             "contentDescription": target_element.get("contentDescription", ""),
