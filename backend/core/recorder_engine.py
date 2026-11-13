@@ -100,6 +100,7 @@ class RecorderEngine:
                 timestamp_ms = received_at_ms
 
             target = {
+                **(raw.get("target") if isinstance(raw.get("target"), dict) else {}),
                 "text": raw.get("text") or "",
                 "content_description": raw.get("contentDescription") or raw.get("content_description") or "",
                 "resource_id": raw.get("resourceId") or raw.get("resource_id") or "",
