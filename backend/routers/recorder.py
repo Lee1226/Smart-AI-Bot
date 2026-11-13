@@ -114,12 +114,23 @@ class Element(BaseModel):
     resourceId: str
     cx: int
     cy: int
+    contentDescription: str = ""
+    bounds: Optional[Dict[str, int]] = None
+    clickable: bool = False
+    enabled: bool = True
+    visible: bool = True
+    scrollable: bool = False
+    selected: bool = False
+    checked: bool = False
+    parentPath: List[str] = []
 
 
 class SnapshotResponse(BaseModel):
     screenshot_b64: str
     ui_text: str
     elements: List[Element]
+    screen_width: int = 0
+    screen_height: int = 0
 
 
 class ActionRequest(BaseModel):
@@ -208,6 +219,15 @@ async def _snapshot(device: WebSocketDevice) -> SnapshotResponse:
             resourceId=e.get("resourceId", ""),
             cx=e["cx"],
             cy=e["cy"],
+            contentDescription=e.get("contentDescription", ""),
+            bounds=e.get("bounds"),
+            clickable=e.get("clickable", False),
+            enabled=e.get("enabled", True),
+            visible=e.get("visible", True),
+            scrollable=e.get("scrollable", False),
+            selected=e.get("selected", False),
+            checked=e.get("checked", False),
+            parentPath=e.get("parentPath", []),
         )
         for e in elements_raw
     ]
@@ -215,6 +235,8 @@ async def _snapshot(device: WebSocketDevice) -> SnapshotResponse:
         screenshot_b64=screenshot_b64,
         ui_text=ui_text,
         elements=elements,
+        screen_width=device.screen_width,
+        screen_height=device.screen_height,
     )
 
 
@@ -334,7 +356,10 @@ async def _execute_action(req: ActionRequest):
         if action == "tap_element":
             result = await device.tap_element(args["index"])
         elif action == "tap":
-            result = await device.tap(args["x"], args["y"])
+            if (args.get("coordinate_space") or args.get("coordinateSpace")) == "device_px":
+                result = await device.tap_absolute(args["x"], args["y"])
+            else:
+                result = await device.tap(args["x"], args["y"])
         elif action == "input_text":
             result = await device.input_text(args["text"], args.get("clear", False))
         elif action == "scroll":
@@ -375,14 +400,27 @@ async def _execute_action(req: ActionRequest):
             (element for element in pre_elements if element.get("index") == args.get("index")),
             None,
         )
-        if target_element:
+    elif action == "tap":
+        tap_x, tap_y = args.get("x"), args.get("y")
+        target_element = next((element for element in reversed(pre_elements)
+            if isinstance(element.get("bounds"), dict)
+            and element["bounds"].get("left", 0) <= tap_x <= element["bounds"].get("right", 0)
+            and element["bounds"].get("top", 0) <= tap_y <= element["bounds"].get("bottom", 0)), None)
+    else:
+        target_element = None
+    if target_element:
+        event_payload.update({
+            "text": target_element.get("text", ""),
+            "contentDescription": target_element.get("contentDescription", ""),
+            "resourceId": target_element.get("resourceId", ""),
+            "className": target_element.get("className", ""),
+            "target": target_element,
+        })
+        if action == "tap_element":
             event_payload.update({
                 "x": target_element.get("cx"),
                 "y": target_element.get("cy"),
-                "text": target_element.get("text", ""),
-                "resourceId": target_element.get("resourceId", ""),
-                "className": target_element.get("className", ""),
-                "coordinate_space": "model_image_px",
+                "coordinate_space": "device_px",
             })
     recorder_engine.append(req.device_id, event_payload)
     snap = await _snapshot(device)
