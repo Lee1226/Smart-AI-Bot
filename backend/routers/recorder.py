@@ -76,6 +76,11 @@ def _to_replay_steps(steps: List["RecordedStep"]) -> str:
                 step["text"] = args.get("text")
             if args.get("className"):
                 step["className"] = args.get("className")
+            # Coordinates from Portal are physical device pixels; browser actions
+            # retain the legacy model-image coordinate space.
+            coordinate_space = args.get("coordinate_space") or args.get("coordinateSpace")
+            if coordinate_space:
+                step["coordinate_space"] = coordinate_space
         elif s.action == "tap_element":
             step["index"] = args.get("index")
         elif s.action == "scroll":
@@ -84,6 +89,9 @@ def _to_replay_steps(steps: List["RecordedStep"]) -> str:
             for k in ("x1", "y1", "x2", "y2", "duration_ms"):
                 if args.get(k) is not None:
                     step[k] = args[k]
+            coordinate_space = args.get("coordinate_space") or args.get("coordinateSpace")
+            if coordinate_space:
+                step["coordinate_space"] = coordinate_space
         elif s.action == "input_text":
             step["text"] = args.get("text")
             step["clear"] = bool(args.get("clear", False))
