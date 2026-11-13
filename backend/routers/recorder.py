@@ -220,6 +220,28 @@ async def _snapshot(device: WebSocketDevice) -> SnapshotResponse:
 
 # ── Endpoints ─────────────────────────────────────────────────────────────────
 
+@router.post("/session/start")
+async def start_web_session(device_id: str, request: Request):
+    """Start a unified session for actions issued by the browser recorder."""
+    await _authorize_device(request, device_id)
+    _get_device(device_id)
+    try:
+        session = recorder_engine.start(device_id, source="web_action")
+    except RuntimeError as e:
+        raise HTTPException(status_code=409, detail=str(e))
+    return {"ok": True, "device_id": device_id, "session_id": session.session_id,
+            "source": session.source}
+
+
+@router.post("/session/stop")
+async def stop_web_session(device_id: str, request: Request):
+    """Stop a browser-action recording session and return its normalized events."""
+    await _authorize_device(request, device_id)
+    events = recorder_engine.stop(device_id)
+    return {"ok": True, "events": events,
+            "session": recorder_engine.session_info(device_id)}
+
+
 @router.post("/record/start")
 async def start_record(device_id: str, request: Request):
     """Begin real recording: the Portal starts streaming the user's taps/scrolls."""
@@ -336,6 +358,12 @@ async def _execute_action(req: ActionRequest):
     await asyncio.sleep(delay)
 
     description = _step_description(action, args, pre_elements)
+    # The recorder engine is the common event sink for browser actions and
+    # external adapters. If no recording session is active this is a no-op.
+    recorder_engine.append(
+        req.device_id,
+        {"kind": action, **args, "description": description},
+    )
     snap = await _snapshot(device)
 
     return ActionResponse(
