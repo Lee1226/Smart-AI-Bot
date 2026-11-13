@@ -32,6 +32,7 @@ from auth.access import require_device
 from db.database import AsyncSessionLocal
 from db.models import TestCase, TestSuite
 from agent import local_adb
+from core.recorder_engine import recorder_engine
 
 logger = logging.getLogger(__name__)
 
@@ -46,19 +47,9 @@ async def _authorize_device(request: Request, device_id: str) -> None:
 # While a device is "recording", the Portal streams real user interactions
 # (tap/scroll/input + coordinates) to the server; we buffer them per device so
 # the web UI can show them live and finally save them as a test case.
-_record_events: Dict[str, List[dict]] = {}
-_recording: set = set()
-
-
 def handle_record_event(device_id: str, event: dict) -> None:
-    """Called from portal_ws when the Portal pushes a record_event message."""
-    if device_id not in _recording:
-        return
-    events = _record_events.setdefault(device_id, [])
-    event["seq"] = len(events)
-    # Capture wall-clock time so we can derive inter-action delays for replay.
-    event["ts"] = time.time()
-    events.append(event)
+    """Portal adapter entry point; all sources feed the unified recorder engine."""
+    recorder_engine.append(device_id, event, source="portal_touch")
 
 
 def _to_replay_steps(steps: List["RecordedStep"]) -> str:
@@ -231,15 +222,20 @@ async def start_record(device_id: str, request: Request):
     if local_adb.is_bound(device_id):
         return {"ok": True, "device_id": device_id, "mode": "manual",
                 "message": "本机 ADB 模式不支持手机端触摸事件监听，请通过网页录制器的操作按钮录制。"}
-    _recording.add(device_id)
-    _record_events[device_id] = []
-    # Tell the Portal to start capturing touch/click events (best-effort; older
-    # builds may not recognise the method yet).
+    try:
+        session = recorder_engine.start(device_id, source="portal_touch")
+    except RuntimeError as e:
+        raise HTTPException(status_code=409, detail=str(e))
+    # Ask the Portal to emit physical interaction events. A failed RPC must not
+    # leave a session that falsely reports successful capture.
     try:
         await device._rpc("start_record", {})
     except Exception as e:
-        logger.warning("start_record RPC failed (Portal may not support it): %s", e)
-    return {"ok": True, "device_id": device_id}
+        recorder_engine.stop(device_id)
+        logger.warning("start_record RPC failed: %s", e)
+        raise HTTPException(status_code=502, detail=f"Portal 无法启动真机事件采集: {e}")
+    return {"ok": True, "device_id": device_id, "session_id": session.session_id,
+            "source": session.source}
 
 
 @router.post("/record/stop")
@@ -249,20 +245,21 @@ async def stop_record(device_id: str, request: Request):
     device = _get_device(device_id)
     if local_adb.is_bound(device_id):
         return {"ok": True, "events": [], "mode": "manual"}
-    _recording.discard(device_id)
     try:
         await device._rpc("stop_record", {})
     except Exception as e:
         logger.warning("stop_record RPC failed: %s", e)
-    return {"ok": True, "events": _record_events.get(device_id, [])}
+    events = recorder_engine.stop(device_id)
+    return {"ok": True, "events": events,
+            "session": recorder_engine.session_info(device_id)}
 
 
 @router.get("/record/events")
 async def record_events(device_id: str, request: Request, since: int = 0):
     """Poll captured record events (incremental via `since`)."""
     await _authorize_device(request, device_id)
-    events = _record_events.get(device_id, [])
-    return {"recording": device_id in _recording, "events": events[since:]}
+    events = recorder_engine.events(device_id, since)
+    return {"recording": recorder_engine.is_recording(device_id), "events": events}
 
 
 @router.get("/snapshot", response_model=SnapshotResponse)
