@@ -26,14 +26,23 @@ interface RecordEvent {
   sequence?: number
   timestamp_ms?: number
   received_at_ms?: number
-  coordinates?: { space?: string }
+  coordinates?: { space?: string; x?: number; y?: number; x1?: number; y1?: number; x2?: number; y2?: number }
+  target?: { text?: string; content_description?: string; resource_id?: string; class_name?: string; css_selector?: string; test_id?: string }
   text?: string
   contentDescription?: string
   resourceId?: string
   className?: string
   x?: number
   y?: number
+  x1?: number
+  y1?: number
+  x2?: number
+  y2?: number
   ts?: number
+  screenshot_b64?: string
+  screenshot_captured_at_ms?: number
+  description?: string
+  [key: string]: unknown
 }
 
 interface SnapshotData {
@@ -80,6 +89,10 @@ export default function Recorder() {
   // ── Real recording (user operates the phone, we capture taps/scrolls) ──────
   const [realRecording, setRealRecording] = useState(false)
   const [realEvents, setRealEvents] = useState<RecordEvent[]>([])
+  const [webEvents, setWebEvents] = useState<RecordEvent[]>([])
+  const [selectedEventIndex, setSelectedEventIndex] = useState(0)
+  const [previewSize, setPreviewSize] = useState({ width: 0, height: 0 })
+  const webScreenshots = useRef<string[]>([])
   const realEventsCursor = useRef(0)
 
   // Poll captured events while real-recording is active.
@@ -91,8 +104,21 @@ export default function Recorder() {
         const events = (data.events ?? []) as RecordEvent[]
         if (events.length) {
           realEventsCursor.current += events.length
-          setRealEvents(prev => [...prev, ...events])
-        }
+          // Capture a nearby frame for this polling batch. It is deliberately
+          // labelled as an approximate event frame, not an exact per-touch frame.
+          let nearbyScreenshot = ''
+          try {
+            const snapshot = await api.get<SnapshotData>(`/recorder/snapshot?device_id=${deviceId}`)
+            nearbyScreenshot = snapshot.data.screenshot_b64
+            applySnapshot(snapshot.data)
+          } catch { /* event capture must continue if screenshot capture fails */ }
+          setRealEvents(prev => [...prev, ...events.map((event, index) => ({
+            ...event,
+            ...(index === events.length - 1 && nearbyScreenshot
+              ? { screenshot_b64: nearbyScreenshot, screenshot_captured_at_ms: Date.now() }
+              : {}),
+          }))])
+        }}
       } catch { /* transient — ignore */ }
     }, 800)
     return () => clearInterval(poll)
@@ -129,6 +155,30 @@ export default function Recorder() {
       const { data } = await api.post<ActionData>('/recorder/action', { device_id: deviceId, action, args })
       applySnapshot(data)
       setSteps(prev => [...prev, { action, args, description: data.description }])
+      const now = Date.now()
+      const coords = ['x', 'y', 'x1', 'y1', 'x2', 'y2'].some(key => args[key] !== undefined)
+      setWebEvents(prev => [...prev, {
+        kind: action,
+        action,
+        source: 'web_action',
+        sequence: prev.length,
+        timestamp_ms: now,
+        description: data.description,
+        ...args,
+        ...(coords ? {
+          coordinates: {
+            x: typeof args.x === 'number' ? args.x : undefined,
+            y: typeof args.y === 'number' ? args.y : undefined,
+            x1: typeof args.x1 === 'number' ? args.x1 : undefined,
+            y1: typeof args.y1 === 'number' ? args.y1 : undefined,
+            x2: typeof args.x2 === 'number' ? args.x2 : undefined,
+            y2: typeof args.y2 === 'number' ? args.y2 : undefined,
+            space: 'model_image_px',
+          },
+        } : {}),
+        screenshot_b64: data.screenshot_b64,
+        screenshot_captured_at_ms: now,
+      }])
     } catch (e: unknown) {
       setError((e as Error).message ?? 'Action failed')
     } finally {
@@ -139,6 +189,10 @@ export default function Recorder() {
   const startRecording = async () => {
     if (!deviceId) return
     setSteps([])
+    setWebEvents([])
+    setRealEvents([])
+    setSelectedEventIndex(0)
+    webScreenshots.current = []
     setSaved(null)
     setError('')
     setLoading(true)
@@ -157,7 +211,14 @@ export default function Recorder() {
   const stopRecording = async () => {
     setRecording(false)
     try {
-      await api.post(`/recorder/session/stop?device_id=${deviceId}`)
+      const { data } = await api.post<{ events: RecordEvent[] }>(`/recorder/session/stop?device_id=${deviceId}`)
+      const normalized = data.events ?? []
+      setWebEvents(normalized.map((event, index) => ({
+        ...event,
+        screenshot_b64: webEvents[index]?.screenshot_b64,
+        screenshot_captured_at_ms: webEvents[index]?.screenshot_captured_at_ms,
+      })))
+      setSelectedEventIndex(0)
     } catch (e: unknown) {
       setError((e as Error).message ?? 'Failed to stop recording')
     }
@@ -168,6 +229,10 @@ export default function Recorder() {
     setScreenshot('')
     setElements([])
     setSteps([])
+    setRealEvents([])
+    setWebEvents([])
+    setSelectedEventIndex(0)
+    setPreviewSize({ width: 0, height: 0 })
     setSaved(null)
     setError('')
     setSuiteName('')
@@ -218,8 +283,12 @@ export default function Recorder() {
     setSaved(null)
     setError('')
     setRealEvents([])
+    setWebEvents([])
+    setSelectedEventIndex(0)
     realEventsCursor.current = 0
     try {
+      const snapshot = await api.get<SnapshotData>(`/recorder/snapshot?device_id=${deviceId}`)
+      applySnapshot(snapshot.data)
       const { data } = await api.post<{ mode?: string; message?: string }>(`/recorder/record/start?device_id=${deviceId}`)
       if (data.mode === 'manual') {
         setError(data.message || '当前连接方式不支持真机触摸采集，请使用网页操作录制。')
@@ -236,7 +305,12 @@ export default function Recorder() {
     try {
       const { data } = await api.post<{ events: RecordEvent[] }>(`/recorder/record/stop?device_id=${deviceId}`)
       const events = data.events ?? []
-      setRealEvents(events)
+      setRealEvents(events.map((event, index) => ({
+        ...event,
+        screenshot_b64: realEvents[index]?.screenshot_b64,
+        screenshot_captured_at_ms: realEvents[index]?.screenshot_captured_at_ms,
+      })))
+      setSelectedEventIndex(0)
       // Convert captured events into recordable steps (reuse the save flow),
       // deriving inter-action delay_ms from each event's wall-clock timestamp.
       setSteps(events.map((e, i) => {
@@ -263,6 +337,25 @@ export default function Recorder() {
       setError((e as Error).message ?? 'Failed to stop recording')
     }
   }
+
+  // ── Unified event inspector ─────────────────────────────────────────────────
+  const displayedEvents = realEvents.length > 0 ? realEvents : webEvents
+  const selectedEvent = displayedEvents[selectedEventIndex]
+  const selectedCoordinates = selectedEvent?.coordinates
+  const coordinateSpace = selectedCoordinates?.space
+    || (selectedEvent?.source === 'portal_touch' ? 'device_px' : selectedEvent?.source === 'web_action' ? 'model_image_px' : 'unknown')
+  const eventAction = selectedEvent?.action || selectedEvent?.kind || 'unknown'
+  const eventX = selectedCoordinates?.x ?? selectedEvent?.x
+  const eventY = selectedCoordinates?.y ?? selectedEvent?.y
+  const eventX1 = selectedCoordinates?.x1 ?? selectedEvent?.x1
+  const eventY1 = selectedCoordinates?.y1 ?? selectedEvent?.y1
+  const eventX2 = selectedCoordinates?.x2 ?? selectedEvent?.x2
+  const eventY2 = selectedCoordinates?.y2 ?? selectedEvent?.y2
+  const eventScreenshot = selectedEvent?.screenshot_b64 || ''
+  const eventTarget = selectedEvent?.target
+  const canOverlayCoordinates = coordinateSpace === 'device_px' || coordinateSpace === 'screenshot_px'
+  const formatTime = (value?: number) => value ? new Date(value).toLocaleTimeString() : '—'
+  const describeEvent = (event: RecordEvent) => event.description || eventToDescription(event)
 
   // ── Render ──────────────────────────────────────────────────────────────────
   return (
@@ -459,31 +552,136 @@ export default function Recorder() {
         </>
       )}
 
-      {/* Real recording UI — user operates the phone directly */}
-      {realRecording && (
-        <div className="bg-white border border-green-200 rounded-lg shadow-sm p-5 mb-6">
-          <div className="flex items-center gap-3 mb-3">
-            <span className="inline-block w-2 h-2 rounded-full bg-red-500 animate-pulse" />
-            <span className="text-sm font-medium">{t('真机录制中 — 请在手机上操作', 'Recording on device — operate the phone now')}</span>
-            <span className="ml-auto text-sm text-gray-400">{realEvents.length} {t('个事件已捕获', 'events captured')}</span>
-            <button className={BTN_RED} onClick={stopRealRecording} disabled={loading}>
-              {t('⏹ 停止录制', '⏹ Stop')}
-            </button>
+      {/* Unified recording workbench: event list, screenshot and payload inspector */}
+      {(realRecording || recording || displayedEvents.length > 0) && (
+        <section className="mb-6 rounded-xl border bg-white shadow-sm overflow-hidden">
+          <div className="flex flex-wrap items-center gap-3 border-b px-4 py-3">
+            <div>
+              <div className="text-sm font-semibold">{t('录制事件工作台', 'Recording event workbench')}</div>
+              <div className="text-xs text-gray-400 mt-0.5">
+                {realRecording ? t('真机触摸采集', 'Device touch capture') : t('网页操作录制', 'Browser action recording')}
+                {' · '}{displayedEvents.length}{t(' 条事件', ' events')}
+              </div>
+            </div>
+            <span className="ml-auto text-xs rounded-full px-2 py-1 bg-gray-100 text-gray-600">
+              {realRecording ? 'portal_touch' : 'web_action'}
+            </span>
+            {realRecording && <button className={BTN_RED} onClick={stopRealRecording} disabled={loading}>{t('停止真机录制', 'Stop device recording')}</button>}
           </div>
-          <p className="text-xs text-gray-400 mb-3">
-            {t('直接在你的手机上点击、滑动、输入，SAB 会实时捕获这些操作和坐标。', 'Tap, scroll and type directly on your phone — SAB captures each interaction and its coordinates in real time.')}
-          </p>
-          {realEvents.length > 0 && (
-            <ol className="space-y-1 max-h-48 overflow-y-auto">
-              {realEvents.map((e, i) => (
-                <li key={i} className="flex items-start gap-2 text-sm">
-                  <span className="shrink-0 font-mono text-xs text-gray-400 mt-0.5 w-5 text-right">{i + 1}.</span>
-                  <span className="text-gray-700">{eventToDescription(e)}</span>
-                </li>
+
+          <div className="grid grid-cols-1 xl:grid-cols-[minmax(220px,0.85fr)_minmax(320px,1.35fr)_minmax(260px,1fr)]">
+            <div className="border-b xl:border-b-0 xl:border-r">
+              <div className="px-3 py-2 text-xs font-semibold text-gray-500">{t('事件列表', 'EVENTS')}</div>
+              <div className="max-h-[560px] overflow-y-auto">
+                {displayedEvents.length === 0 && <div className="px-4 py-10 text-center text-sm text-gray-400">{t('等待操作事件…', 'Waiting for interaction events…')}</div>}
+                {displayedEvents.map((event, index) => {
+                  const action = event.action || event.kind
+                  const coords = event.coordinates
+                  const x = coords?.x ?? event.x
+                  const y = coords?.y ?? event.y
+                  return (
+                    <button key={event.event_id as string || index} onClick={() => setSelectedEventIndex(index)}
+                      className={`w-full text-left border-t px-3 py-3 transition-colors ${selectedEventIndex === index ? 'bg-primary-soft border-l-2 border-l-primary' : 'hover:bg-gray-50'}`}>
+                      <div className="flex items-center gap-2">
+                        <span className="font-mono text-[11px] text-gray-400">#{String(index + 1).padStart(2, '0')}</span>
+                        <span className="text-sm font-medium text-gray-800">{describeEvent(event)}</span>
+                      </div>
+                      <div className="mt-1 flex flex-wrap gap-2 text-[11px] text-gray-400">
+                        <span>{action}</span>
+                        {x !== undefined && y !== undefined && <span>{x}, {y}</span>}
+                        <span>{event.source || (realRecording ? 'portal_touch' : 'web_action')}</span>
+                      </div>
+                    </button>
+                  )
+                })}
+              </div>
+            </div>
+
+            <div className="border-b xl:border-b-0 xl:border-r p-3 min-w-0">
+              <div className="flex items-center justify-between mb-2">
+                <div className="text-xs font-semibold text-gray-500">{t('事件画面', 'EVENT FRAME')}</div>
+                {selectedEvent && <span className="text-[11px] text-gray-400">{eventScreenshot ? t('已关联截图', 'Screenshot attached') : t('暂无事件截图', 'No event screenshot')}</span>}
+              </div>
+              {eventScreenshot ? (
+                <div className="flex items-center justify-center rounded-lg bg-slate-100 p-2 min-h-[260px] overflow-hidden">
+                  <div className="relative inline-block max-w-full">
+                    <img
+                      src={`data:image/png;base64,${eventScreenshot}`}
+                      alt="Selected event screenshot"
+                      className="block max-h-[520px] max-w-full object-contain rounded"
+                      onLoad={e => setPreviewSize({ width: e.currentTarget.naturalWidth, height: e.currentTarget.naturalHeight })}
+                    />
+                    {canOverlayCoordinates && previewSize.width > 0 && eventX !== undefined && eventY !== undefined && (
+                      <div className="absolute h-5 w-5 rounded-full border-[3px] border-white bg-red-500/80 shadow-lg -translate-x-1/2 -translate-y-1/2"
+                        style={{ left: `${eventX / previewSize.width * 100}%`, top: `${eventY / previewSize.height * 100}%` }} />
+                    )}
+                    {canOverlayCoordinates && previewSize.width > 0 && eventX1 !== undefined && eventY1 !== undefined && eventX2 !== undefined && eventY2 !== undefined && (
+                      <svg className="absolute inset-0 h-full w-full pointer-events-none" viewBox={`0 0 ${previewSize.width} ${previewSize.height}`} preserveAspectRatio="none">
+                        <line x1={eventX1} y1={eventY1} x2={eventX2} y2={eventY2} stroke="#ef4444" strokeWidth={Math.max(4, previewSize.width / 100)} strokeLinecap="round" />
+                        <circle cx={eventX1} cy={eventY1} r={Math.max(7, previewSize.width / 80)} fill="#22c55e" stroke="white" strokeWidth="3" />
+                        <circle cx={eventX2} cy={eventY2} r={Math.max(7, previewSize.width / 80)} fill="#ef4444" stroke="white" strokeWidth="3" />
+                      </svg>
+                    )}
+                  </div>
+                </div>
+              ) : (
+                <div className="min-h-[260px] rounded-lg bg-slate-50 border border-dashed flex flex-col items-center justify-center text-center px-5">
+                  <span className="text-sm text-gray-500">{t('该事件尚未关联截图', 'No screenshot is linked to this event yet')}</span>
+                  <span className="mt-1 text-xs text-gray-400">{realRecording ? t('真机采集按轮询批次尽力关联附近画面；历史精确帧需要后续接入录屏时间戳抽帧。', 'Device events are linked to nearby polling-batch frames; exact historical frames require timestamp-based video extraction.') : t('网页操作事件将在动作返回截图后关联画面。', 'Browser actions are linked to the screenshot returned by the action.')}</span>
+                </div>
+              )}
+              {selectedEvent && (
+                <div className="mt-2 flex flex-wrap gap-x-4 gap-y-1 text-xs text-gray-500">
+                  <span>{t('坐标', 'Coordinates')}: {eventX !== undefined && eventY !== undefined ? `(${eventX}, ${eventY})` : eventX1 !== undefined ? `(${eventX1}, ${eventY1}) → (${eventX2}, ${eventY2})` : '—'}</span>
+                  <span>{t('坐标空间', 'Space')}: {coordinateSpace}</span>
+                </div>
+              )}
+            </div>
+
+            <div className="p-3 min-w-0">
+              <div className="text-xs font-semibold text-gray-500 mb-3">{t('事件详情', 'EVENT DETAILS')}</div>
+              {!selectedEvent ? <div className="text-sm text-gray-400 py-8 text-center">{t('选择一条事件查看详情', 'Select an event to inspect')}</div> : (
+                <div className="space-y-3">
+                  <div>
+                    <div className="text-xs text-gray-400">{t('操作类型', 'Action')}</div>
+                    <div className="text-sm font-semibold mt-0.5">{eventAction}</div>
+                  </div>
+                  <div className="grid grid-cols-2 gap-2">
+                    <div className="rounded-md bg-gray-50 p-2"><div className="text-[11px] text-gray-400">X</div><div className="font-mono text-sm">{eventX ?? '—'}</div></div>
+                    <div className="rounded-md bg-gray-50 p-2"><div className="text-[11px] text-gray-400">Y</div><div className="font-mono text-sm">{eventY ?? '—'}</div></div>
+                  </div>
+                  <div className="grid grid-cols-2 gap-2 text-xs">
+                    <div><div className="text-gray-400">{t('坐标空间', 'Coordinate space')}</div><div className="font-mono mt-1 break-all">{coordinateSpace}</div></div>
+                    <div><div className="text-gray-400">{t('事件来源', 'Source')}</div><div className="font-mono mt-1 break-all">{selectedEvent.source || '—'}</div></div>
+                    <div><div className="text-gray-400">{t('事件序号', 'Sequence')}</div><div className="font-mono mt-1">{selectedEvent.sequence ?? selectedEvent.seq ?? selectedEventIndex}</div></div>
+                    <div><div className="text-gray-400">{t('采集时间', 'Timestamp')}</div><div className="font-mono mt-1">{formatTime(selectedEvent.timestamp_ms ?? selectedEvent.received_at_ms)}</div></div>
+                  </div>
+                  {eventTarget && <div className="text-xs space-y-1"><div className="text-gray-400">{t('目标控件', 'Target')}</div><div className="rounded bg-gray-50 p-2 break-all">{eventTarget.text || eventTarget.content_description || eventTarget.resource_id || eventTarget.css_selector || t('尚未识别语义控件', 'No semantic target detected')}</div></div>}
+                  <details className="rounded-lg border">
+                    <summary className="cursor-pointer px-3 py-2 text-xs font-medium text-gray-600">{t('查看原始事件 JSON', 'View raw event JSON')}</summary>
+                    <pre className="max-h-64 overflow-auto border-t bg-slate-50 p-3 text-[11px] leading-relaxed whitespace-pre-wrap break-all">{JSON.stringify(selectedEvent, null, 2)}</pre>
+                  </details>
+                </div>
+              )}
+            </div>
+          </div>
+
+          <div className="border-t bg-gray-50 px-4 py-3">
+            <div className="flex items-center justify-between mb-2">
+              <div className="text-xs font-semibold text-gray-500">{t('操作时间线', 'TIMELINE')}</div>
+              <div className="text-xs text-gray-400">{displayedEvents.length} {t('个事件', 'events')}</div>
+            </div>
+            <div className="flex gap-2 overflow-x-auto pb-1">
+              {displayedEvents.map((event, index) => (
+                <button key={event.event_id as string || index} onClick={() => setSelectedEventIndex(index)}
+                  className={`shrink-0 min-w-[100px] rounded-lg border px-3 py-2 text-left ${selectedEventIndex === index ? 'border-primary bg-primary-soft' : 'bg-white hover:bg-gray-50'}`}>
+                  <div className="text-[10px] text-gray-400">#{index + 1} · {formatTime(event.timestamp_ms ?? event.received_at_ms)}</div>
+                  <div className="text-xs font-medium mt-1">{event.action || event.kind}</div>
+                </button>
               ))}
-            </ol>
-          )}
-        </div>
+            </div>
+          </div>
+        </section>
       )}
 
       {/* Recorded steps */}
