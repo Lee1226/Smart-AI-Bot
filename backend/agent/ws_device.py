@@ -136,6 +136,21 @@ class WebSocketDevice:
         await self._rpc("tap", {"x": ax, "y": ay})
         return f"Tapped img=({x},{y}) → abs=({ax},{ay})"
 
+    async def tap_absolute(self, x: int, y: int) -> str:
+        """Tap coordinates already expressed in physical device pixels."""
+        await self._rpc("tap", {"x": int(x), "y": int(y)})
+        return f"Tapped device=({int(x)},{int(y)})"
+
+    async def swipe_absolute(self, x1: int, y1: int, x2: int, y2: int,
+                             duration_ms: int = 500) -> str:
+        """Swipe coordinates already expressed in physical device pixels."""
+        await self._rpc("swipe", {
+            "startX": int(x1), "startY": int(y1),
+            "endX": int(x2), "endY": int(y2),
+            "duration": int(duration_ms),
+        })
+        return f"Swiped device=({x1},{y1})→({x2},{y2})"
+
     async def swipe(self, x1: int, y1: int, x2: int, y2: int, duration_ms: int = 500) -> str:
         ax1, ay1 = self._img_to_abs(x1, y1)
         ax2, ay2 = self._img_to_abs(x2, y2)
