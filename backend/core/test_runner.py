@@ -748,7 +748,7 @@ async def _replay_step(device: WebSocketDevice, step: dict, emit) -> str:
         coords = (step.get("x1"), step.get("y1"), step.get("x2"), step.get("y2"))
         if all(value is not None for value in coords):
             if step.get("coordinate_space") == "device_px":
-                await device.swipe_absolute(*coords, step.get("duration_ms", 500))
+                await device.swipe_absolute(*coords, duration_ms=step.get("duration_ms", 500))
             else:
                 await device.swipe(*coords, step.get("duration_ms", 500))
         else:
