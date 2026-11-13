@@ -294,7 +294,7 @@ export default function Recorder() {
             : [...elements].reverse().find(el => !!el.bounds && typeof args.x === 'number' && typeof args.y === 'number'
               && el.bounds.left <= (args.x as number) && el.bounds.right >= (args.x as number)
               && el.bounds.top <= (args.y as number) && el.bounds.bottom >= (args.y as number))
-          return target ? { target: { text: target.text, resource_id: target.resourceId, class_name: target.className, bounds: target.bounds, clickable: target.clickable, parent_path: target.parentPath } } : {}
+          return target ? { target: { text: target.text, resource_id: target.resourceId, class_name: target.className, bounds: target.bounds ?? undefined, clickable: target.clickable, parent_path: target.parentPath } } : {}
         })() : {}),
       }])
     } catch (e: unknown) {
