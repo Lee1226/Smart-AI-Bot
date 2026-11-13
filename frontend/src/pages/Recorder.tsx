@@ -202,15 +202,13 @@ export default function Recorder() {
       case 'click':
       case 'touch':
         return label ? `点击 "${label}"` : `点击坐标 (${e.x}, ${e.y})`
-      case 'touch':
-        return `触摸坐标 (${e.x}, ${e.y})`
       case 'scroll':
         return `滚动${e.className ? ` (${e.className})` : ''}`
       case 'input':
       case 'input_text':
         return `输入文本`
       default:
-        return e.kind
+        return e.action || e.kind
     }
   }
 
