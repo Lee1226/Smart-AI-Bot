@@ -223,7 +223,7 @@ function AppLayout() {
       </aside>
 
       <div className="flex min-w-0 flex-1 flex-col">
-        <header className="sticky top-0 z-20 flex h-[60px] items-center justify-between border-b border-hairline/90 bg-white/95 px-7 shadow-[0_2px_8px_rgba(35,70,105,0.025)]">
+        <header className="sticky top-0 z-20 flex h-[60px] items-center justify-between border-b border-hairline/90 bg-white px-7 shadow-[0_2px_8px_rgba(35,70,105,0.025)]">
           <div className="flex items-center gap-2 text-[12px] text-ink-mute">
             <span className="font-medium text-ink-secondary">Smart-AI-Bot</span>
             <span className="text-ink-faint">/</span>
