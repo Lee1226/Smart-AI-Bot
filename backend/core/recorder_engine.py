@@ -91,9 +91,11 @@ class RecorderEngine:
             action = _action_for(raw_kind)
             seq = len(session.events)
             received_at_ms = _now_ms()
+            # Use server receive time as the stable cross-adapter clock. Keep
+            # any adapter clock separately because its unit/epoch is not uniform.
             client_ts = raw.get("ts")
             try:
-                timestamp_ms = int(float(client_ts) * 1000) if client_ts is not None else received_at_ms
+                timestamp_ms = int(raw.get("timestamp_ms") or received_at_ms)
             except (TypeError, ValueError, OverflowError):
                 timestamp_ms = received_at_ms
 
@@ -128,6 +130,8 @@ class RecorderEngine:
             # Preserve the old fields (kind/text/x/y/ts/...) for older frontends.
             event = {
                 **raw,
+                "ts": timestamp_ms / 1000,
+                "client_timestamp": client_ts,
                 "schema_version": SCHEMA_VERSION,
                 "event_id": str(uuid.uuid4()),
                 "session_id": session.session_id,
