@@ -118,7 +118,7 @@ export default function Recorder() {
               ? { screenshot_b64: nearbyScreenshot, screenshot_captured_at_ms: Date.now() }
               : {}),
           }))])
-        }}
+        }
       } catch { /* transient — ignore */ }
     }, 800)
     return () => clearInterval(poll)
