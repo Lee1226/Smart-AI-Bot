@@ -27,6 +27,25 @@ class RecorderEngineTests(unittest.TestCase):
         self.assertIn("event_id", event)
         self.assertIn("session_id", event)
 
+    def test_preserves_structured_semantic_target(self):
+        self.engine.start("device-a", source="web_action")
+        event = self.engine.append("device-a", {
+            "kind": "tap",
+            "x": 160,
+            "y": 260,
+            "coordinate_space": "device_px",
+            "target": {
+                "bounds": {"left": 100, "top": 200, "right": 220, "bottom": 320},
+                "clickable": True,
+                "parentPath": ["Launcher", "Workspace"],
+            },
+        })
+
+        self.assertEqual(event["coordinates"]["space"], "device_px")
+        self.assertEqual(event["target"]["bounds"]["left"], 100)
+        self.assertTrue(event["target"]["clickable"])
+        self.assertEqual(event["target"]["parentPath"], ["Launcher", "Workspace"])
+
     def test_session_is_isolated_per_device(self):
         self.engine.start("device-a", source="web_action")
         self.engine.start("device-b", source="portal_touch")
