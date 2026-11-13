@@ -24,10 +24,10 @@ export default function DeviceWall({ devices, selectedId, onSelect }: {
   const shown = showOffline ? devices : online
   const selected = devices.find(d => d.id === selectedId) || null
 
-  return <section className="mb-8" aria-label={t('设备屏幕墙', 'Device screen wall')}>
-    <div className="flex flex-wrap items-center justify-between gap-3 mb-4">
+  return <section className="rounded-xl border border-hairline bg-white p-5 shadow-sm" aria-label={t('设备屏幕墙', 'Device screen wall')}>
+    <div className="flex flex-wrap items-center justify-between gap-3 mb-5">
       <div>
-        <h1 className="text-2xl font-bold">{t('设备总览', 'Device overview')}</h1>
+        <h2 className="text-lg font-semibold text-ink">{t('实时设备监控', 'Live device monitoring')}</h2>
         <p className="text-sm text-ink-mute mt-1">{t('在线', 'Online')} {online.length} / {devices.length} · {t('小屏默认截图流，点击设备切换右侧预览', 'Thumbnails show screenshots. Select a device for the large preview.')}</p>
       </div>
       <div className="flex flex-wrap items-center gap-4 text-sm">
