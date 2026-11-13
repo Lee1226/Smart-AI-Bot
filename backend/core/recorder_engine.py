@@ -112,7 +112,18 @@ class RecorderEngine:
                     key: raw[key] for key in ("x", "y", "x1", "y1", "x2", "y2")
                     if raw.get(key) is not None
                 }
-                coordinates["space"] = raw.get("coordinateSpace") or raw.get("coordinate_space") or "device_px"
+                default_space = {
+                    "portal_touch": "device_px",
+                    "uiautomator": "device_px",
+                    "web_action": "model_image_px",
+                    "dom": "css_px",
+                    "vision": "screenshot_px",
+                }.get(source or session.source, "unknown")
+                coordinates["space"] = (
+                    raw.get("coordinateSpace")
+                    or raw.get("coordinate_space")
+                    or default_space
+                )
 
             # Preserve the old fields (kind/text/x/y/ts/...) for older frontends.
             event = {
