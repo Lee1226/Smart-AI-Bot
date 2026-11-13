@@ -24,6 +24,7 @@ interface RecordEvent {
   action?: string
   source?: string
   sequence?: number
+  seq?: number
   timestamp_ms?: number
   received_at_ms?: number
   coordinates?: { space?: string; x?: number; y?: number; x1?: number; y1?: number; x2?: number; y2?: number }
