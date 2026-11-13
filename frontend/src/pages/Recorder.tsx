@@ -195,7 +195,39 @@ export default function Recorder() {
       y: Math.max(0, Math.min(screenSize.height, Math.round((event.clientY - rect.top) / rect.height * screenSize.height))),
     }
   }
-  const handleScreenPointerDown = (event: React.PointerEvent<HTMLDivElement>) => {
+  const executeScreenGesture = async (action: 'tap' | 'swipe', args: Record<string, unknown>) => {
+    if (!recording || loading) return
+    setLoading(true)
+    setError('')
+    try {
+      const { data } = await api.post<{ result: string; description: string; event?: RecordEvent }>('/recorder/gesture', {
+        device_id: deviceId, action, args,
+      })
+      const now = Date.now()
+      setSteps(prev => [...prev, { action, args, description: data.description }])
+      setWebEvents(prev => [...prev, {
+        ...(data.event || {}),
+        kind: action,
+        action,
+        source: 'web_action',
+        timestamp_ms: data.event?.timestamp_ms ?? now,
+        description: data.description,
+        ...args,
+        screenshot_b64: screenshot,
+        screenshot_captured_at_ms: now,
+      }])
+      // Refresh semantic nodes after the gesture without delaying the next input.
+      void api.get<SnapshotData>(`/recorder/snapshot?device_id=${deviceId}`)
+        .then(({ data: snapshot }) => applySnapshot(snapshot))
+        .catch(() => { /* live video remains available if the snapshot refresh fails */ })
+    } catch (e: unknown) {
+      setError((e as Error).message ?? 'Gesture failed')
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  const handleScreenPointerDown = (event: PointerEvent<HTMLDivElement>) => {
     if (!recording || loading) return
     pointerStart.current = screenPoint(event)
     event.currentTarget.setPointerCapture(event.pointerId)
@@ -206,9 +238,9 @@ export default function Recorder() {
     if (!start || !recording || loading) return
     const end = screenPoint(event)
     if (Math.hypot(end.x - start.x, end.y - start.y) < 12) {
-      void doAction('tap', { ...end, coordinate_space: 'device_px' })
+      void executeScreenGesture('tap', { ...end, coordinate_space: 'device_px' })
     } else {
-      void doAction('swipe', { x1: start.x, y1: start.y, x2: end.x, y2: end.y, duration_ms: 450, coordinate_space: 'device_px' })
+      void executeScreenGesture('swipe', { x1: start.x, y1: start.y, x2: end.x, y2: end.y, duration_ms: 450, coordinate_space: 'device_px' })
     }
   }
 
