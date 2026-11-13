@@ -4,53 +4,72 @@ export default {
   theme: {
     extend: {
       colors: {
-        // Electric-cyan primary (signature color event)
+        // Business360-inspired brand palette: blue first, cyan support, no purple.
         primary: {
-          DEFAULT: '#06B6D4',
-          deep: '#0891B2',
-          soft: '#ECFEFF',
-          bright: '#22D3EE', // dark-block highlight only
+          DEFAULT: '#2878D0',
+          deep: '#1F65B3',
+          soft: '#EAF3FC',
+          bright: '#58A6F2',
         },
-        // Cool near-black ink scale
+        brand: {
+          blue: '#2878D0',
+          cyan: '#13A6B5',
+          green: '#22A477',
+          orange: '#E99A32',
+        },
+        cyan: {
+          DEFAULT: '#13A6B5',
+          deep: '#0E8794',
+          soft: '#E5F6F4',
+        },
         ink: {
-          DEFAULT: '#0F172A',
-          secondary: '#334155',
-          mute: '#64748B',
-          faint: '#94A3B8',
+          DEFAULT: '#1B2B3D',
+          secondary: '#40556B',
+          mute: '#687D91',
+          faint: '#91A1B1',
         },
-        // Surfaces
         canvas: {
           DEFAULT: '#FFFFFF',
-          soft: '#F8FAFC',
-          cool: '#F1F5F9',
+          soft: '#F3F6FA',
+          cool: '#EAF0F6',
+          blue: '#EEF5FC',
+        },
+        surface: {
+          blue: '#EAF3FC',
+          cyan: '#E5F6F4',
+          green: '#E8F6EF',
+          orange: '#FFF3E3',
         },
         hairline: {
-          DEFAULT: '#E2E8F0',
-          strong: '#CBD5E1',
+          DEFAULT: '#E1E9F1',
+          strong: '#C9D6E3',
         },
-        // Dark terminal block (logs / code / commands)
         terminal: {
-          DEFAULT: '#0B1120',
-          line: '#1E293B',
-          text: '#E2E8F0',
-          mute: '#94A3B8',
+          DEFAULT: '#101B2A',
+          line: '#26374A',
+          text: '#E5EDF5',
+          mute: '#9AABBD',
         },
-        // Status
-        ok: '#10B981',
-        warning: '#F59E0B',
-        danger: '#EF4444',
+        ok: '#22A477',
+        warning: '#E99A32',
+        danger: '#D95C5C',
       },
       fontFamily: {
-        sans: ['-apple-system', 'BlinkMacSystemFont', 'Segoe UI', 'Roboto', 'Helvetica Neue', 'Arial', 'sans-serif'],
+        sans: ['Inter', '-apple-system', 'BlinkMacSystemFont', 'Segoe UI', 'Roboto', 'Helvetica Neue', 'Arial', 'sans-serif'],
         mono: ['ui-monospace', 'JetBrains Mono', 'SFMono-Regular', 'Menlo', 'Monaco', 'Consolas', 'Liberation Mono', 'monospace'],
       },
-      // Plain `border` defaults to the hairline color so every card is consistent.
       borderColor: {
-        DEFAULT: '#E2E8F0',
+        DEFAULT: '#E1E9F1',
       },
       boxShadow: {
-        card: '0 1px 3px rgba(15,23,42,0.06)',
-        pop: '0 4px 16px rgba(15,23,42,0.08)',
+        card: '0 2px 8px rgba(35, 70, 105, 0.055), 0 1px 2px rgba(35, 70, 105, 0.035)',
+        pop: '0 8px 24px rgba(35, 70, 105, 0.11), 0 2px 6px rgba(35, 70, 105, 0.045)',
+        lift: '0 12px 28px rgba(40, 120, 208, 0.12), 0 3px 8px rgba(35, 70, 105, 0.05)',
+        inset-soft: 'inset 0 1px 0 rgba(255,255,255,0.8)',
+      },
+      borderRadius: {
+        card: '14px',
+        panel: '18px',
       },
     },
   },
