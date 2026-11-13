@@ -145,6 +145,7 @@ export default function Recorder() {
     try {
       const { data } = await api.get<SnapshotData>(`/recorder/snapshot?device_id=${deviceId}`)
       applySnapshot(data)
+      await api.post(`/recorder/session/start?device_id=${deviceId}`)
       setRecording(true)
     } catch (e: unknown) {
       setError((e as Error).message ?? 'Failed to connect to device')
@@ -153,8 +154,13 @@ export default function Recorder() {
     }
   }
 
-  const stopRecording = () => {
+  const stopRecording = async () => {
     setRecording(false)
+    try {
+      await api.post(`/recorder/session/stop?device_id=${deviceId}`)
+    } catch (e: unknown) {
+      setError((e as Error).message ?? 'Failed to stop recording')
+    }
   }
 
   const resetRecording = () => {
