@@ -220,7 +220,11 @@ export default function Recorder() {
     setRealEvents([])
     realEventsCursor.current = 0
     try {
-      await api.post(`/recorder/record/start?device_id=${deviceId}`)
+      const { data } = await api.post<{ mode?: string; message?: string }>(`/recorder/record/start?device_id=${deviceId}`)
+      if (data.mode === 'manual') {
+        setError(data.message || '当前连接方式不支持真机触摸采集，请使用网页操作录制。')
+        return
+      }
       setRealRecording(true)
     } catch (e: unknown) {
       setError((e as Error).message ?? 'Failed to start recording')
