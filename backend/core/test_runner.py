@@ -729,7 +729,10 @@ async def _replay_step(device: WebSocketDevice, step: dict, emit) -> str:
             except Exception:
                 pass
         if step.get("x") is not None and step.get("y") is not None:
-            await device.tap(step["x"], step["y"])
+            if step.get("coordinate_space") == "device_px":
+                await device.tap_absolute(step["x"], step["y"])
+            else:
+                await device.tap(step["x"], step["y"])
             return f"tap ({step['x']},{step['y']})"
         return "tap (no target)"
     if kind == "tap_element":
@@ -742,8 +745,14 @@ async def _replay_step(device: WebSocketDevice, step: dict, emit) -> str:
         await device.scroll(direction)
         return f"scroll {direction}"
     if kind == "swipe":
-        await device.swipe(step.get("x1"), step.get("y1"), step.get("x2"), step.get("y2"),
-                           step.get("duration_ms", 500))
+        coords = (step.get("x1"), step.get("y1"), step.get("x2"), step.get("y2"))
+        if all(value is not None for value in coords):
+            if step.get("coordinate_space") == "device_px":
+                await device.swipe_absolute(*coords, step.get("duration_ms", 500))
+            else:
+                await device.swipe(*coords, step.get("duration_ms", 500))
+        else:
+            raise ValueError("swipe replay requires x1/y1/x2/y2 coordinates")
         return "swipe"
     if kind == "input_test_credential":
         raise ValueError("凭据填写不能回放，请使用 AI 模式并选择测试账号")
