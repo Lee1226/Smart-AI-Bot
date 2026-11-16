@@ -256,8 +256,8 @@ export default function Recorder() {
     if (semanticRefreshTimer.current) clearTimeout(semanticRefreshTimer.current)
     semanticRefreshTimer.current = setTimeout(() => {
       void gestureQueue.current.then(() =>
-        api.get<SnapshotData>(`/recorder/snapshot?device_id=${deviceId}`)
-          .then(({ data }) => applySnapshot(data))
+        api.get<{ elements: Element[] }>(`/recorder/elements?device_id=${deviceId}`)
+          .then(({ data }) => setElements(data.elements ?? []))
           .catch(() => { /* semantic refresh is best-effort */ })
       )
     }, 500)
