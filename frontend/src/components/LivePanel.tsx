@@ -170,11 +170,19 @@ export default function LivePanel({ device, defaultMode = 'off', storageKey = 'l
     if (!videoDimensions || rect.width <= 0 || rect.height <= 0) return null
     const relativeX = event.clientX - rect.left
     const relativeY = event.clientY - rect.top
-    // Reject presses in any letterbox area instead of clamping them onto an edge.
-    if (relativeX < 0 || relativeY < 0 || relativeX > rect.width || relativeY > rect.height) return null
+    // The canvas uses object-contain. Calculate the actual rendered video
+    // rectangle, excluding any letterbox bars around it.
+    const scale = Math.min(rect.width / videoDimensions.width, rect.height / videoDimensions.height)
+    const renderedWidth = videoDimensions.width * scale
+    const renderedHeight = videoDimensions.height * scale
+    const offsetX = (rect.width - renderedWidth) / 2
+    const offsetY = (rect.height - renderedHeight) / 2
+    const imageX = relativeX - offsetX
+    const imageY = relativeY - offsetY
+    if (imageX < 0 || imageY < 0 || imageX > renderedWidth || imageY > renderedHeight) return null
     return {
-      x: Math.max(0, Math.min(videoDimensions.width - 1, Math.round(relativeX / rect.width * videoDimensions.width))),
-      y: Math.max(0, Math.min(videoDimensions.height - 1, Math.round(relativeY / rect.height * videoDimensions.height))),
+      x: Math.max(0, Math.min(videoDimensions.width - 1, Math.round(imageX / scale))),
+      y: Math.max(0, Math.min(videoDimensions.height - 1, Math.round(imageY / scale))),
     }
   }
   const handlePointerDown = (event: React.PointerEvent<HTMLDivElement>) => {
