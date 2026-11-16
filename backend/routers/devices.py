@@ -1,6 +1,7 @@
 """Device management — list connected devices, generate tokens, delete."""
 import asyncio
 import secrets
+import time
 from typing import List, Literal
 
 from fastapi import APIRouter, Depends, HTTPException, Request
@@ -15,6 +16,12 @@ from agent.ws_device import WebSocketDevice
 from agent import local_adb
 
 router = APIRouter(prefix="/api/devices", tags=["devices"])
+
+# Cache native screen dimensions across short-lived WebSocketDevice adapters.
+# A11y state queries are relatively expensive; refresh only on cache miss,
+# expiry, or an orientation/aspect-ratio change.
+_SCREEN_DIMENSIONS_TTL = 60.0
+_screen_dimensions_cache: dict[str, tuple[int, int, float]] = {}
 
 
 async def get_db():
@@ -290,13 +297,35 @@ async def control_device(device_id: str, req: DeviceControlRequest, request: Req
                 if any(value is None for value in required):
                     raise HTTPException(status_code=422, detail="触控坐标缺失")
                 points = [(req.x, req.y)] if req.action == "tap" else [(req.x, req.y), (req.x2, req.y2)]
-                # Refresh native resolution when available. Some streams are
-                # downscaled, so frame pixels must not be sent as device pixels.
-                try:
-                    await transport.get_ui_state()
-                except Exception:
-                    pass  # retain frame coordinates if accessibility state is unavailable
+                # Reuse native dimensions across short-lived adapters instead
+                # of issuing an expensive accessibility-state RPC for every tap.
+                # Refresh on cache miss/expiry or when the video aspect ratio
+                # indicates that the device orientation has changed.
                 native_w, native_h = transport.screen_width, transport.screen_height
+                cached = _screen_dimensions_cache.get(device_id)
+                now = time.monotonic()
+                if cached:
+                    cached_w, cached_h, cached_at = cached
+                    source_ratio = (req.source_width / req.source_height) if req.source_width and req.source_height else 0
+                    cached_ratio = cached_w / cached_h if cached_h else 0
+                    orientation_changed = bool(source_ratio and cached_ratio and abs(source_ratio - cached_ratio) > 0.08 and abs(source_ratio - 1 / cached_ratio) < 0.08)
+                    if (now - cached_at) < _SCREEN_DIMENSIONS_TTL and not orientation_changed:
+                        native_w, native_h = cached_w, cached_h
+
+                cache_missing_or_stale = not cached or (now - cached[2]) >= _SCREEN_DIMENSIONS_TTL
+                source_ratio = (req.source_width / req.source_height) if req.source_width and req.source_height else 0
+                cached_ratio = native_w / native_h if native_h else 0
+                orientation_changed = bool(source_ratio and cached_ratio and abs(source_ratio - cached_ratio) > 0.08 and abs(source_ratio - 1 / cached_ratio) < 0.08)
+                if native_w <= 0 or native_h <= 0 or cache_missing_or_stale or orientation_changed:
+                    try:
+                        await transport.get_ui_state()
+                        if transport.screen_width > 0 and transport.screen_height > 0:
+                            native_w, native_h = transport.screen_width, transport.screen_height
+                            _screen_dimensions_cache[device_id] = (native_w, native_h, time.monotonic())
+                    except Exception:
+                        # Keep a previously known size if accessibility is temporarily unavailable.
+                        if cached and cached[0] > 0 and cached[1] > 0:
+                            native_w, native_h = cached[0], cached[1]
                 if req.source_width and req.source_height and native_w > 0 and native_h > 0:
                     points = [
                         (round(x * native_w / req.source_width), round(y * native_h / req.source_height))
