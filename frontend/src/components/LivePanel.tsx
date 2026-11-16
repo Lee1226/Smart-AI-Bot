@@ -131,14 +131,9 @@ export default function LivePanel({ device, defaultMode = 'off', storageKey = 'l
   const canStream = !!device && mode === 'on' && online
 
   return (
-    <div className={forceCanvas2D ? 'overflow-hidden rounded-xl border border-hairline bg-white shadow-sm' : 'bg-white border rounded-lg p-3 lg:sticky lg:top-6'}>
-      <div className={forceCanvas2D ? 'flex flex-wrap items-center justify-between gap-3 border-b border-hairline px-4 py-3' : 'flex flex-wrap gap-2 items-center justify-between mb-3'}>
-        <div className="min-w-0">
-          <div className="flex items-center gap-2 text-sm font-semibold text-ink"><span className="inline-flex h-7 w-7 items-center justify-center rounded-lg bg-primary-soft text-primary">▣</span>{t('实时设备画面', 'Live device screen')}</div>
-          {forceCanvas2D && <div className="mt-1 truncate text-xs text-ink-mute">{device?.name || t('等待选择设备', 'Waiting for device')}</div>}
-        </div>
-        <div className="flex shrink-0 items-center gap-2">
-          {forceCanvas2D && <button type="button" disabled={!device || mode !== 'on'} onClick={() => setReloadKey(k => k + 1)} className="rounded-lg border border-hairline px-3 py-1.5 text-xs font-medium text-ink-mute transition hover:bg-canvas-soft disabled:cursor-not-allowed disabled:opacity-40">↻ {t('刷新画面', 'Refresh')}</button>}
+    <div className="bg-white border rounded-lg p-3 lg:sticky lg:top-6">
+      <div className="flex flex-wrap gap-2 items-center justify-between mb-3">
+        <span className="text-sm font-semibold">{t('实时画面', 'Live screen')}</span>
         <div className="flex rounded-md border overflow-hidden text-xs">
           <button onClick={() => pick('on')} className={`px-3 py-1 transition-colors ${mode === 'on' ? 'bg-primary text-white' : 'bg-white text-ink-mute hover:bg-gray-50'}`}>
             {t('开启', 'On')}
@@ -147,17 +142,15 @@ export default function LivePanel({ device, defaultMode = 'off', storageKey = 'l
             {t('关闭', 'Off')}
           </button>
         </div>
-        </div>
       </div>
 
-      {!forceCanvas2D && device && <p className="text-sm font-medium mb-3 truncate" title={device.name}>{device.name}</p>}
+      {device && <p className="text-sm font-medium mb-3 truncate" title={device.name}>{device.name}</p>}
       {!forceCanvas2D && CAN_WEBCODECS && wantsVideo && <label className="flex items-center justify-end gap-2 mb-2 text-xs"><span className="text-ink-mute">渲染器</span><select aria-label="视频渲染器" value={renderer} onChange={e => chooseRenderer(e.target.value as 'canvas' | 'webgl')} className="border rounded px-2 py-1 bg-white text-ink"><option value="webgl">WebGL（默认）</option><option value="canvas">Canvas 2D</option></select></label>}
 
       {/* Portrait phone frame */}
-      <div className={forceCanvas2D ? 'flex min-h-[520px] items-center justify-center overflow-hidden bg-[#f3f6fa] px-4 py-6 sm:min-h-[640px]' : ''}>
       <div
-        className={forceCanvas2D ? 'relative mx-auto w-full overflow-hidden rounded-[1.35rem] border border-slate-300 bg-terminal shadow-[0_18px_50px_rgba(15,23,42,0.16)]' : 'relative mx-auto rounded-xl bg-terminal overflow-hidden border border-hairline-strong'}
-        style={{ aspectRatio: '9 / 19.5', maxWidth: forceCanvas2D ? 340 : 300, width: '100%', maxHeight: forceCanvas2D ? 680 : undefined }}
+        className="relative mx-auto rounded-xl bg-terminal overflow-hidden border border-hairline-strong"
+        style={{ aspectRatio: '9 / 19.5', maxWidth: 300 }}
       >
         {!device ? (
           <Placeholder text={t('选择左侧一台设备', 'Select a device on the left')} />
@@ -185,11 +178,9 @@ export default function LivePanel({ device, defaultMode = 'off', storageKey = 'l
           <Placeholder text={t('实时视频流不可用', 'Live video unavailable')} />
         )}
       </div>
-      </div>
 
       {/* Status line */}
-      <div className={forceCanvas2D ? 'flex flex-wrap items-center justify-center gap-x-3 gap-y-1 border-t border-hairline bg-white px-4 py-3 text-xs text-ink-mute' : 'mt-2 text-center text-xs text-gray-400 font-mono'}>
-        {forceCanvas2D && <span className={`inline-flex items-center gap-1.5 ${canStream ? 'text-emerald-700' : 'text-ink-mute'}`}><span className={`h-1.5 w-1.5 rounded-full ${canStream ? 'bg-emerald-500' : 'bg-slate-300'}`} />{canStream ? t('已连接', 'Connected') : mode === 'off' ? t('画面已关闭', 'Screen off') : t('等待连接', 'Waiting')}</span>}
+      <div className="mt-2 text-center text-xs text-gray-400 font-mono">
         {device && mode !== 'off' && canStream
           ? usingLocalAdb
             ? t('本地 USB · Scrcpy H.264', 'Local USB · Scrcpy H.264')
@@ -197,8 +188,8 @@ export default function LivePanel({ device, defaultMode = 'off', storageKey = 'l
             ? t('浏览器 USB · H.264 视频流', 'Browser USB · H.264 video')
             : usingRemote
             ? t('远程设备 · H.264 视频流', 'Remote device · H.264 video')
-            : videoUnavailable ? (screenshotsOnly ? t('当前连接不支持实时视频', 'Live video unsupported') : t('视频流未就绪', 'Video not ready')) : ' '
-            : ' '}
+            : videoUnavailable ? (screenshotsOnly ? t('当前连接不支持实时视频', 'Live video unsupported') : t('视频流未就绪', 'Video not ready')) : ' '
+            : ' '}
       </div>
       {device?.connection_type === 'portal' && !remoteVideo && wantsVideo && <p className="mt-1 text-center text-xs text-ink-mute">{t('远程视频需要新版 App，并在手机点击「开启远程视频」授权录屏。', 'Remote video requires the updated app and screen capture authorization on the phone.')}</p>}
       {streamError && mode === 'on' && <p className="mt-1 text-center text-xs text-amber-600">{streamError}</p>}
