@@ -291,3 +291,29 @@ class TestAccountLease(Base):
     __tablename__ = "test_account_leases"
     test_account_id: Mapped[str] = mapped_column(String, primary_key=True)
     run_id: Mapped[str] = mapped_column(String, index=True)
+
+
+class ExecutionPlan(Base):
+    """Versioned, reusable execution plan derived from exploration or legacy replay."""
+
+    __tablename__ = "execution_plans"
+    __table_args__ = (
+        __import__("sqlalchemy").UniqueConstraint("test_case_id", "version", name="uq_execution_plan_case_version"),
+    )
+
+    id: Mapped[str] = mapped_column(String, primary_key=True, default=_uuid)
+    test_case_id: Mapped[str] = mapped_column(ForeignKey("test_cases.id"), index=True)
+    suite_id: Mapped[str] = mapped_column(ForeignKey("test_suites.id"), index=True)
+    version: Mapped[int] = mapped_column(Integer, default=1)
+    status: Mapped[str] = mapped_column(String, default="draft")  # draft/validated/deprecated
+    source: Mapped[str] = mapped_column(String, default="legacy_import")  # exploration/legacy_import/manual
+    platform: Mapped[str] = mapped_column(String, default="")
+    app_package: Mapped[str] = mapped_column(String, default="")
+    metadata_json: Mapped[str] = mapped_column(Text, default="{}")
+    steps_json: Mapped[str] = mapped_column(Text, default="[]")
+    warnings_json: Mapped[str] = mapped_column(Text, default="[]")
+    previous_plan_id: Mapped[Optional[str]] = mapped_column(String, nullable=True)
+    validated_run_id: Mapped[str] = mapped_column(String, default="")
+    account_id: Mapped[Optional[str]] = mapped_column(String, nullable=True, index=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+    updated_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
