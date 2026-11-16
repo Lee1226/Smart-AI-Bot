@@ -1,4 +1,5 @@
 import { useState, useEffect, useRef, useMemo, useSyncExternalStore } from 'react'
+import { ArrowLeft, Hand, Home, LayoutGrid, Power, RefreshCw } from 'lucide-react'
 import { useMutation, useQuery } from '@tanstack/react-query'
 import { fetchDeviceCapabilities, controlDevice, Device, getToken } from '../lib/api'
 import { useT } from '../lib/i18n'
@@ -179,8 +180,15 @@ export default function LivePanel({ device, defaultMode = 'off', storageKey = 'l
           <div className="flex items-center gap-2 text-sm font-semibold text-ink"><span className="inline-flex h-7 w-7 items-center justify-center rounded-lg bg-primary-soft text-primary">▣</span>{t('实时设备画面', 'Live device screen')}</div>
           {forceCanvas2D && <div className="mt-1 truncate text-xs text-ink-mute">{device?.name || t('等待选择设备', 'Waiting for device')}</div>}
         </div>
-        <div className="flex shrink-0 items-center gap-2">
-          {forceCanvas2D && <button type="button" disabled={!device || mode !== 'on'} onClick={() => setReloadKey(k => k + 1)} className="rounded-lg border border-hairline px-3 py-1.5 text-xs font-medium text-ink-mute transition hover:bg-canvas-soft disabled:cursor-not-allowed disabled:opacity-40">↻ {t('刷新画面', 'Refresh')}</button>}
+        <div className="flex shrink-0 flex-wrap items-center justify-end gap-1.5">
+          {forceCanvas2D && <>
+            <button type="button" title={touchEnabled ? '触控已启用' : '触控已禁用'} aria-label={touchEnabled ? '禁用触控' : '启用触控'} disabled={!supportsManualControl || !videoDimensions || controlMutation.isPending} onClick={() => setTouchEnabled(v => !v)} className={touchEnabled ? 'inline-flex h-8 w-8 items-center justify-center rounded-lg border border-primary/30 bg-primary-soft text-primary-deep hover:bg-primary-soft/80 disabled:opacity-40' : 'inline-flex h-8 w-8 items-center justify-center rounded-lg border border-hairline text-ink-mute hover:bg-canvas-soft disabled:opacity-40'}><Hand size={16} /></button>
+            <button type="button" title="电源键" aria-label="电源键" disabled={!supportsManualControl || controlMutation.isPending} onClick={() => sendKey('power')} className="inline-flex h-8 w-8 items-center justify-center rounded-lg border border-hairline text-ink hover:bg-canvas-soft disabled:opacity-40"><Power size={16} /></button>
+            <button type="button" title="返回" aria-label="返回" disabled={!supportsManualControl || controlMutation.isPending} onClick={() => sendKey('back')} className="inline-flex h-8 w-8 items-center justify-center rounded-lg border border-hairline text-ink hover:bg-canvas-soft disabled:opacity-40"><ArrowLeft size={16} /></button>
+            <button type="button" title="主页" aria-label="主页" disabled={!supportsManualControl || controlMutation.isPending} onClick={() => sendKey('home')} className="inline-flex h-8 w-8 items-center justify-center rounded-lg border border-hairline text-ink hover:bg-canvas-soft disabled:opacity-40"><Home size={16} /></button>
+            <button type="button" title="最近任务" aria-label="最近任务" disabled={!supportsManualControl || controlMutation.isPending} onClick={() => sendKey('recent')} className="inline-flex h-8 w-8 items-center justify-center rounded-lg border border-hairline text-ink hover:bg-canvas-soft disabled:opacity-40"><LayoutGrid size={16} /></button>
+            <button type="button" title="刷新画面" aria-label="刷新画面" disabled={!device || mode !== 'on'} onClick={() => setReloadKey(k => k + 1)} className="inline-flex h-8 w-8 items-center justify-center rounded-lg border border-hairline text-ink-mute transition hover:bg-canvas-soft disabled:cursor-not-allowed disabled:opacity-40"><RefreshCw size={15} /></button>
+          </>}
           <div className="flex rounded-md border overflow-hidden text-xs">
             <button onClick={() => pick('on')} className={`px-3 py-1 transition-colors ${mode === 'on' ? 'bg-primary text-white' : 'bg-white text-ink-mute hover:bg-gray-50'}`}>
               {t('开启', 'On')}
@@ -200,7 +208,7 @@ export default function LivePanel({ device, defaultMode = 'off', storageKey = 'l
           onPointerDown={forceCanvas2D ? handlePointerDown : undefined}
           onPointerUp={forceCanvas2D ? handlePointerUp : undefined}
           onPointerCancel={forceCanvas2D ? () => { pointerStart.current = null } : undefined}
-          className={forceCanvas2D ? 'relative mx-auto w-full overflow-hidden rounded-[1.1rem] border border-slate-300 bg-transparent shadow-[0_12px_32px_rgba(15,23,42,0.10)] ' + (touchEnabled && supportsManualControl && videoDimensions ? 'cursor-crosshair' : '') : 'relative mx-auto rounded-xl bg-terminal overflow-hidden border border-hairline-strong'}
+          className={forceCanvas2D ? 'relative mx-auto w-full overflow-hidden rounded-[1.1rem] border border-slate-300 bg-transparent shadow-[0_12px_32px_rgba(15,23,42,0.10)] ' + (touchEnabled && supportsManualControl && videoDimensions ? 'cursor-pointer select-none touch-none' : '') : 'relative mx-auto rounded-xl bg-terminal overflow-hidden border border-hairline-strong'}
           style={{
             aspectRatio: forceCanvas2D && videoAspectRatio ? String(videoAspectRatio) : '9 / 19.5',
             maxWidth: forceCanvas2D ? 340 : 300,
@@ -237,15 +245,11 @@ export default function LivePanel({ device, defaultMode = 'off', storageKey = 'l
         </div>
       </div>
 
-      {forceCanvas2D && <div className="border-t border-hairline bg-white px-4 py-3">
-        <div className="flex flex-wrap items-center justify-center gap-2">
-          <button type="button" disabled={!supportsManualControl || !videoDimensions || controlMutation.isPending} onClick={() => setTouchEnabled(v => !v)} className={touchEnabled ? 'rounded-lg border border-primary/30 bg-primary-soft px-3 py-2 text-xs font-semibold text-primary-deep disabled:opacity-40' : 'rounded-lg border border-hairline px-3 py-2 text-xs font-semibold text-ink-mute disabled:opacity-40'}>{touchEnabled ? '触控已开启' : '触控已关闭'}</button>
-          {(['back', 'home', 'recent', 'power'] as const).map(action => <button key={action} type="button" disabled={!supportsManualControl || controlMutation.isPending} onClick={() => sendKey(action)} className="rounded-lg border border-hairline px-3 py-2 text-xs font-medium text-ink hover:bg-canvas-soft disabled:opacity-40">{({ back: '返回', home: '主页', recent: '最近任务', power: '电源键' })[action]}</button>)}
-        </div>
-        {!supportsManualControl && <p className="mt-2 text-center text-[11px] text-amber-700">当前连接方式暂不支持手动触控控制（支持 Portal、服务端 ADB USB、ADB Bridge）</p>}
-        {supportsManualControl && !videoDimensions && mode === 'on' && <p className="mt-2 text-center text-[11px] text-ink-mute">等待视频分辨率就绪后可启用屏幕触控</p>}
-        {controlMutation.isPending && <p className="mt-2 text-center text-[11px] text-primary">正在发送设备操作…</p>}
-        {controlError && <p className="mt-2 text-center text-[11px] text-rose-600">{controlError}</p>}
+      {forceCanvas2D && (controlMutation.isPending || controlError || !supportsManualControl || (!videoDimensions && mode === 'on')) && <div className="border-t border-hairline bg-white px-4 py-2">
+        {!supportsManualControl && <p className="text-center text-[11px] text-amber-700">当前连接方式暂不支持手动触控控制（支持 Portal、服务端 ADB USB、ADB Bridge）</p>}
+        {supportsManualControl && !videoDimensions && mode === 'on' && <p className="text-center text-[11px] text-ink-mute">等待视频分辨率就绪后可启用屏幕触控</p>}
+        {controlMutation.isPending && <p className="text-center text-[11px] text-primary">正在发送设备操作…</p>}
+        {controlError && <p className="text-center text-[11px] text-rose-600">{controlError}</p>}
       </div>}
       <div className={forceCanvas2D ? 'flex flex-wrap items-center justify-center gap-x-3 gap-y-1 border-t border-hairline bg-white px-4 py-3 text-xs text-ink-mute' : 'mt-2 text-center text-xs text-gray-400 font-mono'}>
         {forceCanvas2D && <span className={`inline-flex items-center gap-1.5 ${canStream ? 'text-emerald-700' : 'text-ink-mute'}`}><span className={`h-1.5 w-1.5 rounded-full ${canStream ? 'bg-emerald-500' : 'bg-slate-300'}`} />{canStream ? t('已连接', 'Connected') : mode === 'off' ? t('画面已关闭', 'Screen off') : t('等待连接', 'Waiting')}</span>}
