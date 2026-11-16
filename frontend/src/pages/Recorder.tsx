@@ -108,6 +108,7 @@ export default function Recorder() {
   const [previewSize, setPreviewSize] = useState({ width: 0, height: 0 })
   const [screenSize, setScreenSize] = useState({ width: 1080, height: 2400 })
   const [videoAvailable, setVideoAvailable] = useState(false)
+  const [videoFrameSize, setVideoFrameSize] = useState<{ width: number; height: number } | null>(null)
   const pointerStart = useRef<{ x: number; y: number } | null>(null)
   const screenRef = useRef<HTMLDivElement>(null)
   const realEventsCursor = useRef(0)
@@ -188,9 +189,31 @@ export default function Recorder() {
 
   const screenPoint = (event: PointerEvent<HTMLDivElement>) => {
     const rect = event.currentTarget.getBoundingClientRect()
+    if (rect.width <= 0 || rect.height <= 0) return null
+
+    // H264Canvas is an absolutely positioned object-contain canvas. Its decoded
+    // frame may not have exactly the same aspect ratio as the preview container,
+    // so map pointer coordinates against the visible frame, not the letterbox.
+    // Screenshot fallback uses object-fill and therefore occupies the full box.
+    const frame = videoAvailable && videoFrameSize?.width && videoFrameSize?.height
+      ? videoFrameSize
+      : screenSize
+    const scale = videoAvailable
+      ? Math.min(rect.width / frame.width, rect.height / frame.height)
+      : rect.width / frame.width
+    const renderedWidth = frame.width * scale
+    const renderedHeight = frame.height * scale
+    const offsetX = (rect.width - renderedWidth) / 2
+    const offsetY = (rect.height - renderedHeight) / 2
+    const imageX = event.clientX - rect.left - offsetX
+    const imageY = event.clientY - rect.top - offsetY
+
+    // Ignore clicks on the black letterbox bars instead of clamping them to
+    // the nearest screen edge.
+    if (imageX < 0 || imageY < 0 || imageX > renderedWidth || imageY > renderedHeight) return null
     return {
-      x: Math.max(0, Math.min(screenSize.width, Math.round((event.clientX - rect.left) / rect.width * screenSize.width))),
-      y: Math.max(0, Math.min(screenSize.height, Math.round((event.clientY - rect.top) / rect.height * screenSize.height))),
+      x: Math.max(0, Math.min(screenSize.width - 1, Math.round(imageX / scale * screenSize.width / frame.width))),
+      y: Math.max(0, Math.min(screenSize.height - 1, Math.round(imageY / scale * screenSize.height / frame.height))),
     }
   }
   // Keep gesture requests ordered, but never block pointer input on network/UI-tree work.
@@ -242,7 +265,9 @@ export default function Recorder() {
 
   const handleScreenPointerDown = (event: PointerEvent<HTMLDivElement>) => {
     if (!recording) return
-    pointerStart.current = screenPoint(event)
+    const point = screenPoint(event)
+    if (!point) return
+    pointerStart.current = point
     event.currentTarget.setPointerCapture(event.pointerId)
   }
   const handleScreenPointerUp = (event: PointerEvent<HTMLDivElement>) => {
@@ -250,6 +275,7 @@ export default function Recorder() {
     pointerStart.current = null
     if (!start || !recording) return
     const end = screenPoint(event)
+    if (!end) return
     if (Math.hypot(end.x - start.x, end.y - start.y) < 12) {
       void executeScreenGesture('tap', { ...end, coordinate_space: 'device_px' })
     } else {
@@ -564,8 +590,8 @@ export default function Recorder() {
                 <div className="mb-2 flex flex-wrap items-center justify-between gap-2 text-xs text-slate-300">
                   <span>{t('实时手机画面 · 鼠标直接操作', 'Live device screen · click or drag to control')}</span>
                   <span>{screenSize.width} × {screenSize.height} · Canvas 2D</span></div>
-                <div ref={screenRef} className="relative mx-auto overflow-hidden rounded-lg bg-black touch-none select-none" style={{ aspectRatio: `${screenSize.width} / ${screenSize.height}`, width: 'min(100%, 420px)' }} onPointerDown={handleScreenPointerDown} onPointerUp={handleScreenPointerUp} onPointerCancel={() => { pointerStart.current = null }}>
-                  {videoAvailable && liveVideoSource ? <H264Canvas source={liveVideoSource} onFail={() => setVideoAvailable(false)} /> : screenshot ? <img src={`data:image/png;base64,${screenshot}`} alt="device screen" className="absolute inset-0 h-full w-full object-fill" /> : null}
+                <div ref={screenRef} className="relative mx-auto overflow-hidden rounded-lg bg-black touch-none select-none" style={{ aspectRatio: `${screenSize.width} / ${screenSize.height}`, width: 'min(100%, 420px)' }} onPointerDown={handleScreenPointerDown} onPointerUp={handleScreenPointerUp} onPointerCancel={() => { pointerStart.current = null }} onLostPointerCapture={() => { pointerStart.current = null }}>
+                  {videoAvailable && liveVideoSource ? <H264Canvas source={liveVideoSource} onVideoSize={(width, height) => setVideoFrameSize(current => current?.width === width && current?.height === height ? current : { width, height })} onFail={() => { setVideoAvailable(false); setVideoFrameSize(null) }} /> : screenshot ? <img src={`data:image/png;base64,${screenshot}`} alt="device screen" className="absolute inset-0 h-full w-full object-fill" /> : null}
                   {!videoAvailable && !screenshot && <div className="absolute inset-0 flex items-center justify-center text-sm text-slate-400">{t('正在获取手机画面…', 'Waiting for device screen…')}</div>}
                   {!recording && <div className="absolute inset-0 flex items-center justify-center bg-black/35 text-sm text-white">{t('开始录制后可用鼠标操作手机', 'Start recording to control the phone with your mouse')}</div>}
                   {recording && <div className="pointer-events-none absolute left-2 top-2 rounded bg-emerald-600/90 px-2 py-1 text-[10px] text-white">LIVE · CONTROL ENABLED</div>}
