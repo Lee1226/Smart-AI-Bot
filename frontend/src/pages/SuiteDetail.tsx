@@ -7,6 +7,7 @@ import {
 } from '../lib/api'
 import TestAccountSelect from '../components/TestAccountSelect'
 import StepTreeEditor from '../components/StepTreeEditor'
+import ExecutionPlanManager from '../components/ExecutionPlanManager'
 import AISuiteImport, { SuiteOrganizationInfo } from '../components/AISuiteImport'
 import { useT } from '../lib/i18n'
 import { PROVIDERS, DEFAULT_MODEL } from '../lib/providerConfig'
@@ -296,6 +297,7 @@ export default function SuiteDetail() {
 
           {suite?.source_format === 'ai_organized' && <SuiteOrganizationInfo suiteId={suiteId!} />}
           <StepTreeEditor suiteId={suiteId!} onRunNode={onRunNode} />
+          {suite?.source_format === 'recorded' && <ExecutionPlanManager suiteId={suiteId!} platform={devices.find(d => d.id === deviceId)?.platform || 'android'} />}
 
           {/* Pass rate trend chart */}
           {trends.length >= 2 && (
