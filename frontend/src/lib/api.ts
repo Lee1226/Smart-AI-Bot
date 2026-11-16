@@ -163,7 +163,8 @@ export const detachLocalAdbDevice = (id: string) =>
 export type DeviceControlAction = 'tap' | 'swipe' | 'back' | 'home' | 'recent' | 'power'
 export const controlDevice = (id: string, data: {
   action: DeviceControlAction
-  x?: number; y?: number; x2?: number; y2?: number; duration_ms?: number
+  x?: number; y?: number; x2?: number; y2?: number
+  source_width?: number; source_height?: number; duration_ms?: number
 }) => api.post<{ ok: boolean; device_id: string; action: DeviceControlAction }>(`/devices/${id}/control`, data).then(r => r.data)
 
 // ── App distribution (APK QR download) ───────────────────────────────────────
