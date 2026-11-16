@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef, useMemo, useSyncExternalStore } from 'react'
-import { useQuery } from '@tanstack/react-query'
-import { fetchDeviceCapabilities, Device, getToken } from '../lib/api'
+import { useMutation, useQuery } from '@tanstack/react-query'
+import { fetchDeviceCapabilities, controlDevice, Device, getToken } from '../lib/api'
 import { useT } from '../lib/i18n'
 import H264Canvas from './H264Canvas'
 import H264WebGLPlayer from './H264WebGLPlayer'
@@ -89,6 +89,11 @@ export default function LivePanel({ device, defaultMode = 'off', storageKey = 'l
   })
   const [reloadKey, setReloadKey] = useState(0)
   const [videoAspectRatio, setVideoAspectRatio] = useState<number | null>(null)
+  const [videoDimensions, setVideoDimensions] = useState<{ width: number; height: number } | null>(null)
+  const [touchEnabled, setTouchEnabled] = useState(true)
+  const [controlError, setControlError] = useState('')
+  const pointerStart = useRef<{ x: number; y: number; at: number } | null>(null)
+  const controlMutation = useMutation({ mutationFn: (data: Parameters<typeof controlDevice>[1]) => controlDevice(device!.id, data), onError: (error: any) => setControlError(error?.response?.data?.detail || error?.message || '设备操作失败'), onSuccess: () => setControlError('') })
   const [adbFailed, setAdbFailed] = useState(false)
   const [streamError, setStreamError] = useState('')
   const [renderer, setRenderer] = useState<'canvas' | 'webgl'>(() => localStorage.getItem('h264-renderer') === 'canvas' ? 'canvas' : 'webgl')
@@ -105,9 +110,10 @@ export default function LivePanel({ device, defaultMode = 'off', storageKey = 'l
   })
 
   // Keep the debug preview frame aligned with the decoded device frame dimensions.
-  useEffect(() => { setVideoAspectRatio(null) }, [device?.id, mode, reloadKey])
+  useEffect(() => { setVideoAspectRatio(null); setVideoDimensions(null); setControlError(''); pointerStart.current = null }, [device?.id, mode, reloadKey])
   const handleVideoSize = (width: number, height: number) => {
     if (!width || !height) return
+    setVideoDimensions(current => current?.width === width && current?.height === height ? current : { width, height })
     const next = width / height
     setVideoAspectRatio(current => current !== null && Math.abs(current - next) < 0.001 ? current : next)
   }
@@ -138,6 +144,33 @@ export default function LivePanel({ device, defaultMode = 'off', storageKey = 'l
   const webglFailed = (message: string) => { setStreamError(message); setRenderer('canvas'); localStorage.setItem('h264-renderer', 'canvas') }
   const chooseRenderer = (value: 'canvas' | 'webgl') => { setRenderer(value); localStorage.setItem('h264-renderer', value); setReloadKey(k => k + 1) }
   const canStream = !!device && mode === 'on' && online
+  const supportsManualControl = !!device && online && ['portal', 'adb_usb', 'adb_bridge'].includes(device.connection_type)
+  const mapPointer = (event: React.PointerEvent<HTMLDivElement>) => {
+    const rect = event.currentTarget.getBoundingClientRect()
+    if (!videoDimensions || rect.width <= 0 || rect.height <= 0) return null
+    return {
+      x: Math.max(0, Math.min(videoDimensions.width - 1, Math.round((event.clientX - rect.left) / rect.width * videoDimensions.width))),
+      y: Math.max(0, Math.min(videoDimensions.height - 1, Math.round((event.clientY - rect.top) / rect.height * videoDimensions.height))),
+    }
+  }
+  const handlePointerDown = (event: React.PointerEvent<HTMLDivElement>) => {
+    if (!forceCanvas2D || !touchEnabled || !supportsManualControl || !videoDimensions || controlMutation.isPending || event.button !== 0) return
+    const point = mapPointer(event)
+    if (!point) return
+    event.preventDefault()
+    event.currentTarget.setPointerCapture(event.pointerId)
+    pointerStart.current = { ...point, at: Date.now() }
+  }
+  const handlePointerUp = (event: React.PointerEvent<HTMLDivElement>) => {
+    const start = pointerStart.current
+    pointerStart.current = null
+    if (!start || !touchEnabled || !supportsManualControl || !device) return
+    const end = mapPointer(event)
+    if (!end) return
+    if (Math.hypot(end.x - start.x, end.y - start.y) < 18) controlMutation.mutate({ action: 'tap', x: end.x, y: end.y })
+    else controlMutation.mutate({ action: 'swipe', x: start.x, y: start.y, x2: end.x, y2: end.y, duration_ms: Math.max(100, Math.min(1200, Date.now() - start.at)) })
+  }
+  const sendKey = (action: 'back' | 'home' | 'recent' | 'power') => { if (device) controlMutation.mutate({ action }) }
 
   return (
     <div className={forceCanvas2D ? 'overflow-hidden rounded-xl border border-hairline bg-white shadow-sm' : 'bg-white border rounded-lg p-3 lg:sticky lg:top-6'}>
@@ -164,7 +197,10 @@ export default function LivePanel({ device, defaultMode = 'off', storageKey = 'l
 
       <div className={forceCanvas2D ? 'flex min-h-[520px] items-center justify-center overflow-hidden bg-[#f3f6fa] px-4 py-6 sm:min-h-[640px]' : ''}>
         <div
-          className={forceCanvas2D ? 'relative mx-auto w-full overflow-hidden rounded-[1.1rem] border border-slate-300 bg-transparent shadow-[0_12px_32px_rgba(15,23,42,0.10)]' : 'relative mx-auto rounded-xl bg-terminal overflow-hidden border border-hairline-strong'}
+          onPointerDown={forceCanvas2D ? handlePointerDown : undefined}
+          onPointerUp={forceCanvas2D ? handlePointerUp : undefined}
+          onPointerCancel={forceCanvas2D ? () => { pointerStart.current = null } : undefined}
+          className={forceCanvas2D ? 'relative mx-auto w-full overflow-hidden rounded-[1.1rem] border border-slate-300 bg-transparent shadow-[0_12px_32px_rgba(15,23,42,0.10)] ' + (touchEnabled && supportsManualControl && videoDimensions ? 'cursor-crosshair' : '') : 'relative mx-auto rounded-xl bg-terminal overflow-hidden border border-hairline-strong'}
           style={{
             aspectRatio: forceCanvas2D && videoAspectRatio ? String(videoAspectRatio) : '9 / 19.5',
             maxWidth: forceCanvas2D ? 340 : 300,
@@ -201,6 +237,16 @@ export default function LivePanel({ device, defaultMode = 'off', storageKey = 'l
         </div>
       </div>
 
+      {forceCanvas2D && <div className="border-t border-hairline bg-white px-4 py-3">
+        <div className="flex flex-wrap items-center justify-center gap-2">
+          <button type="button" disabled={!supportsManualControl || !videoDimensions || controlMutation.isPending} onClick={() => setTouchEnabled(v => !v)} className={touchEnabled ? 'rounded-lg border border-primary/30 bg-primary-soft px-3 py-2 text-xs font-semibold text-primary-deep disabled:opacity-40' : 'rounded-lg border border-hairline px-3 py-2 text-xs font-semibold text-ink-mute disabled:opacity-40'}>{touchEnabled ? '触控已开启' : '触控已关闭'}</button>
+          {(['back', 'home', 'recent', 'power'] as const).map(action => <button key={action} type="button" disabled={!supportsManualControl || controlMutation.isPending} onClick={() => sendKey(action)} className="rounded-lg border border-hairline px-3 py-2 text-xs font-medium text-ink hover:bg-canvas-soft disabled:opacity-40">{({ back: '返回', home: '主页', recent: '最近任务', power: '电源键' })[action]}</button>)}
+        </div>
+        {!supportsManualControl && <p className="mt-2 text-center text-[11px] text-amber-700">当前连接方式暂不支持手动触控控制（支持 Portal、服务端 ADB USB、ADB Bridge）</p>}
+        {supportsManualControl && !videoDimensions && mode === 'on' && <p className="mt-2 text-center text-[11px] text-ink-mute">等待视频分辨率就绪后可启用屏幕触控</p>}
+        {controlMutation.isPending && <p className="mt-2 text-center text-[11px] text-primary">正在发送设备操作…</p>}
+        {controlError && <p className="mt-2 text-center text-[11px] text-rose-600">{controlError}</p>}
+      </div>}
       <div className={forceCanvas2D ? 'flex flex-wrap items-center justify-center gap-x-3 gap-y-1 border-t border-hairline bg-white px-4 py-3 text-xs text-ink-mute' : 'mt-2 text-center text-xs text-gray-400 font-mono'}>
         {forceCanvas2D && <span className={`inline-flex items-center gap-1.5 ${canStream ? 'text-emerald-700' : 'text-ink-mute'}`}><span className={`h-1.5 w-1.5 rounded-full ${canStream ? 'bg-emerald-500' : 'bg-slate-300'}`} />{canStream ? t('已连接', 'Connected') : mode === 'off' ? t('画面已关闭', 'Screen off') : t('等待连接', 'Waiting')}</span>}
         {device && mode !== 'off' && canStream
