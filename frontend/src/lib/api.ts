@@ -159,6 +159,13 @@ export const attachLocalAdbDevice = (serial: string, name = '') =>
 export const detachLocalAdbDevice = (id: string) =>
   api.post(`/devices/${id}/local-adb/detach`)
 
+
+export type DeviceControlAction = 'tap' | 'swipe' | 'back' | 'home' | 'recent' | 'power'
+export const controlDevice = (id: string, data: {
+  action: DeviceControlAction
+  x?: number; y?: number; x2?: number; y2?: number; duration_ms?: number
+}) => api.post<{ ok: boolean; device_id: string; action: DeviceControlAction }>(`/devices/${id}/control`, data).then(r => r.data)
+
 // ── App distribution (APK QR download) ───────────────────────────────────────
 
 export interface AppInfo {
