@@ -2,7 +2,6 @@ import { useState, useEffect, useRef, useMemo, type PointerEvent } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { useNavigate } from 'react-router-dom'
 import { api, fetchDevices, getToken } from '../lib/api'
-import H264WebGLPlayer from '../components/H264WebGLPlayer'
 import H264Canvas from '../components/H264Canvas'
 import { websocketH264Source } from '../lib/h264Stream'
 import { useT } from '../lib/i18n'
@@ -109,7 +108,6 @@ export default function Recorder() {
   const [previewSize, setPreviewSize] = useState({ width: 0, height: 0 })
   const [screenSize, setScreenSize] = useState({ width: 1080, height: 2400 })
   const [videoAvailable, setVideoAvailable] = useState(false)
-  const [renderer, setRenderer] = useState<'webgl' | 'canvas'>(() => localStorage.getItem('h264-renderer') === 'canvas' ? 'canvas' : 'webgl')
   const pointerStart = useRef<{ x: number; y: number } | null>(null)
   const screenRef = useRef<HTMLDivElement>(null)
   const realEventsCursor = useRef(0)
@@ -565,11 +563,9 @@ export default function Recorder() {
               <div className="mb-3 rounded-xl border bg-slate-950 p-3">
                 <div className="mb-2 flex flex-wrap items-center justify-between gap-2 text-xs text-slate-300">
                   <span>{t('实时手机画面 · 鼠标直接操作', 'Live device screen · click or drag to control')}</span>
-                  <div className="flex items-center gap-2"><span>{screenSize.width} × {screenSize.height}</span>
-                    <select aria-label="视频渲染器" value={renderer} onChange={event => { const value = event.target.value as 'webgl' | 'canvas'; setRenderer(value); localStorage.setItem('h264-renderer', value) }} className="rounded border border-slate-600 bg-slate-800 px-2 py-1 text-xs text-white">
-                      <option value="webgl">WebGL</option><option value="canvas">Canvas 2D</option></select></div></div>
+                  <span>{screenSize.width} × {screenSize.height} · Canvas 2D</span></div>
                 <div ref={screenRef} className="relative mx-auto overflow-hidden rounded-lg bg-black touch-none select-none" style={{ aspectRatio: `${screenSize.width} / ${screenSize.height}`, width: 'min(100%, 420px)' }} onPointerDown={handleScreenPointerDown} onPointerUp={handleScreenPointerUp} onPointerCancel={() => { pointerStart.current = null }}>
-                  {videoAvailable && liveVideoSource ? (renderer === 'webgl' ? <H264WebGLPlayer source={liveVideoSource} onFail={() => setVideoAvailable(false)} /> : <H264Canvas source={liveVideoSource} onFail={() => setVideoAvailable(false)} />) : screenshot ? <img src={`data:image/png;base64,${screenshot}`} alt="device screen" className="absolute inset-0 h-full w-full object-fill" /> : null}
+                  {videoAvailable && liveVideoSource ? <H264Canvas source={liveVideoSource} onFail={() => setVideoAvailable(false)} /> : screenshot ? <img src={`data:image/png;base64,${screenshot}`} alt="device screen" className="absolute inset-0 h-full w-full object-fill" /> : null}
                   {!videoAvailable && !screenshot && <div className="absolute inset-0 flex items-center justify-center text-sm text-slate-400">{t('正在获取手机画面…', 'Waiting for device screen…')}</div>}
                   {!recording && <div className="absolute inset-0 flex items-center justify-center bg-black/35 text-sm text-white">{t('开始录制后可用鼠标操作手机', 'Start recording to control the phone with your mouse')}</div>}
                   {recording && <div className="pointer-events-none absolute left-2 top-2 rounded bg-emerald-600/90 px-2 py-1 text-[10px] text-white">LIVE · CONTROL ENABLED</div>}
