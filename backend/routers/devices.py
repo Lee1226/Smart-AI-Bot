@@ -262,6 +262,8 @@ async def control_device(device_id: str, req: DeviceControlRequest, request: Req
                          db: AsyncSession = Depends(get_db)):
     """Perform a deliberate manual interaction from the debug live preview."""
     account_id = getattr(request.state, "account_id", None)
+    if not account_id:
+        raise HTTPException(status_code=401, detail="未登录")
     device = await db.get(Device, device_id)
     if not device or (account_id and device.account_id != account_id):
         raise HTTPException(status_code=404, detail="设备不存在或无权访问")
