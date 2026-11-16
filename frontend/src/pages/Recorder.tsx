@@ -195,47 +195,52 @@ export default function Recorder() {
       y: Math.max(0, Math.min(screenSize.height, Math.round((event.clientY - rect.top) / rect.height * screenSize.height))),
     }
   }
-  const executeScreenGesture = async (action: 'tap' | 'swipe', args: Record<string, unknown>) => {
-    if (!recording || loading) return
-    setLoading(true)
+  // Keep gesture requests ordered, but never block pointer input on network/UI-tree work.
+  const gestureQueue = useRef<Promise<void>>(Promise.resolve())
+  const executeScreenGesture = (action: 'tap' | 'swipe', args: Record<string, unknown>) => {
+    if (!recording) return
+    const now = Date.now()
+    const description = action === 'tap'
+      ? `点击坐标 (${args.x}, ${args.y})`
+      : `滑动: (${args.x1},${args.y1}) -> (${args.x2},${args.y2})`
     setError('')
-    try {
-      const { data } = await api.post<{ result: string; description: string; event?: RecordEvent }>('/recorder/gesture', {
-        device_id: deviceId, action, args,
-      })
-      const now = Date.now()
-      setSteps(prev => [...prev, { action, args, description: data.description }])
-      setWebEvents(prev => [...prev, {
-        ...(data.event || {}),
-        kind: action,
-        action,
-        source: 'web_action',
-        timestamp_ms: data.event?.timestamp_ms ?? now,
-        description: data.description,
-        ...args,
-        screenshot_b64: screenshot,
-        screenshot_captured_at_ms: now,
-      }])
-      // Refresh semantic nodes after the gesture without delaying the next input.
-      void api.get<SnapshotData>(`/recorder/snapshot?device_id=${deviceId}`)
-        .then(({ data: snapshot }) => applySnapshot(snapshot))
-        .catch(() => { /* live video remains available if the snapshot refresh fails */ })
-    } catch (e: unknown) {
-      setError((e as Error).message ?? 'Gesture failed')
-    } finally {
-      setLoading(false)
-    }
+    setSteps(prev => [...prev, { action, args, description }])
+    setWebEvents(prev => [...prev, {
+      kind: action, action, source: 'web_action', timestamp_ms: now,
+      description, ...args, screenshot_b64: screenshot,
+      screenshot_captured_at_ms: now,
+      coordinates: {
+        space: 'device_px',
+        ...(action === 'tap'
+          ? { x: args.x as number, y: args.y as number }
+          : { x1: args.x1 as number, y1: args.y1 as number, x2: args.x2 as number, y2: args.y2 as number }),
+      },
+    }])
+    gestureQueue.current = gestureQueue.current.then(async () => {
+      try {
+        await api.post('/recorder/gesture', { device_id: deviceId, action, args })
+      } catch (e: unknown) {
+        setError((e as Error).message ?? 'Gesture failed')
+      }
+    })
+    // UI semantics are refreshed on a separate best-effort path; they never sit
+    // in front of the next tap/swipe request.
+    void gestureQueue.current.then(() =>
+      api.get<SnapshotData>(`/recorder/snapshot?device_id=${deviceId}`)
+        .then(({ data }) => applySnapshot(data))
+        .catch(() => { /* semantic refresh is best-effort */ })
+    )
   }
 
   const handleScreenPointerDown = (event: PointerEvent<HTMLDivElement>) => {
-    if (!recording || loading) return
+    if (!recording) return
     pointerStart.current = screenPoint(event)
     event.currentTarget.setPointerCapture(event.pointerId)
   }
   const handleScreenPointerUp = (event: PointerEvent<HTMLDivElement>) => {
     const start = pointerStart.current
     pointerStart.current = null
-    if (!start || !recording || loading) return
+    if (!start || !recording) return
     const end = screenPoint(event)
     if (Math.hypot(end.x - start.x, end.y - start.y) < 12) {
       void executeScreenGesture('tap', { ...end, coordinate_space: 'device_px' })
