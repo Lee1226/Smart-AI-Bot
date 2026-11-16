@@ -414,6 +414,9 @@ export default function Recorder() {
         ...event,
         screenshot_b64: webEvents[index]?.screenshot_b64,
         screenshot_captured_at_ms: webEvents[index]?.screenshot_captured_at_ms,
+        screenshot_status: webEvents[index]?.screenshot_status,
+        screenshot_kind: webEvents[index]?.screenshot_kind,
+        _frame_capture_key: webEvents[index]?._frame_capture_key,
       })))
       setSelectedEventIndex(0)
     } catch (e: unknown) {
