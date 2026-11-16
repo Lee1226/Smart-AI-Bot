@@ -272,6 +272,9 @@ async def control_device(device_id: str, req: DeviceControlRequest, request: Req
     if not transport.is_connected():
         raise HTTPException(status_code=409, detail="设备当前离线")
 
+    # Share the exact scheduler lock used by AI runs so manual control cannot
+    # race an active task. Import locally to avoid router import cycles.
+    from core.device_scheduler import locks
     lock = locks.setdefault(device_id, asyncio.Lock())
     if lock.locked():
         raise HTTPException(status_code=409, detail="设备正在执行 AI 调试或测试任务，请先停止任务再手动操作")
