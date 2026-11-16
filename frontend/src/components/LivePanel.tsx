@@ -88,6 +88,7 @@ export default function LivePanel({ device, defaultMode = 'off', storageKey = 'l
     return defaultMode
   })
   const [reloadKey, setReloadKey] = useState(0)
+  const [videoAspectRatio, setVideoAspectRatio] = useState<number | null>(null)
   const [adbFailed, setAdbFailed] = useState(false)
   const [streamError, setStreamError] = useState('')
   const [renderer, setRenderer] = useState<'canvas' | 'webgl'>(() => localStorage.getItem('h264-renderer') === 'canvas' ? 'canvas' : 'webgl')
@@ -102,6 +103,14 @@ export default function LivePanel({ device, defaultMode = 'off', storageKey = 'l
     enabled: !!device,
     refetchInterval: 5000,
   })
+
+  // Keep the debug preview frame aligned with the decoded device frame dimensions.
+  useEffect(() => { setVideoAspectRatio(null) }, [device?.id, mode, reloadKey])
+  const handleVideoSize = (width: number, height: number) => {
+    if (!width || !height) return
+    const next = width / height
+    setVideoAspectRatio(current => current !== null && Math.abs(current - next) < 0.001 ? current : next)
+  }
 
   // Reset the video fallback whenever the device or mode changes.
   useEffect(() => { setAdbFailed(false); setStreamError('') }, [device?.id, mode, localUsb, reloadKey])
@@ -131,56 +140,69 @@ export default function LivePanel({ device, defaultMode = 'off', storageKey = 'l
   const canStream = !!device && mode === 'on' && online
 
   return (
-    <div className="bg-white border rounded-lg p-3 lg:sticky lg:top-6">
-      <div className="flex flex-wrap gap-2 items-center justify-between mb-3">
-        <span className="text-sm font-semibold">{t('实时画面', 'Live screen')}</span>
-        <div className="flex rounded-md border overflow-hidden text-xs">
-          <button onClick={() => pick('on')} className={`px-3 py-1 transition-colors ${mode === 'on' ? 'bg-primary text-white' : 'bg-white text-ink-mute hover:bg-gray-50'}`}>
-            {t('开启', 'On')}
-          </button>
-          <button onClick={() => pick('off')} className={`px-3 py-1 transition-colors ${mode === 'off' ? 'bg-primary text-white' : 'bg-white text-ink-mute hover:bg-gray-50'}`}>
-            {t('关闭', 'Off')}
-          </button>
+    <div className={forceCanvas2D ? 'overflow-hidden rounded-xl border border-hairline bg-white shadow-sm' : 'bg-white border rounded-lg p-3 lg:sticky lg:top-6'}>
+      <div className={forceCanvas2D ? 'flex flex-wrap items-center justify-between gap-3 border-b border-hairline px-4 py-3' : 'flex flex-wrap gap-2 items-center justify-between mb-3'}>
+        <div className="min-w-0">
+          <div className="flex items-center gap-2 text-sm font-semibold text-ink"><span className="inline-flex h-7 w-7 items-center justify-center rounded-lg bg-primary-soft text-primary">▣</span>{t('实时设备画面', 'Live device screen')}</div>
+          {forceCanvas2D && <div className="mt-1 truncate text-xs text-ink-mute">{device?.name || t('等待选择设备', 'Waiting for device')}</div>}
+        </div>
+        <div className="flex shrink-0 items-center gap-2">
+          {forceCanvas2D && <button type="button" disabled={!device || mode !== 'on'} onClick={() => setReloadKey(k => k + 1)} className="rounded-lg border border-hairline px-3 py-1.5 text-xs font-medium text-ink-mute transition hover:bg-canvas-soft disabled:cursor-not-allowed disabled:opacity-40">↻ {t('刷新画面', 'Refresh')}</button>}
+          <div className="flex rounded-md border overflow-hidden text-xs">
+            <button onClick={() => pick('on')} className={`px-3 py-1 transition-colors ${mode === 'on' ? 'bg-primary text-white' : 'bg-white text-ink-mute hover:bg-gray-50'}`}>
+              {t('开启', 'On')}
+            </button>
+            <button onClick={() => pick('off')} className={`px-3 py-1 transition-colors ${mode === 'off' ? 'bg-primary text-white' : 'bg-white text-ink-mute hover:bg-gray-50'}`}>
+              {t('关闭', 'Off')}
+            </button>
+          </div>
         </div>
       </div>
 
-      {device && <p className="text-sm font-medium mb-3 truncate" title={device.name}>{device.name}</p>}
+      {!forceCanvas2D && device && <p className="text-sm font-medium mb-3 truncate" title={device.name}>{device.name}</p>}
       {!forceCanvas2D && CAN_WEBCODECS && wantsVideo && <label className="flex items-center justify-end gap-2 mb-2 text-xs"><span className="text-ink-mute">渲染器</span><select aria-label="视频渲染器" value={renderer} onChange={e => chooseRenderer(e.target.value as 'canvas' | 'webgl')} className="border rounded px-2 py-1 bg-white text-ink"><option value="webgl">WebGL（默认）</option><option value="canvas">Canvas 2D</option></select></label>}
 
-      {/* Portrait phone frame */}
-      <div
-        className="relative mx-auto rounded-xl bg-terminal overflow-hidden border border-hairline-strong"
-        style={{ aspectRatio: '9 / 19.5', maxWidth: 300 }}
-      >
-        {!device ? (
-          <Placeholder text={t('选择左侧一台设备', 'Select a device on the left')} />
-        ) : mode === 'off' ? (
-          <Placeholder text={t('实时画面已关闭', 'Live view is off')} />
-        ) : !canStream ? (
-          <Placeholder text={t('设备离线，无法取流', 'Device offline, cannot stream')} />
-        ) : videoUnavailable ? (
-          <Placeholder text={streamError || (screenshotsOnly ? t('当前连接方式暂不支持实时视频', 'Live video is not supported by this connection type') : t('实时视频流不可用。远程 App 请先在手机开启远程视频并授权录屏。', 'Live video is unavailable. Enable remote video and authorize screen capture in the phone app.'))} />
-        ) : (usingUsb || usingLocalAdb || usingRemote) && videoSource ? (
-          CAN_WEBCODECS ? (
-            activeRenderer === 'webgl' ? <H264WebGLPlayer key={`${device.id}-webgl-${reloadKey}`} source={videoSource} onFail={webglFailed} /> : <H264Canvas
-              key={`${device.id}-h264-${reloadKey}`}
-              source={videoSource}
-              onFail={videoFailed}
-            />
+      <div className={forceCanvas2D ? 'flex min-h-[520px] items-center justify-center overflow-hidden bg-[#f3f6fa] px-4 py-6 sm:min-h-[640px]' : ''}>
+        <div
+          className={forceCanvas2D ? 'relative mx-auto w-full overflow-hidden rounded-[1.1rem] border border-slate-300 bg-transparent shadow-[0_12px_32px_rgba(15,23,42,0.10)]' : 'relative mx-auto rounded-xl bg-terminal overflow-hidden border border-hairline-strong'}
+          style={{
+            aspectRatio: forceCanvas2D && videoAspectRatio ? String(videoAspectRatio) : '9 / 19.5',
+            maxWidth: forceCanvas2D ? 340 : 300,
+            width: '100%',
+            maxHeight: forceCanvas2D ? 680 : undefined,
+          }}
+        >
+          {!device ? (
+            <Placeholder text={t('选择左侧一台设备', 'Select a device on the left')} />
+          ) : mode === 'off' ? (
+            <Placeholder text={t('实时画面已关闭', 'Live view is off')} />
+          ) : !canStream ? (
+            <Placeholder text={t('设备离线，无法取流', 'Device offline, cannot stream')} />
+          ) : videoUnavailable ? (
+            <Placeholder text={streamError || (screenshotsOnly ? t('当前连接方式暂不支持实时视频', 'Live video is not supported by this connection type') : t('实时视频流不可用。远程 App 请先在手机开启远程视频并授权录屏。', 'Live video is unavailable. Enable remote video and authorize screen capture in the phone app.'))} />
+          ) : (usingUsb || usingLocalAdb || usingRemote) && videoSource ? (
+            CAN_WEBCODECS ? (
+              activeRenderer === 'webgl' ? <H264WebGLPlayer key={`${device.id}-webgl-${reloadKey}`} source={videoSource} onFail={webglFailed} /> : <H264Canvas
+                key={`${device.id}-h264-${reloadKey}`}
+                source={videoSource}
+                onFail={videoFailed}
+                onVideoSize={forceCanvas2D ? handleVideoSize : undefined}
+              />
+            ) : (
+              <H264Player
+                key={`${device.id}-h264-${reloadKey}`}
+                source={videoSource}
+                onFail={videoFailed}
+              />
+            )
           ) : (
-            <H264Player
-              key={`${device.id}-h264-${reloadKey}`}
-              source={videoSource}
-              onFail={videoFailed}
-            />
-          )
-        ) : (
-          <Placeholder text={t('实时视频流不可用', 'Live video unavailable')} />
-        )}
+            <Placeholder text={t('实时视频流不可用', 'Live video unavailable')} />
+          )}
+        </div>
       </div>
 
-      {/* Status line */}
-      <div className="mt-2 text-center text-xs text-gray-400 font-mono">
+      <div className={forceCanvas2D ? 'flex flex-wrap items-center justify-center gap-x-3 gap-y-1 border-t border-hairline bg-white px-4 py-3 text-xs text-ink-mute' : 'mt-2 text-center text-xs text-gray-400 font-mono'}>
+        {forceCanvas2D && <span className={`inline-flex items-center gap-1.5 ${canStream ? 'text-emerald-700' : 'text-ink-mute'}`}><span className={`h-1.5 w-1.5 rounded-full ${canStream ? 'bg-emerald-500' : 'bg-slate-300'}`} />{canStream ? t('已连接', 'Connected') : mode === 'off' ? t('画面已关闭', 'Screen off') : t('等待连接', 'Waiting')}</span>}
         {device && mode !== 'off' && canStream
           ? usingLocalAdb
             ? t('本地 USB · Scrcpy H.264', 'Local USB · Scrcpy H.264')
@@ -189,7 +211,7 @@ export default function LivePanel({ device, defaultMode = 'off', storageKey = 'l
             : usingRemote
             ? t('远程设备 · H.264 视频流', 'Remote device · H.264 video')
             : videoUnavailable ? (screenshotsOnly ? t('当前连接不支持实时视频', 'Live video unsupported') : t('视频流未就绪', 'Video not ready')) : ' '
-            : ' '}
+          : ' '}
       </div>
       {device?.connection_type === 'portal' && !remoteVideo && wantsVideo && <p className="mt-1 text-center text-xs text-ink-mute">{t('远程视频需要新版 App，并在手机点击「开启远程视频」授权录屏。', 'Remote video requires the updated app and screen capture authorization on the phone.')}</p>}
       {streamError && mode === 'on' && <p className="mt-1 text-center text-xs text-amber-600">{streamError}</p>}
