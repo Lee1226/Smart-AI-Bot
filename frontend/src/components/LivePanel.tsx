@@ -1,5 +1,4 @@
 import { useState, useEffect, useRef, useMemo, useSyncExternalStore } from 'react'
-import { ArrowLeft, Hand, Home, LayoutGrid, Power, RefreshCw } from 'lucide-react'
 import { useMutation, useQuery } from '@tanstack/react-query'
 import { fetchDeviceCapabilities, controlDevice, Device, getToken } from '../lib/api'
 import { useT } from '../lib/i18n'
@@ -8,6 +7,26 @@ import H264WebGLPlayer from './H264WebGLPlayer'
 import H264Player from './H264Player'
 import { browserUsbH264Source, subscribeUsb, usbSnapshot } from '../lib/browserUsb'
 import { websocketH264Source } from '../lib/h264Stream'
+
+type ControlIconName = 'hand' | 'power' | 'back' | 'home' | 'recent' | 'refresh'
+
+function ControlIcon({ name, size = 16 }: { name: ControlIconName; size?: number }) {
+  const common = { width: size, height: size, viewBox: '0 0 24 24', fill: 'none', stroke: 'currentColor', strokeWidth: 1.8, strokeLinecap: 'round' as const, strokeLinejoin: 'round' as const, 'aria-hidden': true as const }
+  switch (name) {
+    case 'hand':
+      return <svg {...common}><path d="M8 12V5.5a1.5 1.5 0 0 1 3 0V11 4.5a1.5 1.5 0 0 1 3 0V11 6a1.5 1.5 0 0 1 3 0v6-1a1.5 1.5 0 0 1 3 0v4.5A5.5 5.5 0 0 1 14.5 21h-2a5 5 0 0 1-3.8-1.8L5 14.8a1.8 1.8 0 0 1 2.7-2.4L10 15" /></svg>
+    case 'power':
+      return <svg {...common}><path d="M12 2v10" /><path d="M5.6 5.6a9 9 0 1 0 12.8 0" /></svg>
+    case 'back':
+      return <svg {...common}><path d="m15 18-6-6 6-6" /><path d="M9 12h11" /></svg>
+    case 'home':
+      return <svg {...common}><path d="m3 10 9-7 9 7" /><path d="M5 9v12h14V9M9 21v-7h6v7" /></svg>
+    case 'recent':
+      return <svg {...common}><rect x="4" y="4" width="16" height="16" rx="2" /><path d="M9 9h6M9 13h6M9 17h3" /></svg>
+    case 'refresh':
+      return <svg {...common}><path d="M20 7v5h-5" /><path d="M4 17v-5h5" /><path d="M5.6 9A7 7 0 0 1 18 6l2 6M4 12l2 6a7 7 0 0 0 12.4-3" /></svg>
+  }
+}
 
 // WebCodecs (the smooth canvas path) only exists in a secure context
 // (HTTPS / localhost). On plain http://<lan-ip> we fall back to the MSE/jmuxer
@@ -182,12 +201,12 @@ export default function LivePanel({ device, defaultMode = 'off', storageKey = 'l
         </div>
         <div className="flex shrink-0 flex-wrap items-center justify-end gap-1.5">
           {forceCanvas2D && <>
-            <button type="button" title={touchEnabled ? '触控已启用' : '触控已禁用'} aria-label={touchEnabled ? '禁用触控' : '启用触控'} disabled={!supportsManualControl || !videoDimensions || controlMutation.isPending} onClick={() => setTouchEnabled(v => !v)} className={touchEnabled ? 'inline-flex h-8 w-8 items-center justify-center rounded-lg border border-primary/30 bg-primary-soft text-primary-deep hover:bg-primary-soft/80 disabled:opacity-40' : 'inline-flex h-8 w-8 items-center justify-center rounded-lg border border-hairline text-ink-mute hover:bg-canvas-soft disabled:opacity-40'}><Hand size={16} /></button>
-            <button type="button" title="电源键" aria-label="电源键" disabled={!supportsManualControl || controlMutation.isPending} onClick={() => sendKey('power')} className="inline-flex h-8 w-8 items-center justify-center rounded-lg border border-hairline text-ink hover:bg-canvas-soft disabled:opacity-40"><Power size={16} /></button>
-            <button type="button" title="返回" aria-label="返回" disabled={!supportsManualControl || controlMutation.isPending} onClick={() => sendKey('back')} className="inline-flex h-8 w-8 items-center justify-center rounded-lg border border-hairline text-ink hover:bg-canvas-soft disabled:opacity-40"><ArrowLeft size={16} /></button>
-            <button type="button" title="主页" aria-label="主页" disabled={!supportsManualControl || controlMutation.isPending} onClick={() => sendKey('home')} className="inline-flex h-8 w-8 items-center justify-center rounded-lg border border-hairline text-ink hover:bg-canvas-soft disabled:opacity-40"><Home size={16} /></button>
-            <button type="button" title="最近任务" aria-label="最近任务" disabled={!supportsManualControl || controlMutation.isPending} onClick={() => sendKey('recent')} className="inline-flex h-8 w-8 items-center justify-center rounded-lg border border-hairline text-ink hover:bg-canvas-soft disabled:opacity-40"><LayoutGrid size={16} /></button>
-            <button type="button" title="刷新画面" aria-label="刷新画面" disabled={!device || mode !== 'on'} onClick={() => setReloadKey(k => k + 1)} className="inline-flex h-8 w-8 items-center justify-center rounded-lg border border-hairline text-ink-mute transition hover:bg-canvas-soft disabled:cursor-not-allowed disabled:opacity-40"><RefreshCw size={15} /></button>
+            <button type="button" title={touchEnabled ? '触控已启用' : '触控已禁用'} aria-label={touchEnabled ? '禁用触控' : '启用触控'} disabled={!supportsManualControl || !videoDimensions || controlMutation.isPending} onClick={() => setTouchEnabled(v => !v)} className={touchEnabled ? 'inline-flex h-8 w-8 items-center justify-center rounded-lg border border-primary/30 bg-primary-soft text-primary-deep hover:bg-primary-soft/80 disabled:opacity-40' : 'inline-flex h-8 w-8 items-center justify-center rounded-lg border border-hairline text-ink-mute hover:bg-canvas-soft disabled:opacity-40'}><ControlIcon name="hand" /></button>
+            <button type="button" title="电源键" aria-label="电源键" disabled={!supportsManualControl || controlMutation.isPending} onClick={() => sendKey('power')} className="inline-flex h-8 w-8 items-center justify-center rounded-lg border border-hairline text-ink hover:bg-canvas-soft disabled:opacity-40"><ControlIcon name="power" /></button>
+            <button type="button" title="返回" aria-label="返回" disabled={!supportsManualControl || controlMutation.isPending} onClick={() => sendKey('back')} className="inline-flex h-8 w-8 items-center justify-center rounded-lg border border-hairline text-ink hover:bg-canvas-soft disabled:opacity-40"><ControlIcon name="back" /></button>
+            <button type="button" title="主页" aria-label="主页" disabled={!supportsManualControl || controlMutation.isPending} onClick={() => sendKey('home')} className="inline-flex h-8 w-8 items-center justify-center rounded-lg border border-hairline text-ink hover:bg-canvas-soft disabled:opacity-40"><ControlIcon name="home" /></button>
+            <button type="button" title="最近任务" aria-label="最近任务" disabled={!supportsManualControl || controlMutation.isPending} onClick={() => sendKey('recent')} className="inline-flex h-8 w-8 items-center justify-center rounded-lg border border-hairline text-ink hover:bg-canvas-soft disabled:opacity-40"><ControlIcon name="recent" /></button>
+            <button type="button" title="刷新画面" aria-label="刷新画面" disabled={!device || mode !== 'on'} onClick={() => setReloadKey(k => k + 1)} className="inline-flex h-8 w-8 items-center justify-center rounded-lg border border-hairline text-ink-mute transition hover:bg-canvas-soft disabled:cursor-not-allowed disabled:opacity-40"><ControlIcon name="refresh" size={15} /></button>
           </>}
           <div className="flex rounded-md border overflow-hidden text-xs">
             <button onClick={() => pick('on')} className={`px-3 py-1 transition-colors ${mode === 'on' ? 'bg-primary text-white' : 'bg-white text-ink-mute hover:bg-gray-50'}`}>
