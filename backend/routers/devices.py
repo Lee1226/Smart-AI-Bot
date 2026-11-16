@@ -254,6 +254,10 @@ class DeviceControlRequest(BaseModel):
     y: int | None = None
     x2: int | None = None
     y2: int | None = None
+    # Dimensions of the decoded video frame. The backend converts these
+    # coordinates to the phone's native screen resolution before input.
+    source_width: int | None = None
+    source_height: int | None = None
     duration_ms: int = 450
 
 
@@ -281,15 +285,33 @@ async def control_device(device_id: str, req: DeviceControlRequest, request: Req
 
     try:
         async with lock:
-            if req.action == "tap":
-                if req.x is None or req.y is None:
-                    raise HTTPException(status_code=422, detail="点击坐标缺失")
-                await transport.tap_absolute(req.x, req.y)
-            elif req.action == "swipe":
-                if None in (req.x, req.y, req.x2, req.y2):
-                    raise HTTPException(status_code=422, detail="滑动坐标缺失")
-                await transport.swipe_absolute(req.x, req.y, req.x2, req.y2,
-                                                max(80, min(req.duration_ms, 2000)))
+            if req.action in ("tap", "swipe"):
+                required = (req.x, req.y) if req.action == "tap" else (req.x, req.y, req.x2, req.y2)
+                if any(value is None for value in required):
+                    raise HTTPException(status_code=422, detail="触控坐标缺失")
+                points = [(req.x, req.y)] if req.action == "tap" else [(req.x, req.y), (req.x2, req.y2)]
+                # Refresh native resolution when available. Some streams are
+                # downscaled, so frame pixels must not be sent as device pixels.
+                try:
+                    await transport.get_ui_state()
+                except Exception:
+                    pass  # retain frame coordinates if accessibility state is unavailable
+                native_w, native_h = transport.screen_width, transport.screen_height
+                if req.source_width and req.source_height and native_w > 0 and native_h > 0:
+                    points = [
+                        (round(x * native_w / req.source_width), round(y * native_h / req.source_height))
+                        for x, y in points
+                    ]
+                    points = [
+                        (max(0, min(native_w - 1, x)), max(0, min(native_h - 1, y)))
+                        for x, y in points
+                    ]
+                if req.action == "tap":
+                    await transport.tap_absolute(*points[0])
+                else:
+                    await transport.swipe_absolute(
+                        *points[0], *points[1], max(80, min(req.duration_ms, 2000))
+                    )
             else:
                 key = {"back": "back", "home": "home", "recent": "recent", "power": "power"}[req.action]
                 await transport.press_key(key)
