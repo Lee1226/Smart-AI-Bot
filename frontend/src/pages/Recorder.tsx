@@ -218,7 +218,6 @@ export default function Recorder() {
   }
   // Keep gesture requests ordered, but never block pointer input on network/UI-tree work.
   const gestureQueue = useRef<Promise<void>>(Promise.resolve())
-  const pendingFrameCaptures = useRef<Promise<void>[]>([])
   const semanticRefreshTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
   const executeScreenGesture = (action: 'tap' | 'swipe', args: Record<string, unknown>) => {
     if (!recording) return
@@ -233,12 +232,10 @@ export default function Recorder() {
           device_id: deviceId, action, args,
         })
         setSteps(prev => [...prev, { action, args, description: data.description || description }])
-        const eventTimestamp = data.event?.timestamp_ms ?? now
-        const captureKey = String(data.event?.event_id ?? eventTimestamp)
         setWebEvents(prev => [...prev, {
           ...(data.event || {}),
           kind: action, action, source: 'web_action',
-          timestamp_ms: eventTimestamp,
+          timestamp_ms: data.event?.timestamp_ms ?? now,
           description: data.description || description,
           ...args,
           coordinates: {
@@ -247,45 +244,11 @@ export default function Recorder() {
               ? { x: args.x as number, y: args.y as number }
               : { x1: args.x1 as number, y1: args.y1 as number, x2: args.x2 as number, y2: args.y2 as number }),
           },
-          // Keep the previous frame only as an explicitly labelled fallback
-          // until the post-action frame has been captured.
-          screenshot_b64: screenshot,
-          screenshot_captured_at_ms: undefined,
-          screenshot_status: 'pending',
-          screenshot_kind: 'pre_action_fallback',
-          _frame_capture_key: captureKey,
+          screenshot_b64: data.before_screenshot_b64 || '',
+          screenshot_captured_at_ms: data.screenshot_captured_at_ms,
+          screenshot_status: data.before_screenshot_b64 ? 'captured' : 'capture_failed',
+          screenshot_kind: 'pre_action',
         }])
-        const frameCapture = (async () => {
-          try {
-            // Give Android/Harmony UI transitions a moment to settle before
-            // capturing the event's post-action frame.
-            await new Promise(resolve => setTimeout(resolve, 350))
-            const { data: frame } = await api.get<{ screenshot_b64: string }>(
-              `/recorder/frame?device_id=${deviceId}`
-            )
-            setWebEvents(prev => prev.map(event =>
-              String(event._frame_capture_key ?? event.event_id ?? event.timestamp_ms) === captureKey
-                ? {
-                    ...event,
-                    screenshot_b64: frame.screenshot_b64,
-                    screenshot_captured_at_ms: Date.now(),
-                    screenshot_status: 'captured',
-                    screenshot_kind: 'post_action',
-                  }
-                : event
-            ))
-          } catch {
-            setWebEvents(prev => prev.map(event =>
-              String(event._frame_capture_key ?? event.event_id ?? event.timestamp_ms) === captureKey
-                ? { ...event, screenshot_status: 'capture_failed', screenshot_kind: 'pre_action_fallback' }
-                : event
-            ))
-          }
-        })()
-        pendingFrameCaptures.current.push(frameCapture)
-        void frameCapture.finally(() => {
-          pendingFrameCaptures.current = pendingFrameCaptures.current.filter(task => task !== frameCapture)
-        })
       } catch (e: unknown) {
         setError((e as Error).message ?? 'Gesture failed')
       }
@@ -406,8 +369,6 @@ export default function Recorder() {
   const stopRecording = async () => {
     setRecording(false)
     try {
-      // Preserve every asynchronous post-action frame before finalizing events.
-      await Promise.all([...pendingFrameCaptures.current])
       const { data } = await api.post<{ events: RecordEvent[] }>(`/recorder/session/stop?device_id=${deviceId}`)
       const normalized = data.events ?? []
       setWebEvents(normalized.map((event, index) => ({
@@ -416,7 +377,6 @@ export default function Recorder() {
         screenshot_captured_at_ms: webEvents[index]?.screenshot_captured_at_ms,
         screenshot_status: webEvents[index]?.screenshot_status,
         screenshot_kind: webEvents[index]?.screenshot_kind,
-        _frame_capture_key: webEvents[index]?._frame_capture_key,
       })))
       setSelectedEventIndex(0)
     } catch (e: unknown) {
@@ -806,7 +766,7 @@ export default function Recorder() {
             <div className="border-b xl:border-b-0 xl:border-r p-3 min-w-0">
               <div className="flex items-center justify-between mb-2">
                 <div className="text-xs font-semibold text-gray-500">{t('事件画面', 'EVENT FRAME')}</div>
-                {selectedEvent && <span className="text-[11px] text-gray-400">{eventScreenshot ? (selectedEvent.source === 'portal_touch' ? t('附近截图 · 非精确帧', 'Nearby frame · approximate') : selectedEvent.screenshot_status === 'pending' ? t('等待操作后截图 · 当前为操作前参考画面', 'Waiting for post-action frame · showing pre-action reference') : selectedEvent.screenshot_status === 'capture_failed' ? t('操作后截图失败 · 当前为操作前参考画面', 'Post-action capture failed · showing pre-action reference') : t('操作后截图', 'Post-action frame')) : t('暂无事件截图', 'No event screenshot')}</span>}
+                {selectedEvent && <span className="text-[11px] text-gray-400">{eventScreenshot ? (selectedEvent.source === 'portal_touch' ? t('附近截图 · 非精确帧', 'Nearby frame · approximate') : selectedEvent.screenshot_status === 'capture_failed' ? t('操作前截图采集失败', 'Pre-action capture failed') : t('操作前截图', 'Pre-action frame')) : t('暂无事件截图', 'No event screenshot')}</span>}
               </div>
               {eventScreenshot ? (
                 <div className="flex items-center justify-center rounded-lg bg-slate-100 p-2 min-h-[260px] overflow-hidden">
