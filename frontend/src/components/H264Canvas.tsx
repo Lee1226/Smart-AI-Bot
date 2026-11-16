@@ -9,10 +9,12 @@ import { H264AnnexB } from '../lib/h264AnnexB'
 //
 // onFail fires if WebCodecs is unavailable or the backend reports no ADB (4404),
 // so the panel can fall back to screenshot polling.
-export default function H264Canvas({ source, onFail }: { source: H264StreamSource; onFail?: (message: string) => void }) {
+export default function H264Canvas({ source, onFail, onVideoSize }: { source: H264StreamSource; onFail?: (message: string) => void; onVideoSize?: (width: number, height: number) => void }) {
   const canvasRef = useRef<HTMLCanvasElement>(null)
   const onFailRef = useRef(onFail)
+  const onVideoSizeRef = useRef(onVideoSize)
   onFailRef.current = onFail
+  onVideoSizeRef.current = onVideoSize
 
   useEffect(() => {
     const canvas = canvasRef.current
@@ -66,6 +68,7 @@ export default function H264Canvas({ source, onFail }: { source: H264StreamSourc
                 if (liveStartTimestamp !== null && frame.timestamp < liveStartTimestamp) return
                 if (canvas.width !== frame.displayWidth) canvas.width = frame.displayWidth
                 if (canvas.height !== frame.displayHeight) canvas.height = frame.displayHeight
+                onVideoSizeRef.current?.(frame.displayWidth, frame.displayHeight)
                 ctx.drawImage(frame, 0, 0)
               } finally { frame.close() }
             },
