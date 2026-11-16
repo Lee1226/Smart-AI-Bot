@@ -355,16 +355,6 @@ async def snapshot(device_id: str, request: Request):
     return await _snapshot(device)
 
 
-@router.get("/frame")
-async def recorder_frame(device_id: str, request: Request):
-    """Capture a screenshot-only frame for associating with a recorded gesture."""
-    await _authorize_device(request, device_id)
-    device = _get_device(device_id)
-    img_bytes = await device.screenshot()
-    import base64
-    return {"screenshot_b64": base64.b64encode(img_bytes).decode()}
-
-
 @router.get("/elements")
 async def recorder_elements(device_id: str, request: Request):
     """Refresh accessibility metadata without capturing a screenshot or dimensions."""
@@ -408,8 +398,18 @@ async def execute_recorder_gesture(req: ActionRequest, request: Request):
     async with lock:
         device = _get_device(req.device_id)
         args = req.args
-        # Critical path: dispatch the physical gesture only. Do not fetch an
-        # Accessibility/UI tree here; that RPC can take hundreds of ms or more.
+        # Capture the exact pre-action frame inside the same per-device lock,
+        # then dispatch the gesture. This keeps the single event frame aligned
+        # with the coordinates and prevents a later screen from replacing it.
+        import base64
+        before_screenshot_b64 = None
+        before_screenshot_captured_at_ms = None
+        try:
+            before_screenshot_b64 = base64.b64encode(await device.screenshot()).decode()
+            before_screenshot_captured_at_ms = int(time.time() * 1000)
+        except Exception:
+            # Screenshot failure must not prevent the physical gesture.
+            pass
         try:
             coordinate_space = args.get("coordinate_space") or args.get("coordinateSpace")
             if req.action == "tap":
@@ -435,7 +435,9 @@ async def execute_recorder_gesture(req: ActionRequest, request: Request):
                          }}
         event = recorder_engine.append(req.device_id, event_payload)
         return {"ok": True, "result": result, "description": description,
-                "event": event, "target": None}
+                "event": event, "target": None,
+                "before_screenshot_b64": before_screenshot_b64,
+                "screenshot_captured_at_ms": before_screenshot_captured_at_ms}
 
 
 @router.post("/action", response_model=ActionResponse)
