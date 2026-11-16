@@ -5,7 +5,7 @@ import json
 from typing import Any, Dict, List, Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Request
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -24,6 +24,13 @@ async def get_db():
 
 class LegacyImportRequest(BaseModel):
     platform: str = ""
+
+
+class PlanVersionRequest(BaseModel):
+    steps: List[Dict[str, Any]]
+    metadata: Dict[str, Any] = Field(default_factory=dict)
+    warnings: List[str] = Field(default_factory=list)
+    platform: Optional[str] = None
 
 
 class ExecutionPlanOut(BaseModel):
@@ -98,6 +105,58 @@ async def get_execution_plan(plan_id: str, request: Request, db: AsyncSession = 
     )).scalar_one_or_none()
     if not plan:
         raise HTTPException(status_code=404, detail="Execution plan not found")
+    return _out(plan)
+
+
+@router.post("/{plan_id}/versions", response_model=ExecutionPlanOut, status_code=201)
+async def create_plan_version(
+    plan_id: str,
+    body: PlanVersionRequest,
+    request: Request,
+    db: AsyncSession = Depends(get_db),
+):
+    """Create a new immutable draft version; never mutate an existing plan."""
+    account_id = require_account_id(request)
+    source = (await db.execute(
+        select(ExecutionPlan).where(
+            ExecutionPlan.id == plan_id,
+            ExecutionPlan.account_id == account_id,
+        )
+    )).scalar_one_or_none()
+    if not source:
+        raise HTTPException(status_code=404, detail="Execution plan not found")
+    if not body.steps:
+        raise HTTPException(status_code=422, detail="steps must not be empty")
+
+    for index, step in enumerate(body.steps):
+        if not isinstance(step.get("sequence"), int) or step["sequence"] < 1:
+            raise HTTPException(status_code=422, detail=f"steps[{index}].sequence must be a positive integer")
+        if step.get("executor") not in {"deterministic", "ai", "hybrid"}:
+            raise HTTPException(status_code=422, detail=f"steps[{index}].executor is invalid")
+
+    latest_version = await db.scalar(
+        select(func.max(ExecutionPlan.version)).where(
+            ExecutionPlan.test_case_id == source.test_case_id,
+            ExecutionPlan.account_id == account_id,
+        )
+    )
+    plan = ExecutionPlan(
+        test_case_id=source.test_case_id,
+        suite_id=source.suite_id,
+        version=(latest_version or source.version) + 1,
+        status="draft",
+        source=source.source,
+        platform=(body.platform if body.platform is not None else source.platform) or "",
+        app_package=source.app_package or "",
+        metadata_json=json.dumps(body.metadata, ensure_ascii=False),
+        steps_json=json.dumps(body.steps, ensure_ascii=False),
+        warnings_json=json.dumps(body.warnings, ensure_ascii=False),
+        previous_plan_id=source.id,
+        account_id=account_id,
+    )
+    db.add(plan)
+    await db.commit()
+    await db.refresh(plan)
     return _out(plan)
 
 
