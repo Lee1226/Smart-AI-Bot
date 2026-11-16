@@ -1,7 +1,7 @@
 import uuid
 from datetime import datetime
 from typing import Optional
-from sqlalchemy import Boolean, Float, String, Text, Integer, DateTime, ForeignKey
+from sqlalchemy import Boolean, Float, String, Text, Integer, DateTime, ForeignKey, UniqueConstraint
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 from db.database import Base
 
@@ -298,7 +298,7 @@ class ExecutionPlan(Base):
 
     __tablename__ = "execution_plans"
     __table_args__ = (
-        __import__("sqlalchemy").UniqueConstraint("test_case_id", "version", name="uq_execution_plan_case_version"),
+        UniqueConstraint("test_case_id", "version", name="uq_execution_plan_case_version"),
     )
 
     id: Mapped[str] = mapped_column(String, primary_key=True, default=_uuid)
