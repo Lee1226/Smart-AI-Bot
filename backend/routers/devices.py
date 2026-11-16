@@ -246,3 +246,51 @@ async def install_apk(device_id: str, req: InstallRequest, db: AsyncSession = De
         raise HTTPException(status_code=502, detail=f"Install failed: {e}")
 
     return {"ok": True, "device_id": device_id, "result": result}
+
+
+class DeviceControlRequest(BaseModel):
+    action: Literal["tap", "swipe", "back", "home", "recent", "power"]
+    x: int | None = None
+    y: int | None = None
+    x2: int | None = None
+    y2: int | None = None
+    duration_ms: int = 450
+
+
+@router.post("/{device_id}/control")
+async def control_device(device_id: str, req: DeviceControlRequest, request: Request,
+                         db: AsyncSession = Depends(get_db)):
+    """Perform a deliberate manual interaction from the debug live preview."""
+    account_id = getattr(request.state, "account_id", None)
+    device = await db.get(Device, device_id)
+    if not device or (account_id and device.account_id != account_id):
+        raise HTTPException(status_code=404, detail="设备不存在或无权访问")
+
+    transport = WebSocketDevice(device_id)
+    if not transport.is_connected():
+        raise HTTPException(status_code=409, detail="设备当前离线")
+
+    lock = locks.setdefault(device_id, asyncio.Lock())
+    if lock.locked():
+        raise HTTPException(status_code=409, detail="设备正在执行 AI 调试或测试任务，请先停止任务再手动操作")
+
+    try:
+        async with lock:
+            if req.action == "tap":
+                if req.x is None or req.y is None:
+                    raise HTTPException(status_code=422, detail="点击坐标缺失")
+                await transport.tap_absolute(req.x, req.y)
+            elif req.action == "swipe":
+                if None in (req.x, req.y, req.x2, req.y2):
+                    raise HTTPException(status_code=422, detail="滑动坐标缺失")
+                await transport.swipe_absolute(req.x, req.y, req.x2, req.y2,
+                                                max(80, min(req.duration_ms, 2000)))
+            else:
+                key = {"back": "back", "home": "home", "recent": "recent", "power": "power"}[req.action]
+                await transport.press_key(key)
+    except HTTPException:
+        raise
+    except Exception as exc:
+        raise HTTPException(status_code=502, detail=f"设备操作失败：{exc}") from exc
+
+    return {"ok": True, "device_id": device_id, "action": req.action}
