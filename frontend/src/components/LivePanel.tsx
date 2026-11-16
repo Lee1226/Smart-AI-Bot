@@ -78,7 +78,7 @@ export function ScreenshotView({ deviceId, source }: { deviceId: string; source:
   </>
 }
 
-export default function LivePanel({ device, defaultMode = 'off', storageKey = 'live-mode' }: { device: Device | null; defaultMode?: Mode; storageKey?: string }) {
+export default function LivePanel({ device, defaultMode = 'off', storageKey = 'live-mode', forceCanvas2D = false }: { device: Device | null; defaultMode?: Mode; storageKey?: string; forceCanvas2D?: boolean }) {
   const t = useT()
   const [mode, setMode] = useState<Mode>(() => {
     const saved = localStorage.getItem(storageKey)
@@ -91,6 +91,7 @@ export default function LivePanel({ device, defaultMode = 'off', storageKey = 'l
   const [adbFailed, setAdbFailed] = useState(false)
   const [streamError, setStreamError] = useState('')
   const [renderer, setRenderer] = useState<'canvas' | 'webgl'>(() => localStorage.getItem('h264-renderer') === 'canvas' ? 'canvas' : 'webgl')
+  const activeRenderer = forceCanvas2D ? 'canvas' : renderer
   const usb = useSyncExternalStore(subscribeUsb, usbSnapshot)
   const localUsb = device?.connection_type === 'browser_usb' && usb.phase === 'online' && usb.deviceId === device.id
   const localAdb = device?.connection_type === 'adb_usb'
@@ -144,7 +145,7 @@ export default function LivePanel({ device, defaultMode = 'off', storageKey = 'l
       </div>
 
       {device && <p className="text-sm font-medium mb-3 truncate" title={device.name}>{device.name}</p>}
-      {CAN_WEBCODECS && wantsVideo && <label className="flex items-center justify-end gap-2 mb-2 text-xs"><span className="text-ink-mute">渲染器</span><select aria-label="视频渲染器" value={renderer} onChange={e => chooseRenderer(e.target.value as 'canvas' | 'webgl')} className="border rounded px-2 py-1 bg-white text-ink"><option value="webgl">WebGL（默认）</option><option value="canvas">Canvas 2D</option></select></label>}
+      {!forceCanvas2D && CAN_WEBCODECS && wantsVideo && <label className="flex items-center justify-end gap-2 mb-2 text-xs"><span className="text-ink-mute">渲染器</span><select aria-label="视频渲染器" value={renderer} onChange={e => chooseRenderer(e.target.value as 'canvas' | 'webgl')} className="border rounded px-2 py-1 bg-white text-ink"><option value="webgl">WebGL（默认）</option><option value="canvas">Canvas 2D</option></select></label>}
 
       {/* Portrait phone frame */}
       <div
@@ -161,7 +162,7 @@ export default function LivePanel({ device, defaultMode = 'off', storageKey = 'l
           <Placeholder text={streamError || (screenshotsOnly ? t('当前连接方式暂不支持实时视频', 'Live video is not supported by this connection type') : t('实时视频流不可用。远程 App 请先在手机开启远程视频并授权录屏。', 'Live video is unavailable. Enable remote video and authorize screen capture in the phone app.'))} />
         ) : (usingUsb || usingLocalAdb || usingRemote) && videoSource ? (
           CAN_WEBCODECS ? (
-            renderer === 'webgl' ? <H264WebGLPlayer key={`${device.id}-webgl-${reloadKey}`} source={videoSource} onFail={webglFailed} /> : <H264Canvas
+            activeRenderer === 'webgl' ? <H264WebGLPlayer key={`${device.id}-webgl-${reloadKey}`} source={videoSource} onFail={webglFailed} /> : <H264Canvas
               key={`${device.id}-h264-${reloadKey}`}
               source={videoSource}
               onFail={videoFailed}
