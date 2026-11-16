@@ -37,6 +37,7 @@ export default function H264WebGLPlayer({
     let timestamp = 0
     let liveStartTimestamp: number | null = null
     let hasKey = false
+    let bitmapConversionPending = false
     let pendingDecode: EncodedVideoChunk[] = []
     let stopSource: (() => void) | undefined
     const fail = (message: string) => {
@@ -71,16 +72,27 @@ export default function H264WebGLPlayer({
                 frame.close()
                 return
               }
-              // Drop cached-GOP output while still decoding it for H.264 reference
-              // state. Check again after the async bitmap conversion to avoid a
-              // historical frame rendering after the live boundary was crossed.
               const frameTimestamp = frame.timestamp
               if (liveStartTimestamp !== null && frameTimestamp < liveStartTimestamp) {
                 frame.close()
                 return
               }
-              // WebGL texImage2D implementations do not consistently accept
-              // VideoFrame directly. ImageBitmap is a broadly supported source.
+
+              // Prefer synchronous VideoFrame -> WebGL upload. This avoids an
+              // ImageBitmap allocation and an async hop for every decoded frame.
+              if (renderer.renderVideoFrame(frame)) {
+                frame.close()
+                return
+              }
+
+              // Compatibility fallback for browsers whose WebGL implementation
+              // cannot upload VideoFrame directly. Keep at most one conversion
+              // in flight; dropping a display frame is better than building lag.
+              if (bitmapConversionPending) {
+                frame.close()
+                return
+              }
+              bitmapConversionPending = true
               void createImageBitmap(frame).then(bitmap => {
                 try {
                   if (stopped || failed) return
@@ -93,7 +105,10 @@ export default function H264WebGLPlayer({
                 }
               }).catch(error => {
                 fail(error instanceof Error ? `VideoFrame 转 ImageBitmap 失败：${error.message}` : 'VideoFrame 转 ImageBitmap 失败')
-              }).finally(() => frame.close())
+              }).finally(() => {
+                bitmapConversionPending = false
+                frame.close()
+              })
             },
             error: () => fail('WebCodecs 解码失败')
           })
@@ -104,8 +119,15 @@ export default function H264WebGLPlayer({
             optimizeForLatency: true,
           })
         }
-        if (pendingDecode.length >= 1800) {
-          throw new Error('视频解码输入缓存超过上限，已回落旧播放器')
+        if (pendingDecode.length >= 120) {
+          // A long decode backlog means playback is no longer real-time. Drop
+          // the queued GOP and wait for the next keyframe instead of rendering
+          // seconds of stale interaction feedback.
+          pendingDecode = []
+          try { decoder?.close() } catch { /* decoder may already be closed */ }
+          decoder = null
+          hasKey = false
+          if (!key) return
         }
         pendingDecode.push(new EncodedVideoChunk({
           type: key ? 'key' : 'delta',
