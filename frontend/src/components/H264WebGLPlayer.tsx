@@ -48,7 +48,7 @@ export default function H264WebGLPlayer({
     }
     const pumpDecode = () => {
       if (!decoder || stopped || failed) return
-      while (pendingDecode.length && decoder.decodeQueueSize < 8) {
+      while (pendingDecode.length && decoder.decodeQueueSize < 4) {
         const chunk = pendingDecode.shift()!
         try { decoder.decode(chunk) } catch (error) {
           fail(error instanceof Error ? error.message : '视频解码提交失败')
@@ -119,9 +119,9 @@ export default function H264WebGLPlayer({
             optimizeForLatency: true,
           })
         }
-        if (pendingDecode.length >= 120) {
-          // A long decode backlog means playback is no longer real-time. Drop
-          // the queued GOP and wait for the next keyframe instead of rendering
+        if (pendingDecode.length >= 24) {
+          // A decode backlog above roughly 750 ms means playback is no longer
+          // real-time. Drop the queued GOP and wait for the next keyframe instead of rendering
           // seconds of stale interaction feedback.
           pendingDecode = []
           try { decoder?.close() } catch { /* decoder may already be closed */ }
