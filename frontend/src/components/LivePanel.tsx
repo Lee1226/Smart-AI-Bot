@@ -287,7 +287,6 @@ export default function LivePanel({ device, defaultMode = 'off', storageKey = 'l
       {forceCanvas2D && (controlMutation.isPending || controlError || !supportsManualControl || (!videoDimensions && mode === 'on')) && <div className="border-t border-hairline bg-white px-4 py-2">
         {!supportsManualControl && <p className="text-center text-[11px] text-amber-700">当前连接方式暂不支持手动触控控制（支持 Portal、服务端 ADB USB、ADB Bridge）</p>}
         {supportsManualControl && !videoDimensions && mode === 'on' && <p className="text-center text-[11px] text-ink-mute">等待视频分辨率就绪后可启用屏幕触控</p>}
-        {controlMutation.isPending && <p className="text-center text-[11px] text-primary">正在发送设备操作…</p>}
         {controlError && <p className="text-center text-[11px] text-rose-600">{controlError}</p>}
       </div>}
       <div className={forceCanvas2D ? 'flex flex-wrap items-center justify-center gap-x-3 gap-y-1 border-t border-hairline bg-white px-4 py-3 text-xs text-ink-mute' : 'mt-2 text-center text-xs text-gray-400 font-mono'}>
