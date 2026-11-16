@@ -586,17 +586,17 @@ export default function Recorder() {
           <div className="grid grid-cols-[1fr_340px] gap-5 mb-6">
             {/* Left: screenshot + action bar */}
             <div>
-              <div className="mb-3 rounded-xl border bg-slate-950 p-3">
-                <div className="mb-2 flex flex-wrap items-center justify-between gap-2 text-xs text-slate-300">
+              <div className="mb-3 rounded-xl border border-slate-200 bg-slate-100 p-3">
+                <div className="mb-2 flex flex-wrap items-center justify-between gap-2 text-xs text-slate-600">
                   <span>{t('实时手机画面 · 鼠标直接操作', 'Live device screen · click or drag to control')}</span>
                   <span>{screenSize.width} × {screenSize.height} · Canvas 2D</span></div>
-                <div ref={screenRef} className="relative mx-auto overflow-hidden rounded-lg bg-black touch-none select-none" style={{ aspectRatio: `${screenSize.width} / ${screenSize.height}`, width: 'min(100%, 420px)' }} onPointerDown={handleScreenPointerDown} onPointerUp={handleScreenPointerUp} onPointerCancel={() => { pointerStart.current = null }} onLostPointerCapture={() => { pointerStart.current = null }}>
+                <div ref={screenRef} className="relative mx-auto overflow-hidden rounded-lg bg-black touch-none select-none" style={{ aspectRatio: `${screenSize.width} / ${screenSize.height}`, width: 'min(100%, 640px)' }} onPointerDown={handleScreenPointerDown} onPointerUp={handleScreenPointerUp} onPointerCancel={() => { pointerStart.current = null }} onLostPointerCapture={() => { pointerStart.current = null }}>
                   {videoAvailable && liveVideoSource ? <H264Canvas source={liveVideoSource} onVideoSize={(width, height) => setVideoFrameSize(current => current?.width === width && current?.height === height ? current : { width, height })} onFail={() => { setVideoAvailable(false); setVideoFrameSize(null) }} /> : screenshot ? <img src={`data:image/png;base64,${screenshot}`} alt="device screen" className="absolute inset-0 h-full w-full object-fill" /> : null}
                   {!videoAvailable && !screenshot && <div className="absolute inset-0 flex items-center justify-center text-sm text-slate-400">{t('正在获取手机画面…', 'Waiting for device screen…')}</div>}
                   {!recording && <div className="absolute inset-0 flex items-center justify-center bg-black/35 text-sm text-white">{t('开始录制后可用鼠标操作手机', 'Start recording to control the phone with your mouse')}</div>}
                   {recording && <div className="pointer-events-none absolute left-2 top-2 rounded bg-emerald-600/90 px-2 py-1 text-[10px] text-white">LIVE · CONTROL ENABLED</div>}
                 </div>
-                <p className="mt-2 text-center text-[11px] text-slate-400">{t('单击 = 点击 · 按住拖动 = 滑动；点击后自动关联 UI Tree 控件信息。', 'Click = tap · drag = swipe; UI tree metadata is attached automatically.')}</p>
+                <p className="mt-2 text-center text-[11px] text-slate-500">{t('单击 = 点击 · 按住拖动 = 滑动；点击后自动关联 UI Tree 控件信息。', 'Click = tap · drag = swipe; UI tree metadata is attached automatically.')}</p>
               </div>
 
               {/* Action bar */}
