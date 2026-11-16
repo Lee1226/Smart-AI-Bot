@@ -118,6 +118,9 @@ export class WebGLRenderer {
 
   private prepareFrame(width: number, height: number) {
     const gl = this.gl
+    gl.useProgram(this.program)
+    gl.activeTexture(gl.TEXTURE0)
+    gl.bindTexture(gl.TEXTURE_2D, this.texture)
     if (this.textureWidth !== width || this.textureHeight !== height) {
       gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, width, height, 0, gl.RGBA, gl.UNSIGNED_BYTE, null)
       this.textureWidth = width
@@ -125,10 +128,11 @@ export class WebGLRenderer {
       this.canvas.width = width
       this.canvas.height = height
       gl.viewport(0, 0, width, height)
+      // Resizing the canvas resets WebGL state bindings on some implementations.
+      gl.useProgram(this.program)
+      gl.activeTexture(gl.TEXTURE0)
+      gl.bindTexture(gl.TEXTURE_2D, this.texture)
     }
-    gl.useProgram(this.program)
-    gl.activeTexture(gl.TEXTURE0)
-    gl.bindTexture(gl.TEXTURE_2D, this.texture)
   }
 
   private upload(source: TexImageSource, width: number, height: number) {
