@@ -197,6 +197,7 @@ export default function Recorder() {
   }
   // Keep gesture requests ordered, but never block pointer input on network/UI-tree work.
   const gestureQueue = useRef<Promise<void>>(Promise.resolve())
+  const semanticRefreshTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
   const executeScreenGesture = (action: 'tap' | 'swipe', args: Record<string, unknown>) => {
     if (!recording) return
     const now = Date.now()
@@ -204,32 +205,41 @@ export default function Recorder() {
       ? `点击坐标 (${args.x}, ${args.y})`
       : `滑动: (${args.x1},${args.y1}) -> (${args.x2},${args.y2})`
     setError('')
-    setSteps(prev => [...prev, { action, args, description }])
-    setWebEvents(prev => [...prev, {
-      kind: action, action, source: 'web_action', timestamp_ms: now,
-      description, ...args, screenshot_b64: screenshot,
-      screenshot_captured_at_ms: now,
-      coordinates: {
-        space: 'device_px',
-        ...(action === 'tap'
-          ? { x: args.x as number, y: args.y as number }
-          : { x1: args.x1 as number, y1: args.y1 as number, x2: args.x2 as number, y2: args.y2 as number }),
-      },
-    }])
     gestureQueue.current = gestureQueue.current.then(async () => {
       try {
-        await api.post('/recorder/gesture', { device_id: deviceId, action, args })
+        const { data } = await api.post<{ result: string; description: string; event?: RecordEvent }>('/recorder/gesture', {
+          device_id: deviceId, action, args,
+        })
+        setSteps(prev => [...prev, { action, args, description: data.description || description }])
+        setWebEvents(prev => [...prev, {
+          ...(data.event || {}),
+          kind: action, action, source: 'web_action',
+          timestamp_ms: data.event?.timestamp_ms ?? now,
+          description: data.description || description,
+          ...args,
+          coordinates: {
+            space: 'device_px',
+            ...(action === 'tap'
+              ? { x: args.x as number, y: args.y as number }
+              : { x1: args.x1 as number, y1: args.y1 as number, x2: args.x2 as number, y2: args.y2 as number }),
+          },
+          screenshot_b64: screenshot,
+          screenshot_captured_at_ms: now,
+        }])
       } catch (e: unknown) {
         setError((e as Error).message ?? 'Gesture failed')
       }
     })
-    // UI semantics are refreshed on a separate best-effort path; they never sit
-    // in front of the next tap/swipe request.
-    void gestureQueue.current.then(() =>
-      api.get<SnapshotData>(`/recorder/snapshot?device_id=${deviceId}`)
-        .then(({ data }) => applySnapshot(data))
-        .catch(() => { /* semantic refresh is best-effort */ })
-    )
+    // Debounce semantic refresh until the user pauses. It is intentionally
+    // outside the gesture queue, so a slow UI-tree RPC cannot delay input.
+    if (semanticRefreshTimer.current) clearTimeout(semanticRefreshTimer.current)
+    semanticRefreshTimer.current = setTimeout(() => {
+      void gestureQueue.current.then(() =>
+        api.get<SnapshotData>(`/recorder/snapshot?device_id=${deviceId}`)
+          .then(({ data }) => applySnapshot(data))
+          .catch(() => { /* semantic refresh is best-effort */ })
+      )
+    }, 500)
   }
 
   const handleScreenPointerDown = (event: PointerEvent<HTMLDivElement>) => {
