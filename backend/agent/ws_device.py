@@ -29,7 +29,7 @@ _screenshot_cache: Dict[str, Tuple[float, bytes]] = {}
 _screenshot_locks: Dict[str, asyncio.Lock] = {}
 
 _KEY_CODES = {
-    "back": 4, "home": 3, "recent": 187,
+    "back": 4, "home": 3, "recent": 187, "power": 26,
     "enter": 66, "del": 67, "tab": 61, "space": 62,
 }
 
