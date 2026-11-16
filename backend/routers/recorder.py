@@ -355,6 +355,35 @@ async def snapshot(device_id: str, request: Request):
     return await _snapshot(device)
 
 
+@router.get("/elements")
+async def recorder_elements(device_id: str, request: Request):
+    """Refresh accessibility metadata without capturing a screenshot or dimensions."""
+    await _authorize_device(request, device_id)
+    device = _get_device(device_id)
+    ui_text, elements_raw = await device.get_ui_state()
+    elements = [
+        Element(
+            index=e["index"],
+            text=e.get("text", ""),
+            className=e.get("className", ""),
+            resourceId=e.get("resourceId", ""),
+            cx=e["cx"],
+            cy=e["cy"],
+            contentDescription=e.get("contentDescription", ""),
+            bounds=e.get("bounds"),
+            clickable=e.get("clickable", False),
+            enabled=e.get("enabled", True),
+            visible=e.get("visible", True),
+            scrollable=e.get("scrollable", False),
+            selected=e.get("selected", False),
+            checked=e.get("checked", False),
+            parentPath=e.get("parentPath", []),
+        )
+        for e in elements_raw
+    ]
+    return {"ui_text": ui_text, "elements": elements}
+
+
 @router.post("/gesture")
 async def execute_recorder_gesture(req: ActionRequest, request: Request):
     """Low-latency mouse gesture path: capture pre-action semantics, execute,
