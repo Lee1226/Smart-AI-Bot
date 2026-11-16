@@ -168,9 +168,13 @@ export default function LivePanel({ device, defaultMode = 'off', storageKey = 'l
   const mapPointer = (event: React.PointerEvent<HTMLDivElement>) => {
     const rect = event.currentTarget.getBoundingClientRect()
     if (!videoDimensions || rect.width <= 0 || rect.height <= 0) return null
+    const relativeX = event.clientX - rect.left
+    const relativeY = event.clientY - rect.top
+    // Reject presses in any letterbox area instead of clamping them onto an edge.
+    if (relativeX < 0 || relativeY < 0 || relativeX > rect.width || relativeY > rect.height) return null
     return {
-      x: Math.max(0, Math.min(videoDimensions.width - 1, Math.round((event.clientX - rect.left) / rect.width * videoDimensions.width))),
-      y: Math.max(0, Math.min(videoDimensions.height - 1, Math.round((event.clientY - rect.top) / rect.height * videoDimensions.height))),
+      x: Math.max(0, Math.min(videoDimensions.width - 1, Math.round(relativeX / rect.width * videoDimensions.width))),
+      y: Math.max(0, Math.min(videoDimensions.height - 1, Math.round(relativeY / rect.height * videoDimensions.height))),
     }
   }
   const handlePointerDown = (event: React.PointerEvent<HTMLDivElement>) => {
@@ -187,8 +191,16 @@ export default function LivePanel({ device, defaultMode = 'off', storageKey = 'l
     if (!start || !touchEnabled || !supportsManualControl || !device) return
     const end = mapPointer(event)
     if (!end) return
-    if (Math.hypot(end.x - start.x, end.y - start.y) < 18) controlMutation.mutate({ action: 'tap', x: end.x, y: end.y })
-    else controlMutation.mutate({ action: 'swipe', x: start.x, y: start.y, x2: end.x, y2: end.y, duration_ms: Math.max(100, Math.min(1200, Date.now() - start.at)) })
+    // Match ScrcpyPlayer: classify movement in displayed CSS pixels, not
+    // source-video pixels, so changing stream resolution does not change feel.
+    const rect = event.currentTarget.getBoundingClientRect()
+    const startCssX = start.x / videoDimensions!.width * rect.width
+    const startCssY = start.y / videoDimensions!.height * rect.height
+    const endCssX = end.x / videoDimensions!.width * rect.width
+    const endCssY = end.y / videoDimensions!.height * rect.height
+    const moved = Math.hypot(endCssX - startCssX, endCssY - startCssY) > 10
+    if (!moved) controlMutation.mutate({ action: 'tap', x: end.x, y: end.y, source_width: videoDimensions!.width, source_height: videoDimensions!.height })
+    else controlMutation.mutate({ action: 'swipe', x: start.x, y: start.y, x2: end.x, y2: end.y, source_width: videoDimensions!.width, source_height: videoDimensions!.height, duration_ms: Math.max(100, Math.min(1200, Date.now() - start.at)) })
   }
   const sendKey = (action: 'back' | 'home' | 'recent' | 'power') => { if (device) controlMutation.mutate({ action }) }
 
