@@ -74,7 +74,7 @@ export default function DebugConsole() {
           <div><h2 className="text-sm font-semibold">设备实时画面</h2><p className="mt-0.5 text-xs text-ink-mute">支持实时视频与鼠标远程操作</p></div>
           {selectedDevice && <span className={`text-xs ${selectedDevice.status === 'online' ? 'text-emerald-700' : 'text-rose-600'}`}>{selectedDevice.status === 'online' ? '● 在线' : '● 离线'}</span>}
         </div>
-        <LivePanel device={selectedDevice as Device | null} defaultMode="on" storageKey="debug-live-mode" />
+        <LivePanel device={selectedDevice as Device | null} defaultMode="on" storageKey="debug-live-mode" forceCanvas2D />
         <div className="rounded-xl border border-hairline bg-white p-4">
           <div className="flex items-center justify-between"><h3 className="text-sm font-semibold">本次调试配置</h3><span className="text-[11px] text-ink-mute">独立会话</span></div>
           <div className="mt-3 grid grid-cols-2 gap-3 text-xs">
