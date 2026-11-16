@@ -1,7 +1,7 @@
-import { useMemo, useState } from 'react'
+import { useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import {
-  createExecutionPlanVersion, ExecutionPlan, ExecutionPlanStep,
+  createExecutionPlanVersion, ExecutionPlanStep,
   fetchExecutionPlans, fetchSuiteCases, importLegacyExecutionPlan,
 } from '../lib/api'
 import { useT } from '../lib/i18n'
@@ -64,7 +64,7 @@ export default function ExecutionPlanManager({ suiteId, platform }: { suiteId: s
     },
   })
 
-  const planOptions = useMemo(() => plans, [plans])
+  const planOptions = plans
   if (casesLoading) return <div className="mt-6 text-sm text-gray-400">{t('加载执行计划…', 'Loading execution plans…')}</div>
   if (cases.length === 0) return null
 
