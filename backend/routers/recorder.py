@@ -355,6 +355,16 @@ async def snapshot(device_id: str, request: Request):
     return await _snapshot(device)
 
 
+@router.get("/frame")
+async def recorder_frame(device_id: str, request: Request):
+    """Capture a screenshot-only frame for associating with a recorded gesture."""
+    await _authorize_device(request, device_id)
+    device = _get_device(device_id)
+    img_bytes = await device.screenshot()
+    import base64
+    return {"screenshot_b64": base64.b64encode(img_bytes).decode()}
+
+
 @router.get("/elements")
 async def recorder_elements(device_id: str, request: Request):
     """Refresh accessibility metadata without capturing a screenshot or dimensions."""
