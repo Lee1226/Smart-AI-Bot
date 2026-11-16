@@ -119,7 +119,7 @@ export default function LivePanel({ device, defaultMode = 'off', storageKey = 'l
   const controlMutation = useMutation({
     mutationFn: ({ deviceId, data }: QueuedControl) => controlDevice(deviceId, data),
     onError: (error: any) => setControlError(error?.response?.data?.detail || error?.message || '设备操作失败'),
-    onSuccess: () => setControlError(''),
+
   })
   // Serialize manual inputs in arrival order. The UI remains interactive while
   // one request is in flight, instead of dropping every subsequent gesture.
@@ -129,6 +129,7 @@ export default function LivePanel({ device, defaultMode = 'off', storageKey = 'l
       setControlError('操作过于频繁，请稍后再试')
       return
     }
+    setControlError('')
     controlQueueRef.current.push({ deviceId: device.id, data })
     if (controlQueueRunningRef.current) return
     controlQueueRunningRef.current = true
@@ -160,7 +161,24 @@ export default function LivePanel({ device, defaultMode = 'off', storageKey = 'l
   })
 
   // Keep the debug preview frame aligned with the decoded device frame dimensions.
-  useEffect(() => { setVideoAspectRatio(null); setVideoDimensions(null); setControlError(''); pointerStart.current = null; controlQueueRef.current = [] }, [device?.id, mode, reloadKey])
+  useEffect(() => {
+    setVideoAspectRatio(null)
+    setVideoDimensions(null)
+    setControlError('')
+    pointerStart.current = null
+    controlQueueRef.current = []
+  }, [device?.id, mode, reloadKey])
+
+  // Never leave a gesture half-open when the tab loses focus or is hidden.
+  useEffect(() => {
+    const cancelGesture = () => { pointerStart.current = null }
+    window.addEventListener('blur', cancelGesture)
+    document.addEventListener('visibilitychange', cancelGesture)
+    return () => {
+      window.removeEventListener('blur', cancelGesture)
+      document.removeEventListener('visibilitychange', cancelGesture)
+    }
+  }, [])
   const handleVideoSize = (width: number, height: number) => {
     if (!width || !height) return
     setVideoDimensions(current => current?.width === width && current?.height === height ? current : { width, height })
@@ -277,6 +295,7 @@ export default function LivePanel({ device, defaultMode = 'off', storageKey = 'l
           onPointerDown={forceCanvas2D ? handlePointerDown : undefined}
           onPointerUp={forceCanvas2D ? handlePointerUp : undefined}
           onPointerCancel={forceCanvas2D ? () => { pointerStart.current = null } : undefined}
+          onLostPointerCapture={forceCanvas2D ? () => { pointerStart.current = null } : undefined}
           className={forceCanvas2D ? 'relative mx-auto w-full overflow-hidden rounded-[1.1rem] border border-slate-300 bg-transparent shadow-[0_12px_32px_rgba(15,23,42,0.10)] ' + (touchEnabled && supportsManualControl && videoDimensions ? 'cursor-pointer select-none touch-none' : '') : 'relative mx-auto rounded-xl bg-terminal overflow-hidden border border-hairline-strong'}
           style={{
             aspectRatio: forceCanvas2D && videoAspectRatio ? String(videoAspectRatio) : '9 / 19.5',
@@ -314,10 +333,14 @@ export default function LivePanel({ device, defaultMode = 'off', storageKey = 'l
         </div>
       </div>
 
-      {forceCanvas2D && (controlMutation.isPending || controlError || !supportsManualControl || (!videoDimensions && mode === 'on')) && <div className="border-t border-hairline bg-white px-4 py-2">
-        {!supportsManualControl && <p className="text-center text-[11px] text-amber-700">当前连接方式暂不支持手动触控控制（支持 Portal、服务端 ADB USB、ADB Bridge）</p>}
-        {supportsManualControl && !videoDimensions && mode === 'on' && <p className="text-center text-[11px] text-ink-mute">等待视频分辨率就绪后可启用屏幕触控</p>}
-        {controlError && <p className="text-center text-[11px] text-rose-600">{controlError}</p>}
+      {forceCanvas2D && <div className="flex h-9 items-center justify-center overflow-hidden border-t border-hairline bg-white px-4" aria-live="polite">
+        {controlError ? (
+          <p className="w-full truncate text-center text-[11px] text-rose-600" title={controlError}>{controlError}</p>
+        ) : !supportsManualControl ? (
+          <p className="w-full truncate text-center text-[11px] text-amber-700">当前连接方式暂不支持手动触控控制（支持 Portal、服务端 ADB USB、ADB Bridge）</p>
+        ) : !videoDimensions && mode === 'on' ? (
+          <p className="w-full truncate text-center text-[11px] text-ink-mute">等待视频分辨率就绪后可启用屏幕触控</p>
+        ) : null}
       </div>}
       <div className={forceCanvas2D ? 'flex flex-wrap items-center justify-center gap-x-3 gap-y-1 border-t border-hairline bg-white px-4 py-3 text-xs text-ink-mute' : 'mt-2 text-center text-xs text-gray-400 font-mono'}>
         {forceCanvas2D && <span className={`inline-flex items-center gap-1.5 ${canStream ? 'text-emerald-700' : 'text-ink-mute'}`}><span className={`h-1.5 w-1.5 rounded-full ${canStream ? 'bg-emerald-500' : 'bg-slate-300'}`} />{canStream ? t('已连接', 'Connected') : mode === 'off' ? t('画面已关闭', 'Screen off') : t('等待连接', 'Waiting')}</span>}
