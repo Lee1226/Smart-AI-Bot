@@ -32,6 +32,9 @@ export class WebGLRenderer {
   private texCoordLocation: number
   private textureLocation: WebGLUniformLocation | null
   private disposed = false
+  private textureWidth = 0
+  private textureHeight = 0
+  private videoFrameUploadSupported: boolean | null = null
 
   constructor(private canvas: HTMLCanvasElement) {
     const gl = canvas.getContext('webgl', {
@@ -113,42 +116,65 @@ export class WebGLRenderer {
     return shader
   }
 
-  render(source: TexImageSource, width: number, height: number): WebGLRendererStats {
-    if (this.disposed) throw new Error('WebGL Renderer 已释放')
+  private prepareFrame(width: number, height: number) {
     const gl = this.gl
-    if (this.canvas.width !== width) this.canvas.width = width
-    if (this.canvas.height !== height) this.canvas.height = height
-    gl.viewport(0, 0, width, height)
+    if (this.textureWidth !== width || this.textureHeight !== height) {
+      gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, width, height, 0, gl.RGBA, gl.UNSIGNED_BYTE, null)
+      this.textureWidth = width
+      this.textureHeight = height
+      this.canvas.width = width
+      this.canvas.height = height
+      gl.viewport(0, 0, width, height)
+    }
     gl.useProgram(this.program)
     gl.activeTexture(gl.TEXTURE0)
     gl.bindTexture(gl.TEXTURE_2D, this.texture)
-    // Clear stale GL errors so the diagnostic points to this frame upload.
-    while (gl.getError() !== gl.NO_ERROR) { /* drain previous errors */ }
-    try {
-      gl.texImage2D(
-        gl.TEXTURE_2D,
-        0,
-        gl.RGBA,
-        gl.RGBA,
-        gl.UNSIGNED_BYTE,
-        source,
-      )
-    } catch (error) {
-      const detail = error instanceof Error ? error.message : String(error)
-      throw new Error(`WebGL VideoFrame 纹理上传异常：${detail}`)
-    }
-    const uploadError = gl.getError()
-    if (uploadError !== gl.NO_ERROR) {
-      throw new Error(`WebGL VideoFrame 纹理上传失败，GL 错误码：0x${uploadError.toString(16)}`)
-    }
+  }
+
+  private upload(source: TexImageSource, width: number, height: number) {
+    const gl = this.gl
+    this.prepareFrame(width, height)
+    gl.texSubImage2D(gl.TEXTURE_2D, 0, 0, 0, gl.RGBA, gl.UNSIGNED_BYTE, source)
     gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4)
-    const drawError = gl.getError()
-    if (drawError !== gl.NO_ERROR) {
-      throw new Error(`WebGL 绘制失败，GL 错误码：0x${drawError.toString(16)}`)
-    }
     return { width, height }
   }
 
+  render(source: TexImageSource, width: number, height: number): WebGLRendererStats {
+    if (this.disposed) throw new Error('WebGL Renderer 已释放')
+    try {
+      return this.upload(source, width, height)
+    } catch (error) {
+      const detail = error instanceof Error ? error.message : String(error)
+      throw new Error(`WebGL 纹理上传失败：${detail}`)
+    }
+  }
+
+  renderVideoFrame(frame: VideoFrame): boolean {
+    if (this.disposed || this.videoFrameUploadSupported === false) return false
+    try {
+      const gl = this.gl
+      this.prepareFrame(frame.displayWidth, frame.displayHeight)
+      gl.texSubImage2D(
+        gl.TEXTURE_2D, 0, 0, 0, gl.RGBA, gl.UNSIGNED_BYTE,
+        frame as unknown as TexImageSource,
+      )
+      gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4)
+      if (this.videoFrameUploadSupported === null) {
+        const error = gl.getError()
+        if (error !== gl.NO_ERROR) {
+          this.videoFrameUploadSupported = false
+          // Clear any remaining errors from the failed capability probe.
+          while (gl.getError() !== gl.NO_ERROR) { /* drain probe errors */ }
+          return false
+        }
+        this.videoFrameUploadSupported = true
+      }
+      return true
+    } catch {
+      this.videoFrameUploadSupported = false
+      return false
+    }
+  }
   dispose() {
     if (this.disposed) return
     this.disposed = true
