@@ -369,10 +369,8 @@ async def execute_recorder_gesture(req: ActionRequest, request: Request):
     async with lock:
         device = _get_device(req.device_id)
         args = req.args
-        try:
-            _, pre_elements = await device.get_ui_state()
-        except Exception:
-            pre_elements = []
+        # Critical path: dispatch the physical gesture only. Do not fetch an
+        # Accessibility/UI tree here; that RPC can take hundreds of ms or more.
         try:
             coordinate_space = args.get("coordinate_space") or args.get("coordinateSpace")
             if req.action == "tap":
@@ -380,39 +378,25 @@ async def execute_recorder_gesture(req: ActionRequest, request: Request):
                     result = await device.tap_absolute(args["x"], args["y"])
                 else:
                     result = await device.tap(args["x"], args["y"])
-                tap_x, tap_y = args.get("x"), args.get("y")
-                target_element = None
-                if isinstance(tap_x, (int, float)) and isinstance(tap_y, (int, float)):
-                    target_element = next((element for element in reversed(pre_elements)
-                        if isinstance(element.get("bounds"), dict)
-                        and element["bounds"].get("left", 0) <= tap_x <= element["bounds"].get("right", 0)
-                        and element["bounds"].get("top", 0) <= tap_y <= element["bounds"].get("bottom", 0)), None)
             else:
                 coords = (args["x1"], args["y1"], args["x2"], args["y2"])
                 if coordinate_space == "device_px":
                     result = await device.swipe_absolute(*coords, duration_ms=args.get("duration_ms", 450))
                 else:
                     result = await device.swipe(*coords, duration_ms=args.get("duration_ms", 450))
-                target_element = None
         except Exception as exc:
             raise HTTPException(status_code=500, detail=str(exc))
-        description = _step_description(req.action, args, pre_elements)
-        event_payload = {"kind": req.action, **args, "description": description}
-        if target_element:
-            label = target_element.get("text") or target_element.get("contentDescription") or target_element.get("resourceId")
-            if label:
-                description = f'点击「{label}」'
-                event_payload["description"] = description
-            event_payload.update({
-                "text": target_element.get("text", ""),
-                "contentDescription": target_element.get("contentDescription", ""),
-                "resourceId": target_element.get("resourceId", ""),
-                "className": target_element.get("className", ""),
-                "target": target_element,
-            })
+        description = _step_description(req.action, args, [])
+        event_payload = {"kind": req.action, **args, "description": description,
+                         "coordinates": {
+                             "space": coordinate_space or "model_image_px",
+                             **({k: args[k] for k in ("x", "y") if k in args}
+                                if req.action == "tap" else
+                                {k: args[k] for k in ("x1", "y1", "x2", "y2") if k in args}),
+                         }}
         event = recorder_engine.append(req.device_id, event_payload)
         return {"ok": True, "result": result, "description": description,
-                "event": event, "target": target_element}
+                "event": event, "target": None}
 
 
 @router.post("/action", response_model=ActionResponse)
