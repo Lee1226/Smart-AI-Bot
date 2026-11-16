@@ -755,3 +755,61 @@ export const startDebugSession = (body: {
 export const fetchDebugSession = (id: string, after = 0) =>
   api.get<DebugSessionSnapshot>(`/debug/sessions/${id}`, { params: { after } }).then(r => r.data)
 export const stopDebugSession = (id: string) => api.post<DebugSessionStart>(`/debug/sessions/${id}/stop`).then(r => r.data)
+ 
+// ── Versioned execution plans ────────────────────────────────────────────────
+
+export interface SuiteCase {
+  id: string
+  order: number
+  path: string
+  expected: string
+  parameters: string
+  checkpoints: string
+  loop_task: boolean
+}
+
+export interface ExecutionPlanStep {
+  step_id: string
+  sequence: number
+  action: string
+  args: Record<string, unknown>
+  executor: 'deterministic' | 'ai' | 'hybrid'
+  locator?: Record<string, unknown> | null
+  fallback?: Record<string, unknown> | null
+  precondition?: Record<string, unknown> | null
+  wait_condition?: Record<string, unknown> | null
+  verification?: Record<string, unknown> | null
+  on_failure?: string
+  [key: string]: unknown
+}
+
+export interface ExecutionPlan {
+  id: string
+  test_case_id: string
+  suite_id: string
+  version: number
+  status: 'draft' | 'validated' | 'deprecated' | string
+  source: string
+  platform: string
+  app_package: string
+  metadata: Record<string, unknown>
+  steps: ExecutionPlanStep[]
+  warnings: string[]
+  previous_plan_id?: string | null
+  validated_run_id: string
+  created_at: string
+  updated_at: string
+}
+
+export const fetchSuiteCases = (suiteId: string) =>
+  api.get<SuiteCase[]>(`/suites/${suiteId}/cases`).then(r => r.data)
+export const fetchExecutionPlans = (caseId: string) =>
+  api.get<ExecutionPlan[]>(`/execution-plans/cases/${caseId}`).then(r => r.data)
+export const importLegacyExecutionPlan = (caseId: string, platform: string) =>
+  api.post<ExecutionPlan>(`/execution-plans/cases/${caseId}/import-legacy`, { platform }).then(r => r.data)
+export const createExecutionPlanVersion = (planId: string, body: {
+  steps: ExecutionPlanStep[]
+  metadata?: Record<string, unknown>
+  warnings?: string[]
+  platform?: string
+}) => api.post<ExecutionPlan>(`/execution-plans/${planId}/versions`, body).then(r => r.data)
