@@ -113,7 +113,37 @@ export default function LivePanel({ device, defaultMode = 'off', storageKey = 'l
   const [touchEnabled, setTouchEnabled] = useState(true)
   const [controlError, setControlError] = useState('')
   const pointerStart = useRef<{ x: number; y: number; at: number } | null>(null)
-  const controlMutation = useMutation({ mutationFn: (data: Parameters<typeof controlDevice>[1]) => controlDevice(device!.id, data), onError: (error: any) => setControlError(error?.response?.data?.detail || error?.message || '设备操作失败'), onSuccess: () => setControlError('') })
+  type QueuedControl = { deviceId: string; data: Parameters<typeof controlDevice>[1] }
+  const controlQueueRef = useRef<QueuedControl[]>([])
+  const controlQueueRunningRef = useRef(false)
+  const controlMutation = useMutation({
+    mutationFn: ({ deviceId, data }: QueuedControl) => controlDevice(deviceId, data),
+    onError: (error: any) => setControlError(error?.response?.data?.detail || error?.message || '设备操作失败'),
+    onSuccess: () => setControlError(''),
+  })
+  // Serialize manual inputs in arrival order. The UI remains interactive while
+  // one request is in flight, instead of dropping every subsequent gesture.
+  const enqueueControl = (data: Parameters<typeof controlDevice>[1]) => {
+    if (!device) return
+    if (controlQueueRef.current.length >= 12) {
+      setControlError('操作过于频繁，请稍后再试')
+      return
+    }
+    controlQueueRef.current.push({ deviceId: device.id, data })
+    if (controlQueueRunningRef.current) return
+    controlQueueRunningRef.current = true
+    void (async () => {
+      while (controlQueueRef.current.length > 0) {
+        const next = controlQueueRef.current.shift()!
+        try {
+          await controlMutation.mutateAsync(next)
+        } catch {
+          // Keep the queue moving; the mutation exposes the latest error.
+        }
+      }
+      controlQueueRunningRef.current = false
+    })()
+  }
   const [adbFailed, setAdbFailed] = useState(false)
   const [streamError, setStreamError] = useState('')
   const [renderer, setRenderer] = useState<'canvas' | 'webgl'>(() => localStorage.getItem('h264-renderer') === 'canvas' ? 'canvas' : 'webgl')
@@ -130,7 +160,7 @@ export default function LivePanel({ device, defaultMode = 'off', storageKey = 'l
   })
 
   // Keep the debug preview frame aligned with the decoded device frame dimensions.
-  useEffect(() => { setVideoAspectRatio(null); setVideoDimensions(null); setControlError(''); pointerStart.current = null }, [device?.id, mode, reloadKey])
+  useEffect(() => { setVideoAspectRatio(null); setVideoDimensions(null); setControlError(''); pointerStart.current = null; controlQueueRef.current = [] }, [device?.id, mode, reloadKey])
   const handleVideoSize = (width: number, height: number) => {
     if (!width || !height) return
     setVideoDimensions(current => current?.width === width && current?.height === height ? current : { width, height })
@@ -186,7 +216,7 @@ export default function LivePanel({ device, defaultMode = 'off', storageKey = 'l
     }
   }
   const handlePointerDown = (event: React.PointerEvent<HTMLDivElement>) => {
-    if (!forceCanvas2D || !touchEnabled || !supportsManualControl || !videoDimensions || controlMutation.isPending || event.button !== 0) return
+    if (!forceCanvas2D || !touchEnabled || !supportsManualControl || !videoDimensions || event.button !== 0) return
     const point = mapPointer(event)
     if (!point) return
     event.preventDefault()
@@ -207,10 +237,10 @@ export default function LivePanel({ device, defaultMode = 'off', storageKey = 'l
     const endCssX = end.x / videoDimensions!.width * rect.width
     const endCssY = end.y / videoDimensions!.height * rect.height
     const moved = Math.hypot(endCssX - startCssX, endCssY - startCssY) > 10
-    if (!moved) controlMutation.mutate({ action: 'tap', x: end.x, y: end.y, source_width: videoDimensions!.width, source_height: videoDimensions!.height })
-    else controlMutation.mutate({ action: 'swipe', x: start.x, y: start.y, x2: end.x, y2: end.y, source_width: videoDimensions!.width, source_height: videoDimensions!.height, duration_ms: Math.max(100, Math.min(1200, Date.now() - start.at)) })
+    if (!moved) enqueueControl({ action: 'tap', x: end.x, y: end.y, source_width: videoDimensions!.width, source_height: videoDimensions!.height })
+    else enqueueControl({ action: 'swipe', x: start.x, y: start.y, x2: end.x, y2: end.y, source_width: videoDimensions!.width, source_height: videoDimensions!.height, duration_ms: Math.max(100, Math.min(1200, Date.now() - start.at)) })
   }
-  const sendKey = (action: 'back' | 'home' | 'recent' | 'power') => { if (device) controlMutation.mutate({ action }) }
+  const sendKey = (action: 'back' | 'home' | 'recent' | 'power') => { if (device) enqueueControl({ action }) }
 
   return (
     <div className={forceCanvas2D ? 'overflow-hidden rounded-xl border border-hairline bg-white shadow-sm' : 'bg-white border rounded-lg p-3 lg:sticky lg:top-6'}>
@@ -221,8 +251,8 @@ export default function LivePanel({ device, defaultMode = 'off', storageKey = 'l
         </div>
         <div className="flex shrink-0 flex-wrap items-center justify-end gap-1.5">
           {forceCanvas2D && <>
-            <button type="button" title={touchEnabled ? '触控已启用' : '触控已禁用'} aria-label={touchEnabled ? '禁用触控' : '启用触控'} disabled={!supportsManualControl || !videoDimensions || controlMutation.isPending} onClick={() => setTouchEnabled(v => !v)} className={touchEnabled ? 'inline-flex h-8 w-8 items-center justify-center rounded-lg border border-primary/30 bg-primary-soft text-primary-deep hover:bg-primary-soft/80 disabled:opacity-40' : 'inline-flex h-8 w-8 items-center justify-center rounded-lg border border-hairline text-ink-mute hover:bg-canvas-soft disabled:opacity-40'}><ControlIcon name="hand" /></button>
-            <button type="button" title="电源键" aria-label="电源键" disabled={!supportsManualControl || controlMutation.isPending} onClick={() => sendKey('power')} className="inline-flex h-8 w-8 items-center justify-center rounded-lg border border-hairline text-ink hover:bg-canvas-soft disabled:opacity-40"><ControlIcon name="power" /></button>
+            <button type="button" title={touchEnabled ? '触控已启用' : '触控已禁用'} aria-label={touchEnabled ? '禁用触控' : '启用触控'} disabled={!supportsManualControl || !videoDimensions} onClick={() => setTouchEnabled(v => !v)} className={touchEnabled ? 'inline-flex h-8 w-8 items-center justify-center rounded-lg border border-primary/30 bg-primary-soft text-primary-deep hover:bg-primary-soft/80 disabled:opacity-40' : 'inline-flex h-8 w-8 items-center justify-center rounded-lg border border-hairline text-ink-mute hover:bg-canvas-soft disabled:opacity-40'}><ControlIcon name="hand" /></button>
+            <button type="button" title="电源键" aria-label="电源键" disabled={!supportsManualControl} onClick={() => sendKey('power')} className="inline-flex h-8 w-8 items-center justify-center rounded-lg border border-hairline text-ink hover:bg-canvas-soft disabled:opacity-40"><ControlIcon name="power" /></button>
             <button type="button" title="返回" aria-label="返回" disabled={!supportsManualControl || controlMutation.isPending} onClick={() => sendKey('back')} className="inline-flex h-8 w-8 items-center justify-center rounded-lg border border-hairline text-ink hover:bg-canvas-soft disabled:opacity-40"><ControlIcon name="back" /></button>
             <button type="button" title="主页" aria-label="主页" disabled={!supportsManualControl || controlMutation.isPending} onClick={() => sendKey('home')} className="inline-flex h-8 w-8 items-center justify-center rounded-lg border border-hairline text-ink hover:bg-canvas-soft disabled:opacity-40"><ControlIcon name="home" /></button>
             <button type="button" title="最近任务" aria-label="最近任务" disabled={!supportsManualControl || controlMutation.isPending} onClick={() => sendKey('recent')} className="inline-flex h-8 w-8 items-center justify-center rounded-lg border border-hairline text-ink hover:bg-canvas-soft disabled:opacity-40"><ControlIcon name="recent" /></button>
