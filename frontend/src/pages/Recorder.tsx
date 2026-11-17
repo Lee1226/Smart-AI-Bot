@@ -117,6 +117,7 @@ export default function Recorder() {
   const [realRecording, setRealRecording] = useState(false)
   const [realEvents, setRealEvents] = useState<RecordEvent[]>([])
   const [webEvents, setWebEvents] = useState<RecordEvent[]>([])
+  const [sessionStartSnapshot, setSessionStartSnapshot] = useState<SnapshotData | null>(null)
   const [selectedEventIndex, setSelectedEventIndex] = useState(0)
   const [previewSize, setPreviewSize] = useState({ width: 0, height: 0 })
   const [screenSize, setScreenSize] = useState({ width: 1080, height: 2400 })
@@ -397,6 +398,7 @@ export default function Recorder() {
     try {
       const { data } = await api.get<SnapshotData>(`/recorder/snapshot?device_id=${deviceId}`)
       applySnapshot(data)
+      setSessionStartSnapshot(data)
       await api.post(`/recorder/session/start?device_id=${deviceId}`)
       setRecording(true)
     } catch (e: unknown) {
@@ -449,7 +451,24 @@ export default function Recorder() {
         suite_name: suiteName.trim(),
         expected: expected.trim(),
         steps,
-        events: (realEvents.length > 0 ? realEvents : webEvents).map(({ screenshot_b64, ...event }) => event),
+        events: (() => {
+          const recordedEvents = (realEvents.length > 0 ? realEvents : webEvents)
+            .map(({ screenshot_b64, ...event }) => event)
+          if (recordedEvents.length > 0 && sessionStartSnapshot) {
+            recordedEvents[0] = {
+              ...recordedEvents[0],
+              session_start_snapshot: {
+                ui_text: sessionStartSnapshot.ui_text,
+                elements: sessionStartSnapshot.elements,
+                screen: {
+                  width: sessionStartSnapshot.screen_width ?? 0,
+                  height: sessionStartSnapshot.screen_height ?? 0,
+                },
+              },
+            }
+          }
+          return recordedEvents
+        })(),
       })
       setSaved({ suiteId: data.suite_id })
     } catch (e: unknown) {
@@ -485,11 +504,13 @@ export default function Recorder() {
     setError('')
     setRealEvents([])
     setWebEvents([])
+    setSessionStartSnapshot(null)
     setSelectedEventIndex(0)
     realEventsCursor.current = 0
     try {
       const snapshot = await api.get<SnapshotData>(`/recorder/snapshot?device_id=${deviceId}`)
       applySnapshot(snapshot.data)
+      setSessionStartSnapshot(snapshot.data)
       const { data } = await api.post<{ mode?: string; message?: string }>(`/recorder/record/start?device_id=${deviceId}`)
       if (data.mode === 'manual') {
         setError(data.message || '当前连接方式不支持真机触摸采集，请使用网页操作录制。')
