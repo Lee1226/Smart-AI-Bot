@@ -2,6 +2,8 @@
 import asyncio
 import secrets
 import time
+import re
+from datetime import datetime
 from typing import List, Literal
 
 from fastapi import APIRouter, Depends, HTTPException, Request
@@ -10,7 +12,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from db.database import AsyncSessionLocal
-from db.models import Device
+from db.models import Device, DeviceApp
 from ws.portal_ws import connected_devices
 from agent.ws_device import WebSocketDevice
 from agent import local_adb
@@ -229,16 +231,20 @@ class InstallRequest(BaseModel):
     apk_url: str
 
 
+class DeviceAppUpdateRequest(BaseModel):
+    app_name: str = ""
+    is_test_app: bool = False
+
+
 @router.get("/{device_id}/apps")
 async def list_device_apps(device_id: str, request: Request, db: AsyncSession = Depends(get_db)):
-    """List installed Android packages from an owned, connected local ADB device."""
+    """Discover launcher apps and reconcile them with the persisted app library."""
     account_id = getattr(request.state, "account_id", None)
     if not account_id:
         raise HTTPException(status_code=401, detail="未登录")
-    query = select(Device).where(Device.id == device_id, Device.connection_type == "adb_usb")
-    if account_id:
-        query = query.where(Device.account_id == account_id)
-    device = (await db.execute(query)).scalar_one_or_none()
+    device = (await db.execute(select(Device).where(
+        Device.id == device_id, Device.connection_type == "adb_usb", Device.account_id == account_id
+    ))).scalar_one_or_none()
     if not device:
         raise HTTPException(status_code=404, detail="设备不存在或无权访问")
     if not local_adb.is_bound(device_id):
@@ -251,11 +257,90 @@ async def list_device_apps(device_id: str, request: Request, db: AsyncSession = 
         async with lock:
             packages = await local_adb.rpc(device_id, "packages", timeout=35)
     except Exception as exc:
-        raise HTTPException(status_code=502, detail=f"读取应用包名失败：{exc}")
-    return {"device_id": device_id, "apps": [
-        {"package_name": item.get("packageName", ""), "app_name": item.get("packageName", "")}
-        for item in packages if item.get("packageName")
-    ]}
+        raise HTTPException(status_code=502, detail=f"读取应用包名失败：{exc}") from exc
+
+    now = datetime.utcnow()
+    rows = (await db.execute(select(DeviceApp).where(
+        DeviceApp.account_id == account_id, DeviceApp.device_id == device_id
+    ))).scalars().all()
+    by_package = {row.package_name: row for row in rows}
+    current_packages = {str(item.get("packageName", "")).strip() for item in packages}
+    current_packages.discard("")
+    for package_name in current_packages:
+        row = by_package.get(package_name)
+        if row:
+            row.installed = True
+            row.last_seen_at = now
+        else:
+            db.add(DeviceApp(account_id=account_id, device_id=device_id, package_name=package_name,
+                             app_name="", is_test_app=False, installed=True,
+                             first_seen_at=now, last_seen_at=now))
+    for package_name, row in by_package.items():
+        if package_name not in current_packages:
+            row.installed = False
+    await db.commit()
+    rows = (await db.execute(select(DeviceApp).where(
+        DeviceApp.account_id == account_id, DeviceApp.device_id == device_id
+    ).order_by(DeviceApp.is_test_app.desc(), DeviceApp.app_name, DeviceApp.package_name))).scalars().all()
+    return {"device_id": device_id, "apps": [{
+        "id": row.id, "package_name": row.package_name,
+        "app_name": row.app_name, "is_test_app": row.is_test_app,
+        "installed": row.installed,
+        "first_seen_at": row.first_seen_at.isoformat() if row.first_seen_at else "",
+        "last_seen_at": row.last_seen_at.isoformat() if row.last_seen_at else "",
+    } for row in rows]}
+
+
+@router.put("/{device_id}/apps/{package_name}")
+async def update_device_app(device_id: str, package_name: str, req: DeviceAppUpdateRequest,
+                            request: Request, db: AsyncSession = Depends(get_db)):
+    account_id = getattr(request.state, "account_id", None)
+    if not account_id:
+        raise HTTPException(status_code=401, detail="未登录")
+    if not re.fullmatch(r"[A-Za-z0-9_.]+", package_name):
+        raise HTTPException(status_code=400, detail="Package 名称格式无效")
+    row = (await db.execute(select(DeviceApp).where(
+        DeviceApp.account_id == account_id, DeviceApp.device_id == device_id,
+        DeviceApp.package_name == package_name
+    ))).scalar_one_or_none()
+    if not row:
+        raise HTTPException(status_code=404, detail="应用记录不存在，请先刷新设备应用列表")
+    row.app_name = req.app_name.strip()[:80]
+    row.is_test_app = bool(req.is_test_app)
+    await db.commit()
+    await db.refresh(row)
+    return {"id": row.id, "package_name": row.package_name, "app_name": row.app_name,
+            "is_test_app": row.is_test_app, "installed": row.installed}
+
+
+@router.post("/{device_id}/apps/{package_name}/launch")
+async def launch_device_app(device_id: str, package_name: str, request: Request,
+                            db: AsyncSession = Depends(get_db)):
+    account_id = getattr(request.state, "account_id", None)
+    if not account_id:
+        raise HTTPException(status_code=401, detail="未登录")
+    if not re.fullmatch(r"[A-Za-z0-9_.]+", package_name):
+        raise HTTPException(status_code=400, detail="Package 名称格式无效")
+    device = (await db.execute(select(Device).where(
+        Device.id == device_id, Device.account_id == account_id,
+        Device.connection_type == "adb_usb"
+    ))).scalar_one_or_none()
+    if not device:
+        raise HTTPException(status_code=404, detail="设备不存在或无权访问")
+    if not local_adb.is_bound(device_id):
+        raise HTTPException(status_code=409, detail="本地 ADB 设备未连接")
+    from core.device_scheduler import locks
+    lock = locks.setdefault(device_id, asyncio.Lock())
+    if lock.locked():
+        raise HTTPException(status_code=409, detail="设备正在执行测试任务，请完成后再启动应用")
+    try:
+        async with lock:
+            result = await local_adb.rpc(device_id, "app", {"package": package_name}, timeout=35)
+        if isinstance(result, str) and ("no activities found" in result.lower() or "monkey aborted" in result.lower() or "error:" in result.lower()):
+            raise RuntimeError(result)
+    except Exception as exc:
+        raise HTTPException(status_code=502, detail=f"启动应用失败：{exc}") from exc
+    return {"ok": True, "device_id": device_id, "package_name": package_name, "result": result}
 
 
 @router.post("/{device_id}/install")
