@@ -110,3 +110,20 @@ async def test_test_case_persists_recorder_event_json():
         await session.refresh(case)
         assert json.loads(case.recorder_events)[0]["target"]["text"] == "登录"
     await engine.dispose()
+
+
+
+def test_replay_locator_prefers_clickable_ancestor_target():
+    steps = [RecordedStep(action="tap", args={"x": 8, "y": 9}, description="tap icon")]
+    events = [{
+        "target": {
+            "text": "icon", "resource_id": "app:id/icon",
+            "tap_target": {
+                "text": "打开设置", "resourceId": "app:id/settings_row",
+                "className": "android.view.ViewGroup",
+            },
+        },
+    }]
+    replay = json.loads(_to_replay_steps(steps, events))
+    assert replay[0]["locator"]["text"] == "打开设置"
+    assert replay[0]["locator"]["resource_id"] == "app:id/settings_row"
