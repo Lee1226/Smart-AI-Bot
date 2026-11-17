@@ -107,10 +107,6 @@ export default function ExecutionPlanManager({ suiteId, platform }: { suiteId: s
     const step = draftSteps[index]
     patchStep(index, { locator: { ...(step.locator || {}), [key]: value } })
   }
-  const patchFallback = (index: number, key: string, value: unknown) => {
-    const step = draftSteps[index]
-    patchStep(index, { fallback: { ...(step.fallback || { type: 'coordinate', coordinates: {} }), [key]: value } })
-  }
   const patchCoordinate = (index: number, key: string, value: string) => {
     const step = draftSteps[index]
     const fallback = (step.fallback || { type: 'coordinate', coordinates: {} }) as Record<string, unknown>
