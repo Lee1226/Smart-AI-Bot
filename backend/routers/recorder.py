@@ -58,9 +58,9 @@ def _to_replay_steps(
 ) -> str:
     """Convert recorded steps into a deterministic replay plan (JSON string).
 
-    Each entry carries the action + its coordinates/args + delay_ms (time to wait
-    BEFORE executing it). An empty step list → "". Replay runs execute these
-    verbatim, skipping per-step AI decisions.
+    Each entry carries the action + coordinates/args and preserves legacy
+    delay_ms for backward-compatible replay. New plan imports treat that value
+    as an observed inter-action gap, not a measured app-settle wait.
     """
     replay: List[dict] = []
     event_list = events or []
