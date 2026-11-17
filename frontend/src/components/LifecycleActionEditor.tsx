@@ -1,5 +1,3 @@
-import type { ReactNode } from 'react'
-
 export interface LifecycleAction {
   id: string
   action: 'stop_app' | 'start_app' | 'global_action' | 'press_key' | 'wait' | string
