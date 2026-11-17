@@ -462,9 +462,15 @@ export default function ExecutionPlanManager({ suiteId, platform, device }: { su
                       </div>
                     )}
                     {step.action === 'start_app' && (
-                      <div className="md:col-span-2">
+                      <div className="md:col-span-2 space-y-2">
+                        <label className={labelClass}>选择已标记应用</label>
+                        <select className={fieldClass} value="" onChange={e => { const pkg = e.target.value; if (pkg) patchStep(index, { args: { ...(step.args || {}), package_name: pkg, package: pkg } }) }}>
+                          <option value="">从常用应用中选择…</option>
+                          {favoritePackages.map(pkg => <option key={pkg} value={pkg}>{installedApps.find(app => app.package_name === pkg)?.app_name || pkg} · {pkg}</option>)}
+                        </select>
                         <label className={labelClass}>{t('应用包名', 'App package')}</label>
                         <input className={fieldClass} value={String(step.args?.package_name || step.args?.package || '')} onChange={e => patchStep(index, { args: { ...(step.args || {}), package_name: e.target.value, package: e.target.value } })} placeholder="com.example.app" />
+                        <p className="text-[10px] text-gray-400">也可以直接填写包名；标记的常用应用可从上方快速选择。</p>
                       </div>
                     )}
                     {(step.action === 'swipe' || step.action === 'scroll') && (
