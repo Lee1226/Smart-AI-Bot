@@ -229,7 +229,7 @@ export default function ExecutionPlanManager({ suiteId, platform }: { suiteId: s
                       {typeof step.import_status === 'string' && step.import_status !== 'ready' && <span className="text-[10px] text-amber-600">{step.import_status === 'needs_locator' ? t('需要补充定位', 'Locator needed') : t('待检查', 'Review')}</span>}
                     </div>
                     <p className="mt-1 truncate text-xs text-gray-500">
-                      {String(step.locator?.text || step.locator?.resource_id || step.args?.text || step.args?.package || t('尚未设置目标控件或参数', 'Target or arguments not configured'))}
+                      {String(step.locator?.text || step.locator?.resource_id || step.args?.text || step.args?.package_name || step.args?.package || t('尚未设置目标控件或参数', 'Target or arguments not configured'))}
                     </p>
                   </div>
                 </div>
@@ -274,7 +274,7 @@ export default function ExecutionPlanManager({ suiteId, platform }: { suiteId: s
                     <div>
                       <label className={labelClass}>{t('执行方式', 'Execution strategy')}</label>
                       <select className={fieldClass} value={step.executor} onChange={e => patchStep(index, { executor: e.target.value as ExecutionPlanStep['executor'] })}>
-                        <option value="system">{t('系统 API / Package 执行', 'System API / Package')}</option>
+                        <option value="system" disabled={!["start_app", "global_action", "press_key"].includes(step.action)}>{t('系统 API / Package 执行', 'System API / Package')}</option>
                         <option value="deterministic">{t('UI 确定性自动执行（优先）', 'Deterministic UI automation (preferred)')}</option>
                         <option value="hybrid">{t('混合执行（必要时调用 AI）', 'Hybrid (AI fallback)')}</option>
                         <option value="ai">{t('AI 执行', 'AI execution')}</option>
