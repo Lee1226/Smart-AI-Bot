@@ -18,6 +18,7 @@ from sqlalchemy import select, update
 from agent.ws_device import WebSocketDevice
 from agent.verifier import LLMVerifier
 from core.run_recorder import RunRecorder
+from core.lifecycle_actions import run_lifecycle_actions
 from core.settings_store import (
     apply_aws_env,
     build_fallback_chain,
@@ -193,45 +194,6 @@ async def _execute_ai(
     return await agent.run(TestCaseData(path=context, expected=expected))
 
 
-async def _run_lifecycle_actions(device: WebSocketDevice, actions: list, phase: str, emit) -> None:
-    enabled = [item for item in actions if isinstance(item, dict) and item.get("enabled", True)]
-    if not enabled:
-        await emit(f"{phase}：未配置启用的操作，跳过")
-        return
-    await emit(f"{phase}：开始执行 {len(enabled)} 个操作")
-    for index, item in enumerate(enabled):
-        action = str(item.get("action") or "").strip().lower()
-        args = item.get("args") if isinstance(item.get("args"), dict) else {}
-        try:
-            if action == "stop_app":
-                package = str(args.get("package_name") or args.get("package") or "").strip()
-                if not package:
-                    raise ValueError("强制停止应用缺少包名")
-                result = await device.stop_app(package)
-            elif action == "start_app":
-                package = str(args.get("package_name") or args.get("package") or "").strip()
-                if not package:
-                    raise ValueError("启动应用缺少包名")
-                result = await device.start_app(package, str(args.get("activity") or ""))
-                if str(result).startswith("ERROR:"):
-                    raise RuntimeError(result)
-            elif action == "global_action":
-                result = await device.global_action(str(args.get("action") or ""))
-            elif action == "press_key":
-                result = await device.press_key(str(args.get("key") or ""))
-            elif action == "wait":
-                duration_ms = max(0, min(float(args.get("duration_ms", 1000)), 60000))
-                await asyncio.sleep(duration_ms / 1000)
-                result = f"等待 {duration_ms:g} ms"
-            else:
-                raise ValueError(f"不支持的生命周期操作：{action or '(empty)'}")
-            await emit(f"  ✓ {index + 1}/{len(enabled)} {action}：{result}")
-        except Exception as exc:
-            await emit(f"  ✗ {index + 1}/{len(enabled)} {action}：{exc}")
-            if str(item.get("on_failure") or "stop").lower() != "continue":
-                raise RuntimeError(f"{phase}第 {index + 1} 个操作失败：{exc}") from exc
-
-
 async def execute_execution_plan_run(
     run_id: str,
     plan_id: str,
@@ -303,7 +265,7 @@ async def execute_execution_plan_run(
         if await recorder.start(device_id):
             await emit("屏幕录制已启动")
 
-        await _run_lifecycle_actions(device, lifecycle_pre_actions, "执行前处理", emit)
+        await run_lifecycle_actions(device, lifecycle_pre_actions, "执行前处理", emit)
 
         action_history = []
         step_count = 0
@@ -464,7 +426,7 @@ async def execute_execution_plan_run(
     finally:
         if lifecycle_device is not None and lifecycle_post_actions:
             try:
-                await _run_lifecycle_actions(lifecycle_device, lifecycle_post_actions, "执行后处理", emit)
+                await run_lifecycle_actions(lifecycle_device, lifecycle_post_actions, "执行后处理", emit)
             except Exception as cleanup_error:
                 logger.exception("Post-execution lifecycle actions failed: %s", run_id)
                 try:
