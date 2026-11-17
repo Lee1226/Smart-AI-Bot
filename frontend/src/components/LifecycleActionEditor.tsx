@@ -127,7 +127,7 @@ export default function LifecycleActionEditor({
               {item.action === 'swipe' && (
                 <div className="grid grid-cols-2 gap-2">
                   {(['x1', 'y1', 'x2', 'y2'] as const).map(key => <label key={key} className="text-[11px] text-gray-500">{key.toUpperCase()}（设备像素）
-                    <input type="number" className={inputClass} value={String(item.args[key] ?? '')} onChange={e => patch(index, { args: { [key]: Number(e.target.value) } })} />
+                    <input type="number" className={inputClass} value={String(item.args[key] ?? '')} onChange={e => patch(index, { args: { [key]: e.target.value === '' ? '' : Number(e.target.value) } })} />
                   </label>)}
                   <label className="col-span-2 text-[11px] text-gray-500">滑动时长（毫秒）
                     <input type="number" min="1" max="10000" className={inputClass} value={String(item.args.duration_ms ?? 500)} onChange={e => patch(index, { args: { duration_ms: Math.max(1, Math.min(10000, Number(e.target.value) || 500)) } })} />
