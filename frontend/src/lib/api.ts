@@ -842,6 +842,13 @@ export const createExecutionPlanVersion = (planId: string, body: {
   platform?: string
 }) => api.post<ExecutionPlan>(`/execution-plans/${planId}/versions`, body).then(r => r.data)
 
+export const updateExecutionPlan = (planId: string, body: {
+  steps: ExecutionPlanStep[]
+  metadata?: Record<string, unknown>
+  warnings?: string[]
+  platform?: string
+}) => api.put<ExecutionPlan>(`/execution-plans/${planId}`, body).then(r => r.data)
+
 export const runExecutionPlan = (planId: string, body: {
   device_id: string
   provider?: string
