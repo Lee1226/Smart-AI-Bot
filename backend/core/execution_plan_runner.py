@@ -60,7 +60,8 @@ def build_replay_step(step: Dict[str, Any]) -> Dict[str, Any]:
     if action == "tap":
         if coords:
             raw["x"], raw["y"] = coords.get("x"), coords.get("y")
-            if fallback.get("coordinate_space"):\n                raw["coordinate_space"] = fallback["coordinate_space"]
+            if fallback.get("coordinate_space"):
+                raw["coordinate_space"] = fallback["coordinate_space"]
         elif args.get("x") is not None and args.get("y") is not None:
             raw["x"], raw["y"] = args["x"], args["y"]
             raw["coordinate_space"] = args.get("coordinate_space") or "device_px"
