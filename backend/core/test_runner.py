@@ -149,26 +149,6 @@ async def _operator_project_app_package(suite_id: str) -> str:
         return ""
 
 
-async def _force_stop_app_after_run(device, package: str, emit) -> None:
-    """Force-stop the tested app once a run finishes, without blind gestures.
-
-    The configured suite package wins: a permission dialog or external handoff
-    must not make cleanup stop a system package instead of the app under test.
-    Best-effort cleanup never changes the already-computed run result.
-    """
-    try:
-        current_package = await device.current_package()
-        target_package = package or current_package
-        if not target_package:
-            await emit("(could not force-stop app: target package is unknown)")
-            return
-        result = await device.stop_app(target_package)
-        await emit(f"🛑 {result}")
-    except Exception as exc:
-        label = package or "current app"
-        await emit(f"(could not force-stop {label}: {exc})")
-
-
 async def _project_kb_roots(suite_id: str) -> list:
     """Extra KB dirs from the Project Profile matching this suite's app_package.
 
@@ -439,7 +419,6 @@ async def execute_batch_run(run_id: str, state: "RunState", base_path: str,
                 .values(status="done", finished_at=datetime.utcnow()))
             await session.commit()
         await emit(f"\nBatch complete: {passed} passed, {failed} failed, {errored} error(s), {skipped} skipped")
-        await _force_stop_app_after_run(device, project_app_package, emit)
 
     except asyncio.CancelledError:
         await emit("⛔ Run cancelled by user")
@@ -688,7 +667,6 @@ async def execute_tree_run(run_id: str, state: "RunState", max_steps: int = 20,
                 .values(status="done", finished_at=datetime.utcnow()))
             await session.commit()
         await emit(f"\nTree run complete: {passed} passed, {failed} failed, {errored} error(s), {skipped} skipped")
-        await _force_stop_app_after_run(device, project_app_package, emit)
 
     except asyncio.CancelledError:
         await emit("⛔ Run cancelled by user")
@@ -1322,7 +1300,6 @@ async def execute_run(
             f"\nRun complete: {passed} passed, {failed} failed, "
             f"{errored} error(s), {skipped} skipped"
         )
-        await _force_stop_app_after_run(device, project_app_package, emit)
 
         # Send webhook notification
         try:
