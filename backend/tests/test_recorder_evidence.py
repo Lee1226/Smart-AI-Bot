@@ -59,3 +59,24 @@ def test_replay_does_not_fabricate_screen_dimensions():
     steps = [RecordedStep(action="tap", args={"x": 1, "y": 2}, description="tap")]
     replay = json.loads(_to_replay_steps(steps, [{"coordinates": {"space": "device_px"}}]))
     assert "screen_size" not in replay[0]
+
+
+
+def test_replay_uses_nearby_observed_target_and_keeps_gap_as_timing_metadata():
+    steps = [RecordedStep(
+        action="tap", args={"x": 30, "y": 40, "delay_ms": 850}, description="tap",
+    )]
+    events = [{
+        "event_id": "portal-event-7",
+        "target": {"text": "", "resource_id": "", "class_name": ""},
+        "observed_target": {
+            "text": "继续", "resourceId": "app:id/continue",
+            "className": "android.widget.Button", "clickable": True,
+        },
+        "ui_observation": {"screen": {"width": 720, "height": 1600}},
+    }]
+    replay = json.loads(_to_replay_steps(steps, events))
+    assert replay[0]["locator"]["resource_id"] == "app:id/continue"
+    assert replay[0]["source_event_id"] == "portal-event-7"
+    assert replay[0]["screen_size"] == {"width": 720, "height": 1600}
+    assert replay[0]["inter_action_gap_ms"] == 850
