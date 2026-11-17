@@ -82,11 +82,15 @@ def _to_replay_steps(
             step["target"] = target
         if event.get("event_id"):
             step["source_event_id"] = event["event_id"]
+        # A touched child may delegate interaction to its clickable ancestor.
+        # Keep the raw child evidence, but prefer the recorded tap target for replay.
+        tap_target = target.get("tap_target") if isinstance(target.get("tap_target"), dict) else {}
+        locator_source = tap_target or target
         locator = {
-            "resource_id": target.get("resource_id") or target.get("resourceId"),
-            "text": target.get("text"),
-            "content_description": target.get("content_description") or target.get("contentDescription"),
-            "class_name": target.get("class_name") or target.get("className"),
+            "resource_id": locator_source.get("resource_id") or locator_source.get("resourceId"),
+            "text": locator_source.get("text"),
+            "content_description": locator_source.get("content_description") or locator_source.get("contentDescription"),
+            "class_name": locator_source.get("class_name") or locator_source.get("className"),
         }
         locator = {key: value for key, value in locator.items() if value}
         if locator:
