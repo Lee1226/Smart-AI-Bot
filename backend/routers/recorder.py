@@ -741,6 +741,25 @@ async def save_recording(req: SaveRequest, request: Request):
     return SaveResponse(suite_id=suite.id, case_id=case.id)
 
 
+@router.get("/cases/{case_id}/events")
+async def get_recorded_case_events(case_id: str, request: Request):
+    """Read back the durable event/UI evidence for a recorded test case."""
+    account_id = request.state.account_id
+    async with AsyncSessionLocal() as db:
+        case = (await db.execute(select(TestCase).where(
+            TestCase.id == case_id,
+            TestCase.account_id == account_id,
+        ))).scalar_one_or_none()
+    if not case:
+        raise HTTPException(status_code=404, detail="Recorded test case not found")
+    try:
+        events = json.loads(case.recorder_events or "[]")
+    except json.JSONDecodeError:
+        logger.exception("Invalid recorder_events JSON for case %s", case_id)
+        raise HTTPException(status_code=500, detail="Stored recorder evidence is invalid")
+    return {"case_id": case.id, "events": events}
+
+
 @router.get("/raw-state")
 async def raw_state(device_id: str, request: Request):
     """DEBUG: return raw Portal state RPC response (unprocessed a11y tree)."""
