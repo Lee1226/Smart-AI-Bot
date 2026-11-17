@@ -83,7 +83,7 @@ async def verify_plan_condition(device: WebSocketDevice, condition: Optional[Dic
     if kind in {"delay", "wait"}:
         await asyncio.sleep(max(0, min(float(condition.get("duration_ms", 0)) / 1000, 60)))
         return True
-    if kind in {"element_visible", "element_exists", "text_visible"}:
+    if kind in {"element_visible", "element_exists", "text_visible", "text_present"}:
         expected = str(condition.get("target") or condition.get("text") or condition.get("value") or "").strip()
         if not expected:
             raise ValueError("verification target is required")
