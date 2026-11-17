@@ -65,6 +65,7 @@ interface RecordEvent {
   before?: { ui_text?: string; elements?: Element[]; screen?: { width: number; height: number }; captured_at_ms?: number }
   after?: { ui_text?: string; elements?: Element[]; screen?: { width: number; height: number }; captured_at_ms?: number }
   ui_observation?: { phase: string; ui_text: string; elements: Element[]; screen: { width: number; height: number }; captured_at_ms: number }
+  session_start_snapshot?: { ui_text: string; elements: Element[]; screen: { width: number; height: number } }
   screenshot_evidence?: { captured?: boolean; captured_at_ms?: number; storage?: string }
   [key: string]: unknown
 }
@@ -915,9 +916,13 @@ export default function Recorder() {
                     {eventTarget?.tap_evidence && <div><span className="text-gray-400">点击证据：</span>{eventTarget.tap_evidence}</div>}
                     {!!eventTarget?.capabilities?.length && <div><span className="text-gray-400">Capabilities：</span>{eventTarget.capabilities.join(', ')}</div>}
                   </div>
-                  {(selectedEvent.before || selectedEvent.after || selectedEvent.ui_observation) && <details className="rounded-lg border">
+                  {(selectedEvent.before || selectedEvent.after || selectedEvent.ui_observation || selectedEvent.session_start_snapshot) && <details className="rounded-lg border">
                     <summary className="cursor-pointer px-3 py-2 text-xs font-medium text-gray-600">{t('查看操作前后 UI Tree', 'Inspect before/after UI trees')}</summary>
                     <div className="space-y-2 border-t p-2 text-xs">
+                      {selectedEvent.session_start_snapshot && <details>
+                        <summary className="cursor-pointer font-medium">{t('录制开始时页面', 'Page at recording start')} · {selectedEvent.session_start_snapshot.elements?.length ?? 0} {t('个元素', 'elements')}</summary>
+                        <pre className="max-h-48 overflow-auto whitespace-pre-wrap break-all bg-slate-50 p-2">{JSON.stringify(selectedEvent.session_start_snapshot, null, 2)}</pre>
+                      </details>}
                       {selectedEvent.before && <details>
                         <summary className="cursor-pointer font-medium">{t('操作前', 'Before')} · {selectedEvent.before.elements?.length ?? 0} {t('个元素', 'elements')}</summary>
                         <pre className="max-h-48 overflow-auto whitespace-pre-wrap break-all bg-slate-50 p-2">{JSON.stringify(selectedEvent.before, null, 2)}</pre>
