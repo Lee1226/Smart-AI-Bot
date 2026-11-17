@@ -27,6 +27,12 @@ def test_import_preserves_semantic_locator_and_coordinates():
     assert step["fallback"]["coordinate_space"] == "device_px"
     assert step["wait_condition"] is None
     assert step["timing"]["inter_action_gap_ms"] == 300
+    assert step["intent"] == {
+        "description": "",
+        "expected_result": "",
+        "source": "legacy_import",
+        "status": "needs_confirmation",
+    }
 
 
 def test_start_app_is_imported_as_system_action_without_ui_locator():
@@ -64,6 +70,8 @@ def test_unknown_action_is_not_silently_marked_ready():
     assert steps[0]["import_status"] == "unsupported"
     assert steps[0]["action"] == "launch_magic"
     assert warnings
+    assert steps[0]["intent"]["status"] == "needs_confirmation"
+    assert steps[0]["intent"]["source"] == "legacy_import"
 
 
 def test_invalid_or_empty_legacy_data_is_rejected():
