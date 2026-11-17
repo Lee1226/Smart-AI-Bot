@@ -47,7 +47,7 @@ interface RecordEvent {
   timestamp_ms?: number
   received_at_ms?: number
   coordinates?: { space?: string; x?: number; y?: number; x1?: number; y1?: number; x2?: number; y2?: number }
-  target?: { text?: string; content_description?: string; contentDescription?: string; resource_id?: string; resourceId?: string; class_name?: string; className?: string; css_selector?: string; test_id?: string; bounds?: { left: number; top: number; right: number; bottom: number }; clickable?: boolean; enabled?: boolean; visible?: boolean; tap_candidate?: boolean; tap_evidence?: string; focusable?: boolean; checkable?: boolean; longClickable?: boolean; editable?: boolean; scrollable?: boolean; capabilities?: string[]; parentPath?: string[]; parent_path?: string[] }
+  target?: { text?: string; content_description?: string; contentDescription?: string; resource_id?: string; resourceId?: string; class_name?: string; className?: string; css_selector?: string; test_id?: string; bounds?: { left: number; top: number; right: number; bottom: number } | null; clickable?: boolean; enabled?: boolean; visible?: boolean; tap_candidate?: boolean; tap_evidence?: string; focusable?: boolean; checkable?: boolean; longClickable?: boolean; editable?: boolean; scrollable?: boolean; capabilities?: string[]; parentPath?: string[]; parent_path?: string[] }
   text?: string
   contentDescription?: string
   resourceId?: string
@@ -82,6 +82,8 @@ interface ActionData extends SnapshotData {
   result: string
   description: string
   event?: RecordEvent | null
+  before_screenshot_b64?: string
+  screenshot_captured_at_ms?: number
 }
 
 const BTN = 'px-3 py-1.5 text-xs rounded border font-medium disabled:opacity-40 disabled:cursor-not-allowed transition-colors'
