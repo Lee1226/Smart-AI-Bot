@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import json
+from datetime import datetime
 from typing import Any, Dict, List, Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Request
@@ -238,7 +239,7 @@ async def run_execution_plan(
         await start_execution_plan_run(run.id, plan.id, max_steps=max(1, min(body.max_steps, 20)))
     except Exception as exc:
         await db.execute(update(TestRun).where(TestRun.id == run.id).values(
-            status="error", finished_at=__import__("datetime").datetime.utcnow()
+            status="error", finished_at=datetime.utcnow()
         ))
         await db.execute(update(TestResult).where(
             TestResult.run_id == run.id, TestResult.status == "pending"
