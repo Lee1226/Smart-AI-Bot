@@ -102,6 +102,7 @@ export default function ExecutionPlanManager({ suiteId, platform, device }: { su
       ...step,
       args: { ...(step.args || {}) },
       locator: { ...(step.locator || {}) },
+      intent: step.intent ? { ...step.intent } : { description: '', expected_result: '', source: 'legacy_import', status: 'needs_confirmation' },
       fallback: step.fallback ? { ...step.fallback } : null,
       wait_condition: step.wait_condition ? { ...step.wait_condition } : null,
       verification: step.verification ? { ...step.verification } : null,
@@ -120,6 +121,12 @@ export default function ExecutionPlanManager({ suiteId, platform, device }: { su
   const patchLocator = (index: number, key: string, value: unknown) => {
     const step = draftSteps[index]
     patchStep(index, { locator: { ...(step.locator || {}), [key]: value } })
+  }
+  const patchIntent = (index: number, patch: Record<string, unknown>) => {
+    const step = draftSteps[index]
+    const current = (step.intent || { description: '', expected_result: '', source: 'legacy_import', status: 'needs_confirmation' }) as Record<string, unknown>
+    const contentEdited = Object.keys(patch).some(key => key === 'description' || key === 'expected_result')
+    patchStep(index, { intent: { ...current, ...patch, ...(contentEdited ? { source: 'user_edited', status: 'needs_confirmation' } : {}) } })
   }
   const patchCoordinate = (index: number, key: string, value: string) => {
     const step = draftSteps[index]
@@ -145,6 +152,7 @@ export default function ExecutionPlanManager({ suiteId, platform, device }: { su
       action: 'tap', args: {}, executor: 'deterministic',
       locator: {}, fallback: null, precondition: null,
       wait_condition: null, verification: null, on_failure: 'fail',
+      intent: { description: '', expected_result: '', source: 'manual', status: 'needs_confirmation' },
       import_status: 'manual',
     }])
   }
@@ -331,12 +339,10 @@ export default function ExecutionPlanManager({ suiteId, platform, device }: { su
                       <span className={`rounded px-1.5 py-0.5 text-[10px] ${step.executor === 'system' ? 'bg-sky-50 text-sky-700' : step.executor === 'deterministic' ? 'bg-green-50 text-green-700' : step.executor === 'hybrid' ? 'bg-blue-50 text-blue-700' : 'bg-amber-50 text-amber-700'}`}>{step.executor === 'system' ? t('系统 API', 'System API') : step.executor === 'deterministic' ? t('UI 自动化', 'UI automation') : step.executor === 'hybrid' ? t('混合执行', 'Hybrid') : 'AI'}</span>
                       {typeof step.import_status === 'string' && step.import_status !== 'ready' && <span className="text-[10px] text-amber-600">{step.import_status === 'needs_locator' ? t('需要补充定位', 'Locator needed') : t('待检查', 'Review')}</span>}
                     </div>
-                    <p className="mt-1 truncate text-xs text-gray-500">
-                      {String(step.locator?.text || step.locator?.resource_id || step.args?.text || step.args?.package_name || step.args?.package || t('尚未设置目标控件或参数', 'Target or arguments not configured'))}
-                    </p>
-                    <button type="button" disabled={!device || executingStep !== null} onClick={() => void executeDeviceStep(step, i)} className="mt-2 rounded-md border border-blue-200 bg-blue-50 px-2.5 py-1.5 text-[11px] font-medium text-blue-700 disabled:opacity-40">
-                      {executingStep === i ? '执行中…' : '单步执行'}
-                    </button>
+                    <p className="mt-1 text-xs text-gray-600">{String(step.intent?.description || t('尚未填写操作意图', 'No operation intent defined'))}</p>
+                    <p className="mt-1 truncate text-[11px] text-gray-400">{String(step.locator?.text || step.locator?.resource_id || step.args?.text || step.args?.package_name || step.args?.package || t('尚未设置目标控件或参数', 'Target or arguments not configured'))}</p>
+                    {step.intent?.status !== 'confirmed' && <span className="mt-1 inline-block rounded bg-amber-50 px-1.5 py-0.5 text-[10px] text-amber-700">{t('操作意图待确认', 'Intent needs confirmation')}</span>}
+                    <button type="button" disabled={!device || executingStep !== null || step.executor === 'ai' || step.executor === 'hybrid'} onClick={() => void executeDeviceStep(step, i)} title={step.executor === 'ai' || step.executor === 'hybrid' ? t('AI / 混合计划执行器尚未接入', 'AI / hybrid plan executor is not connected yet') : undefined} className="mt-2 rounded-md border border-blue-200 bg-blue-50 px-2.5 py-1.5 text-[11px] font-medium text-blue-700 disabled:opacity-40">{step.executor === 'ai' || step.executor === 'hybrid' ? t('执行器未接入', 'Executor unavailable') : executingStep === i ? '执行中…' : '单步执行'}</button>
                   </div>
                 </div>
               ))}
@@ -365,13 +371,25 @@ export default function ExecutionPlanManager({ suiteId, platform, device }: { su
                       <span className="text-xs font-semibold text-gray-700">{ACTIONS.find(a => a.value === step.action)?.label || step.action}</span>
                     </div>
                     <div className="flex items-center gap-1">
-                      <button type="button" title="在真机上执行当前步骤" disabled={!device || executingStep !== null} onClick={() => void executeDeviceStep(step, index)} className="rounded border border-blue-200 bg-blue-50 px-2 py-1 text-[11px] text-blue-700 disabled:opacity-40">{executingStep === index ? '执行中…' : '单步执行'}</button>
+                      <button type="button" title={step.executor === 'ai' || step.executor === 'hybrid' ? 'AI / 混合计划执行器尚未接入' : '在真机上执行当前步骤'} disabled={!device || executingStep !== null || step.executor === 'ai' || step.executor === 'hybrid'} onClick={() => void executeDeviceStep(step, index)} className="rounded border border-blue-200 bg-blue-50 px-2 py-1 text-[11px] text-blue-700 disabled:opacity-40">{step.executor === 'ai' || step.executor === 'hybrid' ? '执行器未接入' : executingStep === index ? '执行中…' : '单步执行'}</button>
                       <button title={t('上移', 'Move up')} disabled={index === 0} onClick={() => moveStep(index, -1)} className="rounded border px-2 py-1 text-xs disabled:opacity-30">↑</button>
                       <button title={t('下移', 'Move down')} disabled={index === draftSteps.length - 1} onClick={() => moveStep(index, 1)} className="rounded border px-2 py-1 text-xs disabled:opacity-30">↓</button>
                       <button title={t('删除步骤', 'Delete step')} onClick={() => removeStep(index)} className="rounded border border-red-200 px-2 py-1 text-xs text-red-600 hover:bg-red-50">×</button>
                     </div>
                   </div>
                   <div className="grid grid-cols-1 gap-3 p-3 md:grid-cols-2">
+                    <div className="md:col-span-2 rounded-lg border border-blue-100 bg-blue-50/50 p-3 space-y-3">
+                      <div className="flex flex-wrap items-center justify-between gap-2">
+                        <div><div className="text-xs font-semibold text-gray-800">{t('操作意图', 'Operation intent')}</div><p className="mt-0.5 text-[11px] text-gray-500">{t('描述这一步要完成什么。录制坐标和控件属性不能代替操作目的。', 'Describe what this step should accomplish. Coordinates and element attributes are not a substitute for intent.')}</p></div>
+                        <span className={step.intent?.status === 'confirmed' ? 'rounded-full bg-green-100 px-2 py-1 text-[10px] text-green-700' : 'rounded-full bg-amber-100 px-2 py-1 text-[10px] text-amber-700'}>{step.intent?.status === 'confirmed' ? t('已确认', 'Confirmed') : t('待确认', 'Needs confirmation')}</span>
+                      </div>
+                      <div><label className={labelClass}>{t('这一步要做什么', 'What should this step do?')}</label><textarea rows={2} className={fieldClass} value={String(step.intent?.description || '')} onChange={e => patchIntent(index, { description: e.target.value })} placeholder={t('例如：点击搜索入口，进入应用搜索页面', 'e.g. Open the app search page by selecting its search entry')} /></div>
+                      <div><label className={labelClass}>{t('预期结果', 'Expected result')}</label><textarea rows={2} className={fieldClass} value={String(step.intent?.expected_result || '')} onChange={e => patchIntent(index, { expected_result: e.target.value })} placeholder={t('例如：搜索页面显示，搜索输入框可见', 'e.g. Search page opens and the search field is visible')} /></div>
+                      <div className="flex flex-wrap items-center justify-between gap-2">
+                        <span className="text-[10px] text-gray-500">{t('来源', 'Source')}: {String(step.intent?.source || 'legacy_import')}</span>
+                        <label className="flex items-center gap-2 text-xs text-gray-600"><input type="checkbox" checked={step.intent?.status === 'confirmed'} disabled={!String(step.intent?.description || '').trim() || !String(step.intent?.expected_result || '').trim()} onChange={e => patchIntent(index, { status: e.target.checked ? 'confirmed' : 'needs_confirmation' })} />{t('我已确认操作意图和预期结果', 'I confirm this intent and expected result')}</label>
+                      </div>
+                    </div>
                     <div>
                       <label className={labelClass}>{t('操作类型', 'Action')}</label>
                       <select className={fieldClass} value={step.action} onChange={e => { const action = e.target.value; patchStep(index, { action, ...( ['start_app', 'global_action', 'press_key'].includes(action) ? { executor: 'system' } : step.executor === 'system' ? { executor: 'deterministic' } : {}) }) }}>
@@ -489,7 +507,7 @@ export default function ExecutionPlanManager({ suiteId, platform, device }: { su
         )}
 
         <div className="rounded-lg border border-slate-200 bg-slate-50 px-3 py-2.5 text-xs leading-5 text-gray-500">
-          <strong className="text-gray-700">{t('说明：', 'Note: ')}</strong>{t('真机画面、UI Tree 与步骤定位已接通，可单步调试设备操作；完整执行计划 Runner 尚未接入，保存的草稿暂不能一键运行。', 'Live device view, UI Tree and step locators are connected for interactive debugging. The full plan runner is not yet available.')}
+          <strong className="text-gray-700">{t('说明：', 'Note: ')}</strong>{t('操作意图会随步骤版本保存；历史导入步骤默认待确认。AI / 混合执行计划 Runner 尚未接入，当前不能按这些策略执行整份计划。确定性步骤仅支持现有单步调试。', 'Step intent is saved with each plan version; imported legacy steps require confirmation. The AI / hybrid plan runner is not connected, so these strategies cannot execute a full plan yet. Deterministic steps only support the existing single-step debugger.')}
         </div>
       </div>
     </section>
