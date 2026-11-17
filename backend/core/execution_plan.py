@@ -48,6 +48,8 @@ def legacy_replay_to_plan(replay_steps: str) -> Tuple[List[Dict[str, Any]], List
         action = str(raw.get("kind") or raw.get("action") or "").strip().lower()
         args = {k: v for k, v in raw.items() if k not in {"kind", "delay_ms"}}
         locator: Dict[str, Any] = {}
+        if isinstance(raw.get("locator"), dict):
+            locator.update({key: value for key, value in raw["locator"].items() if value})
         if raw.get("resourceId"):
             locator["resource_id"] = raw["resourceId"]
         if raw.get("text"):
@@ -65,6 +67,11 @@ def legacy_replay_to_plan(replay_steps: str) -> Tuple[List[Dict[str, Any]], List
             fallback = {"type": "coordinate", "coordinates": coordinates}
             if coordinate_space:
                 fallback["coordinate_space"] = coordinate_space
+            screen_size = raw.get("screen_size")
+            if isinstance(screen_size, dict) and screen_size.get("width") and screen_size.get("height"):
+                fallback["screen_size"] = {
+                    "width": screen_size["width"], "height": screen_size["height"]
+                }
 
         step_warnings: List[str] = []
         if action not in SUPPORTED_ACTIONS:
@@ -101,7 +108,9 @@ def legacy_replay_to_plan(replay_steps: str) -> Tuple[List[Dict[str, Any]], List
             "locator": locator,
             "fallback": fallback,
             "precondition": None,
-            "wait_condition": {"type": "delay", "duration_ms": delay_ms} if delay_ms else None,
+            "wait_condition": None,
+            "timing": {"inter_action_gap_ms": delay_ms} if delay_ms else {},
+            "source_event_id": raw.get("source_event_id"),
             "verification": None,
             "on_failure": "ai_recovery" if executor == "hybrid" else "fail",
             "legacy_source": raw,
