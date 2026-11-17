@@ -123,13 +123,14 @@ async def _execute_deterministic(device: WebSocketDevice, step: Dict[str, Any], 
         if str(result).startswith("ERROR:"):
             raise RuntimeError(result)
         return result
-    if action == "tap" and raw.get("x") is None and raw.get("contentDescription"):
+    if action == "tap" and raw.get("contentDescription"):
         _, elements = await device.get_ui_state()
         expected = str(raw["contentDescription"])
         match = next((el for el in elements if expected in str(el.get("contentDescription") or el.get("content_description") or "")), None)
-        if not match:
+        if match:
+            return await device.tap_element(match["index"])
+        if raw.get("x") is None:
             raise ValueError(f"no visible element matches contentDescription '{expected}'")
-        return await device.tap_element(match["index"])
     if action == "tap" and raw.get("x") is None and not any(raw.get(k) for k in ("resourceId", "text", "className")):
         raise ValueError("tap requires a locator or recorded coordinates")
     if action == "swipe" and not all(raw.get(k) is not None for k in ("x1", "y1", "x2", "y2")):
