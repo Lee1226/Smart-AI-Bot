@@ -1292,6 +1292,7 @@ async def execute_run(
 
 async def start_execution_plan_run(run_id: str, plan_id: str, max_steps: int = 8) -> None:
     """Queue a versioned plan on the same per-device scheduler as suite runs."""
+    from core.execution_plan_runner import execute_execution_plan_run
     state = RunState(run_id)
     from core.device_scheduler import enqueue
     await enqueue(
