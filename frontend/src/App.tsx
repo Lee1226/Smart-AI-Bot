@@ -23,6 +23,7 @@ import Account from './pages/Account'
 import AutomationCatalog from './pages/AutomationCatalog'
 import DebugConsole from './pages/DebugConsole'
 import ExecutionPlanStudio from './pages/ExecutionPlanStudio'
+import AppManagement from './pages/AppManagement'
 
 type NavigationItem = { to: string; label: { zh: string; en: string }; icon: string; paths: string[] }
 const NAV_GROUPS: { label: { zh: string; en: string }; items: NavigationItem[] }[] = [
@@ -49,6 +50,7 @@ const PAGE_TABS = {
     { to: '/automation', zh: 'Maestro 用例', en: 'Maestro cases' },
     { to: '/recorder', zh: '录制用例', en: 'Record' },
     { to: '/execution-plans', zh: '执行计划', en: 'Execution plans' },
+    { to: '/apps', zh: '设备应用库', en: 'App library' },
     { to: '/knowledge', zh: '知识库', en: 'Knowledge' },
   ],
   results: [
@@ -214,6 +216,7 @@ function AppLayout() {
             <Route path="/quick" element={<PageTabs section="execution"><QuickRun /></PageTabs>} />
             <Route path="/recorder" element={<PageTabs section="cases"><Recorder /></PageTabs>} />
             <Route path="/execution-plans" element={<PageTabs section="cases"><ExecutionPlanStudio /></PageTabs>} />
+            <Route path="/apps" element={<PageTabs section="cases"><AppManagement /></PageTabs>} />
             <Route path="/suites" element={<PageTabs section="cases"><Suites /></PageTabs>} />
             <Route path="/suites/:suiteId" element={<PageTabs section="cases"><SuiteDetail /></PageTabs>} />
             <Route path="/library" element={<PageTabs section="cases"><Library /></PageTabs>} />
