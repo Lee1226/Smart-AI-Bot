@@ -266,6 +266,7 @@ class RecordedStep(BaseModel):
 class SaveRequest(BaseModel):
     device_id: str
     suite_name: str
+    case_name: Optional[str] = None
     expected: str
     steps: List[RecordedStep]
     events: Optional[List[Dict[str, Any]]] = None
@@ -774,13 +775,11 @@ async def save_recording(req: SaveRequest, request: Request):
     if not req.expected.strip():
         raise HTTPException(status_code=400, detail="expected is required")
 
-    # Build path from step descriptions
+    # Keep the user-defined case title separate from the executable step list.
+    # Steps and evidence live in replay_steps / recorder_events, not in TestCase.path.
     steps_text = "\n".join(f"{i + 1}. {s.description}" for i, s in enumerate(req.steps))
-    path = (
-        f"[录制步骤]\n"
-        f"{steps_text}\n"
-        f"请重新执行以上步骤并验证期望结果。"
-    )
+    case_name = (req.case_name or "").strip()
+    path = case_name or f"录制用例（{len(req.steps)} 步）"
 
     account_id = request.state.account_id
     async with AsyncSessionLocal() as db:
