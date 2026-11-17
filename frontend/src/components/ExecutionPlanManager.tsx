@@ -7,6 +7,7 @@ import {
   fetchAppCatalog, fetchExecutionPlans, fetchSuiteCases, importLegacyExecutionPlan, runExecutionPlan,
 } from '../lib/api'
 import { useT } from '../lib/i18n'
+import LifecycleActionEditor, { type LifecycleAction } from './LifecycleActionEditor'
 
 const STATUS_STYLE: Record<string, string> = {
   draft: 'bg-amber-100 text-amber-700',
@@ -39,6 +40,8 @@ export default function ExecutionPlanManager({ suiteId, platform, device }: { su
   const [planId, setPlanId] = useState('')
   const [editing, setEditing] = useState(false)
   const [draftSteps, setDraftSteps] = useState<ExecutionPlanStep[]>([])
+  const [draftPreActions, setDraftPreActions] = useState<LifecycleAction[]>([])
+  const [draftPostActions, setDraftPostActions] = useState<LifecycleAction[]>([])
   const [editError, setEditError] = useState('')
   const [targetStepIndex, setTargetStepIndex] = useState(0)
   const [executingStep, setExecutingStep] = useState<number | null>(null)
@@ -113,6 +116,8 @@ export default function ExecutionPlanManager({ suiteId, platform, device }: { su
 
   const beginEdit = () => {
     if (!selectedPlan) return
+    setDraftPreActions(Array.isArray(selectedPlan.metadata?.pre_actions) ? selectedPlan.metadata.pre_actions as LifecycleAction[] : [])
+    setDraftPostActions(Array.isArray(selectedPlan.metadata?.post_actions) ? selectedPlan.metadata.post_actions as LifecycleAction[] : [])
     setDraftSteps(selectedPlan.steps.map(step => ({
       ...step,
       args: { ...(step.args || {}) },
@@ -259,7 +264,7 @@ export default function ExecutionPlanManager({ suiteId, platform, device }: { su
     setEditError('')
     saveMut.mutate({
       steps: draftSteps.map((step, i) => ({ ...step, sequence: i + 1 })),
-      metadata: selectedPlan?.metadata || {},
+      metadata: { ...(selectedPlan?.metadata || {}), pre_actions: draftPreActions, post_actions: draftPostActions },
       warnings: selectedPlan?.warnings || [],
       platform: selectedPlan?.platform || platform,
     })
@@ -347,6 +352,15 @@ export default function ExecutionPlanManager({ suiteId, platform, device }: { su
                 </ul>
               </div>
             )}
+            <div className="grid grid-cols-1 gap-3 xl:grid-cols-2">
+              {(['pre_actions', 'post_actions'] as const).map((phase) => {
+                const actions = Array.isArray(selectedPlan.metadata?.[phase]) ? selectedPlan.metadata[phase] as LifecycleAction[] : []
+                return <div key={phase} className="rounded-lg border border-gray-200 bg-white p-3">
+                  <div className="text-xs font-semibold text-gray-700">{phase === 'pre_actions' ? '执行前处理' : '执行后处理'}</div>
+                  {actions.filter(action => action.enabled).length ? <div className="mt-2 space-y-1">{actions.filter(action => action.enabled).map((action, index) => <div key={action.id || index} className="text-xs text-gray-600">{index + 1}. {({ stop_app: '强制停止应用', start_app: '启动应用', global_action: '系统导航', press_key: '按键操作', wait: '等待' } as Record<string, string>)[action.action] || action.action} · {String(action.args?.package_name || action.args?.package || action.args?.action || action.args?.key || action.args?.duration_ms || '')}</div>)}</div> : <p className="mt-2 text-xs text-gray-400">未配置，不执行任何处理</p>}
+                </div>
+              })}
+            </div>
             <div className="space-y-2">
               {selectedPlan.steps.map((step, i) => (
                 <div key={step.step_id || i} className="flex items-start gap-3 rounded-lg border border-gray-100 bg-white px-3 py-3">
@@ -378,6 +392,20 @@ export default function ExecutionPlanManager({ suiteId, platform, device }: { su
               <button className="rounded-md border border-blue-200 bg-blue-50 px-3 py-2 text-xs font-medium text-blue-700 hover:bg-blue-100" onClick={addStep}>＋ {t('新增步骤', 'Add step')}</button>
             </div>
 
+            <div className="grid grid-cols-1 gap-3 xl:grid-cols-2">
+              <LifecycleActionEditor
+                title="执行前处理（可选）"
+                description="在正常测试步骤开始前执行；不添加操作则完全跳过。"
+                actions={draftPreActions}
+                onChange={setDraftPreActions}
+              />
+              <LifecycleActionEditor
+                title="执行后处理（可选）"
+                description="在正常测试步骤结束后执行；可配置清理应用或其他设备操作。"
+                actions={draftPostActions}
+                onChange={setDraftPostActions}
+              />
+            </div>
             {draftSteps.map((step, index) => {
               const coords = ((step.fallback as Record<string, unknown> | null)?.coordinates || {}) as Record<string, unknown>
               const waitMs = step.wait_condition?.type === 'delay' ? step.wait_condition.duration_ms : ''
