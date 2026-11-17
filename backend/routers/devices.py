@@ -229,6 +229,35 @@ class InstallRequest(BaseModel):
     apk_url: str
 
 
+@router.get("/{device_id}/apps")
+async def list_device_apps(device_id: str, request: Request, db: AsyncSession = Depends(get_db)):
+    """List installed Android packages from an owned, connected local ADB device."""
+    account_id = getattr(request.state, "account_id", None)
+    if not account_id:
+        raise HTTPException(status_code=401, detail="未登录")
+    query = select(Device).where(Device.id == device_id, Device.connection_type == "adb_usb")
+    if account_id:
+        query = query.where(Device.account_id == account_id)
+    device = (await db.execute(query)).scalar_one_or_none()
+    if not device:
+        raise HTTPException(status_code=404, detail="设备不存在或无权访问")
+    if not local_adb.is_bound(device_id):
+        raise HTTPException(status_code=409, detail="本地 ADB 设备未连接")
+    from core.device_scheduler import locks
+    lock = locks.setdefault(device_id, asyncio.Lock())
+    if lock.locked():
+        raise HTTPException(status_code=409, detail="设备正在执行任务，请稍后刷新应用列表")
+    try:
+        async with lock:
+            packages = await local_adb.rpc(device_id, "packages", timeout=35)
+    except Exception as exc:
+        raise HTTPException(status_code=502, detail=f"读取应用包名失败：{exc}")
+    return {"device_id": device_id, "apps": [
+        {"package_name": item.get("packageName", ""), "app_name": item.get("packageName", "")}
+        for item in packages if item.get("packageName")
+    ]}
+
+
 @router.post("/{device_id}/install")
 async def install_apk(device_id: str, req: InstallRequest, db: AsyncSession = Depends(get_db)):
     """Download the APK at *apk_url* and launch the system installer on the device.
