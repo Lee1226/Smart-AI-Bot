@@ -71,7 +71,7 @@ def _validate_lifecycle_actions(metadata: Dict[str, Any]) -> None:
                 continue
             action = str(item.get("action") or "").strip().lower()
             args = item.get("args") if isinstance(item.get("args"), dict) else {}
-            if action not in {"stop_app", "start_app", "global_action", "press_key", "wait"}:
+            if action not in {"stop_app", "start_app", "global_action", "press_key", "wait", "tap", "input_text", "swipe", "scroll"}:
                 raise HTTPException(status_code=422, detail=f"metadata.{phase}[{index}] unsupported action: {action}")
             if action in {"stop_app", "start_app"} and not str(args.get("package_name") or args.get("package") or "").strip():
                 raise HTTPException(status_code=422, detail=f"metadata.{phase}[{index}] requires args.package_name")
@@ -86,6 +86,17 @@ def _validate_lifecycle_actions(metadata: Dict[str, Any]) -> None:
                     duration = -1
                 if duration < 0 or duration > 60000:
                     raise HTTPException(status_code=422, detail=f"metadata.{phase}[{index}] duration_ms must be 0..60000")
+            if action == "tap" and not all(isinstance(args.get(key), (int, float)) for key in ("x", "y")):
+                raise HTTPException(status_code=422, detail=f"metadata.{phase}[{index}] tap requires numeric device-pixel x/y")
+            if action == "input_text" and not str(args.get("text") or ""):
+                raise HTTPException(status_code=422, detail=f"metadata.{phase}[{index}] input_text requires args.text")
+            if action == "swipe" and not all(isinstance(args.get(key), (int, float)) for key in ("x1", "y1", "x2", "y2")):
+                raise HTTPException(status_code=422, detail=f"metadata.{phase}[{index}] swipe requires numeric x1/y1/x2/y2")
+            if action == "scroll":
+                if str(args.get("direction") or "down") not in {"up", "down", "left", "right"}:
+                    raise HTTPException(status_code=422, detail=f"metadata.{phase}[{index}] invalid scroll direction")
+                if str(args.get("distance") or "medium") not in {"small", "medium", "large"}:
+                    raise HTTPException(status_code=422, detail=f"metadata.{phase}[{index}] invalid scroll distance")
 
 
 def _out(plan: ExecutionPlan) -> ExecutionPlanOut:
