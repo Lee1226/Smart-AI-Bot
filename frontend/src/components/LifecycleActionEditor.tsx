@@ -97,7 +97,7 @@ export default function LifecycleActionEditor({
                 <div>
                   <label className="mb-1 block text-[11px] text-gray-500">按键</label>
                   <select className={inputClass} value={String(item.args.key || 'BACK')} onChange={e => patch(index, { args: { key: e.target.value } })}>
-                    {['BACK','HOME','ENTER','DEL','VOLUME_UP','VOLUME_DOWN','POWER'].map(key => <option key={key} value={key}>{key}</option>)}
+                    {['BACK','HOME','ENTER','DEL','TAB','SPACE','POWER'].map(key => <option key={key} value={key}>{key}</option>)}
                   </select>
                 </div>
               )}
