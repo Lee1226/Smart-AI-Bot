@@ -529,7 +529,7 @@ export default function ExecutionPlanManager({ suiteId, platform, device }: { su
         )}
 
         <div className="rounded-lg border border-slate-200 bg-slate-50 px-3 py-2.5 text-xs leading-5 text-gray-500">
-          <strong className="text-gray-700">{t('说明：', 'Note: ')}</strong>{t('操作意图会随步骤版本保存；历史导入步骤默认待确认。AI / 混合执行计划 Runner 尚未接入，当前不能按这些策略执行整份计划。确定性步骤仅支持现有单步调试。', 'Step intent is saved with each plan version; imported legacy steps require confirmation. The AI / hybrid plan runner is not connected, so these strategies cannot execute a full plan yet. Deterministic steps only support the existing single-step debugger.')}
+          <strong className="text-gray-700">{t('说明：', 'Note: ')}</strong>{t('操作意图会随步骤版本保存；AI / 混合步骤必须先确认操作意图和预期结果。运行整份计划时，系统按步骤分发确定性、AI、混合或系统执行器；混合步骤需要配置结果验证条件，确定性失败或验证不通过时才调用 AI 恢复。', 'Step intent is saved with each plan version; imported legacy steps require confirmation. The AI / hybrid plan runner is not connected, so these strategies cannot execute a full plan yet. Deterministic steps only support the existing single-step debugger.')}
         </div>
       </div>
     </section>
