@@ -108,9 +108,12 @@ export default function Recorder() {
   // Text input action state
   const [inputText, setInputText] = useState('')
   const [inputClear, setInputClear] = useState(false)
+  const [launchPackage, setLaunchPackage] = useState('')
+  const [pressKey, setPressKey] = useState('KEYCODE_BACK')
 
   // Save form
   const [suiteName, setSuiteName] = useState('')
+  const [caseName, setCaseName] = useState('')
   const [expected, setExpected] = useState('')
   const [saved, setSaved] = useState<{ suiteId: string } | null>(null)
 
@@ -276,7 +279,7 @@ export default function Recorder() {
         const { data } = await api.post<{ result: string; description: string; event?: RecordEvent }>('/recorder/gesture', {
           device_id: deviceId, action, args,
         })
-        setSteps(prev => [...prev, { action, args, description: data.description || description }])
+        setSteps(prev => [...prev, { action, args: { ...args, event_id: data.event?.event_id }, description: data.description || description }])
         setWebEvents(prev => [...prev, {
           ...(data.event || {}),
           kind: action, action, source: 'web_action',
@@ -350,7 +353,7 @@ export default function Recorder() {
     try {
       const { data } = await api.post<ActionData>('/recorder/action', { device_id: deviceId, action, args })
       applySnapshot(data)
-      setSteps(prev => [...prev, { action, args, description: data.description }])
+      setSteps(prev => [...prev, { action, args: { ...args, event_id: data.event?.event_id }, description: data.description }])
       const now = Date.now()
       const coords = ['x', 'y', 'x1', 'y1', 'x2', 'y2'].some(key => args[key] !== undefined)
       setWebEvents(prev => [...prev, {
@@ -448,17 +451,20 @@ export default function Recorder() {
     setSaved(null)
     setError('')
     setSuiteName('')
+    setCaseName('')
     setExpected('')
+    setLaunchPackage('')
   }
 
   const saveRecording = async () => {
-    if (!suiteName.trim() || !expected.trim() || steps.length === 0) return
+    if (!suiteName.trim() || !caseName.trim() || !expected.trim() || steps.length === 0) return
     setLoading(true)
     setError('')
     try {
       const { data } = await api.post<{ suite_id: string }>('/recorder/save', {
         device_id: deviceId,
         suite_name: suiteName.trim(),
+        case_name: caseName.trim(),
         expected: expected.trim(),
         steps,
         events: (() => {
@@ -699,6 +705,23 @@ export default function Recorder() {
                   </div>
                 </div>
 
+                {/* Launch app and hardware keys */}
+                <div>
+                  <div className="text-xs text-gray-400 mb-1.5 font-medium">{t('启动应用', 'Launch app')}</div>
+                  <div className="flex gap-2">
+                    <input className="min-w-0 flex-1 border rounded px-2 py-1 text-sm font-mono" value={launchPackage} onChange={e => setLaunchPackage(e.target.value)} placeholder="com.example.app" />
+                    <button className={BTN_GRAY} disabled={!launchPackage.trim() || loading} onClick={() => doAction('start_app', { package: launchPackage.trim() })}>{t('启动', 'Launch')}</button>
+                  </div>
+                </div>
+                <div>
+                  <div className="text-xs text-gray-400 mb-1.5 font-medium">{t('按键', 'Key press')}</div>
+                  <div className="flex gap-2">
+                    <select className="min-w-0 flex-1 border rounded px-2 py-1 text-sm" value={pressKey} onChange={e => setPressKey(e.target.value)}>
+                      {['KEYCODE_BACK','KEYCODE_HOME','KEYCODE_ENTER','KEYCODE_DEL','KEYCODE_VOLUME_UP','KEYCODE_VOLUME_DOWN','KEYCODE_POWER'].map(key => <option key={key}>{key}</option>)}
+                    </select>
+                    <button className={BTN_GRAY} disabled={loading} onClick={() => doAction('press_key', { key: pressKey })}>{t('按下', 'Press')}</button>
+                  </div>
+                </div>
                 {/* System keys */}
                 <div>
                   <div className="text-xs text-gray-400 mb-1.5 font-medium">{t('系统操作', 'System actions')}</div>
@@ -831,8 +854,9 @@ export default function Recorder() {
                   const x = coords?.x ?? event.x
                   const y = coords?.y ?? event.y
                   return (
-                    <button key={event.event_id as string || index} onClick={() => setSelectedEventIndex(index)}
-                      className={`w-full text-left border-t px-3 py-3 transition-colors ${selectedEventIndex === index ? 'bg-primary-soft border-l-2 border-l-primary' : 'hover:bg-gray-50'}`}>
+                    <div key={event.event_id as string || index} className={`border-t px-3 py-2 transition-colors ${selectedEventIndex === index ? 'bg-primary-soft border-l-2 border-l-primary' : ''}`}>
+                      <div className="flex items-center gap-2">
+                        <button className="min-w-0 flex-1 text-left" onClick={() => setSelectedEventIndex(index)}>
                       <div className="flex items-center gap-2">
                         <span className="font-mono text-[11px] text-gray-400">#{String(index + 1).padStart(2, '0')}</span>
                         <span className="text-sm font-medium text-gray-800">{describeEvent(event)}</span>
@@ -842,7 +866,17 @@ export default function Recorder() {
                         {x !== undefined && y !== undefined && <span>{x}, {y}</span>}
                         <span>{event.source || (realRecording ? 'portal_touch' : 'web_action')}</span>
                       </div>
-                    </button>
+                        </button>
+                        <button type="button" className="shrink-0 text-xs text-red-600 hover:underline" title={t('删除这条事件', 'Delete event')} onClick={() => {
+                          const eventId = event.event_id
+                          const nextEvents = displayedEvents.filter((_, eventIndex) => eventIndex !== index)
+                          if (realEvents.length > 0) setRealEvents(nextEvents)
+                          else setWebEvents(nextEvents)
+                          if (eventId) setSteps(prev => prev.filter(step => step.args.event_id !== eventId))
+                          setSelectedEventIndex(Math.max(0, Math.min(selectedEventIndex, nextEvents.length - 1)))
+                        }}>{t('删除', 'Remove')}</button>
+                      </div>
+                    </div>
                   )
                 })}
               </div>
@@ -985,7 +1019,15 @@ export default function Recorder() {
             {steps.map((s, i) => (
               <li key={i} className="flex items-start gap-2 text-sm">
                 <span className="shrink-0 font-mono text-xs text-gray-400 mt-0.5 w-5 text-right">{i + 1}.</span>
-                <span className="text-gray-700">{s.description}</span>
+                <span className="flex-1 text-gray-700">{s.description}</span>
+                <button type="button" className="text-xs text-red-600 hover:underline" onClick={() => {
+                  const eventId = s.args.event_id
+                  setSteps(prev => prev.filter((_, index) => index !== i))
+                  if (eventId) {
+                    setRealEvents(prev => prev.filter(event => event.event_id !== eventId))
+                    setWebEvents(prev => prev.filter(event => event.event_id !== eventId))
+                  }
+                }}>{t('删除', 'Remove')}</button>
               </li>
             ))}
           </ol>
@@ -1008,6 +1050,10 @@ export default function Recorder() {
               />
             </div>
             <div>
+              <label className="block text-xs text-gray-500 mb-1">{t('用例名称', 'Case name')}</label>
+              <input type="text" className="w-full border rounded px-3 py-1.5 text-sm" placeholder={t('例：启动应用并进入首页', 'e.g. Launch app and open home')} value={caseName} onChange={e => setCaseName(e.target.value)} />
+            </div>
+            <div>
               <label className="block text-xs text-gray-500 mb-1">{t('期望结果', 'Expected result')}</label>
               <input
                 type="text"
@@ -1021,7 +1067,7 @@ export default function Recorder() {
           <div className="flex gap-3">
             <button
               className={BTN_BLUE}
-              disabled={!suiteName.trim() || !expected.trim() || steps.length === 0 || loading}
+              disabled={!suiteName.trim() || !caseName.trim() || !expected.trim() || steps.length === 0 || loading}
               onClick={saveRecording}
             >
               {loading ? t('保存中…', 'Saving…') : t('✓ 保存为测试用例', '✓ Save as test case')}
