@@ -138,7 +138,8 @@ export default function Recorder() {
         if (events.length) {
           realEventsCursor.current += events.length
           // Capture a nearby frame for this polling batch. It is deliberately
-          // labelled as an approximate event frame, not an exact per-touch frame.
+          // labelled approximate: it must never be promoted to the touched
+          // control's executable locator because the UI may already have changed.
           let nearbyScreenshot = ''
           let nearbySnapshot: SnapshotData | null = null
           try {
@@ -171,7 +172,10 @@ export default function Recorder() {
                   },
                   captured_at_ms: observedAt,
                 },
-                ...(hit ? { observed_target: hit } : {}),
+                ...(hit ? {
+                  observed_target: hit,
+                  observed_target_evidence: 'post_event_poll_approximate',
+                } : {}),
               } : {}),
               ...(isLast && nearbyScreenshot
                 ? { screenshot_b64: nearbyScreenshot, screenshot_captured_at_ms: observedAt }
@@ -458,8 +462,10 @@ export default function Recorder() {
         expected: expected.trim(),
         steps,
         events: (() => {
+          // Send captured image bytes to the API once; the backend writes
+          // them as case-scoped files and stores only relative asset references.
           const recordedEvents = (realEvents.length > 0 ? realEvents : webEvents)
-            .map(({ screenshot_b64, ...event }) => event)
+            .map(event => ({ ...event }))
           if (recordedEvents.length > 0 && sessionStartSnapshot) {
             recordedEvents[0] = {
               ...recordedEvents[0],
