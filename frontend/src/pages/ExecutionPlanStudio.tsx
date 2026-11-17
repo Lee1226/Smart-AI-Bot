@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from 'react'
 import { Link, useSearchParams } from 'react-router-dom'
 import { useQuery } from '@tanstack/react-query'
-import { fetchSuites } from '../lib/api'
+import { fetchDevices, fetchSuites } from '../lib/api'
 import ExecutionPlanManager from '../components/ExecutionPlanManager'
 import { useT } from '../lib/i18n'
 
@@ -9,7 +9,11 @@ export default function ExecutionPlanStudio() {
   const t = useT()
   const [searchParams, setSearchParams] = useSearchParams()
   const [platform, setPlatform] = useState('android')
+  const [deviceId, setDeviceId] = useState('')
   const requestedSuiteId = searchParams.get('suite') || ''
+  const { data: devices = [] } = useQuery({ queryKey: ['devices'], queryFn: fetchDevices, refetchInterval: 5000 })
+  const onlineDevices = devices.filter(device => device.status === 'online')
+  const selectedDevice = onlineDevices.find(device => device.id === deviceId)
 
   const { data, isLoading, isError, error } = useQuery({
     queryKey: ['execution-plan-studio-suites'],
@@ -92,7 +96,7 @@ export default function ExecutionPlanStudio() {
             </Link>
           </div>
         ) : (
-          <div className="grid grid-cols-1 gap-3 md:grid-cols-[minmax(0,1fr)_220px]">
+          <div className="grid grid-cols-1 gap-3 md:grid-cols-3">
             <div>
               <label className="mb-1.5 block text-xs font-medium text-ink-secondary">{t('录制用例套件', 'Recorded suite')}</label>
               <select
@@ -104,6 +108,19 @@ export default function ExecutionPlanStudio() {
                   <option key={suite.id} value={suite.id}>{suite.name} · {suite.case_count} {t('条用例', 'cases')}</option>
                 ))}
               </select>
+            </div>
+            <div>
+              <label className="mb-1.5 block text-xs font-medium text-ink-secondary">{t('调试设备（预留）', 'Debug device (reserved)')}</label>
+              <select className="w-full rounded-lg border border-hairline bg-white px-3 py-2.5 text-sm text-ink outline-none focus:border-primary"
+                value={deviceId} onChange={event => {
+                  setDeviceId(event.target.value)
+                  const device = onlineDevices.find(item => item.id === event.target.value)
+                  if (device?.platform) setPlatform(device.platform)
+                }}>
+                <option value="">{t('暂不选择设备', 'No device selected')}</option>
+                {onlineDevices.map(device => <option key={device.id} value={device.id}>{device.name} · {device.platform || device.connection_type}</option>)}
+              </select>
+              <p className="mt-1 text-[11px] text-ink-faint">{selectedDevice ? t('已选择在线设备，真实执行入口尚未接入。', 'Online device selected; live execution is not connected yet.') : t('设备选择仅用于后续单步调试接入。', 'Device selection is reserved for future step debugging.')}</p>
             </div>
             <div>
               <label className="mb-1.5 block text-xs font-medium text-ink-secondary">{t('目标平台', 'Target platform')}</label>
