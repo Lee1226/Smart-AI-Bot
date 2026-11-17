@@ -386,6 +386,7 @@ async def export_suite(suite_id: str, db: AsyncSession = Depends(get_db)):
                 "path": c.path, "expected": c.expected, "order": c.order,
                 "parameters": c.parameters or "", "checkpoints": c.checkpoints or "",
                 "loop_task": c.loop_task, "replay_steps": c.replay_steps or "",
+                "recorder_events": c.recorder_events or "",
             }
             for c in cases
         ],
@@ -551,6 +552,7 @@ async def import_suite(body: ImportSuiteBody, request: Request, db: AsyncSession
             checkpoints=c.get("checkpoints", ""),
             loop_task=bool(c.get("loop_task", False)),
             replay_steps=c.get("replay_steps", ""),
+            recorder_events=c.get("recorder_events", ""),
             account_id=request.state.account_id,
         ))
 
