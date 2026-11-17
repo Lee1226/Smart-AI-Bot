@@ -140,6 +140,14 @@ export const fetchAuthConfig = () => api.get<AuthConfig>('/auth/config').then(r 
 // ── Devices ──────────────────────────────────────────────────────────────────
 
 export const fetchDevices = () => api.get<Device[]>('/devices').then(r => r.data)
+
+export interface DeviceApp {
+  package_name: string
+  app_name: string
+}
+export const fetchDeviceApps = (deviceId: string) =>
+  api.get<{ device_id: string; apps: DeviceApp[] }>(`/devices/${deviceId}/apps`).then(r => r.data.apps)
+
 export const createDevice = (name: string, connection_type: Device['connection_type'] = 'portal') =>
   api.post<Device>('/devices', { name, connection_type }).then(r => r.data)
 export const deleteDevice = (id: string) => api.delete(`/devices/${id}`)
