@@ -3,7 +3,7 @@ import { api, type Device } from '../lib/api'
 
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import {
-  createExecutionPlanVersion, ExecutionPlanStep,
+  updateExecutionPlan, ExecutionPlanStep,
   fetchAppCatalog, fetchExecutionPlans, fetchSuiteCases, importLegacyExecutionPlan, runExecutionPlan,
 } from '../lib/api'
 import { useT } from '../lib/i18n'
@@ -83,7 +83,7 @@ export default function ExecutionPlanManager({ suiteId, platform, device }: { su
   })
   const saveMut = useMutation({
     mutationFn: (body: { steps: ExecutionPlanStep[]; metadata: Record<string, unknown>; warnings: string[]; platform: string }) =>
-      createExecutionPlanVersion(selectedPlan!.id, body),
+      updateExecutionPlan(selectedPlan!.id, body),
     onSuccess: async plan => {
       setPlanId(plan.id)
       setEditing(false)
@@ -92,7 +92,7 @@ export default function ExecutionPlanManager({ suiteId, platform, device }: { su
     },
     onError: (e: unknown) => {
       const msg = (e as { response?: { data?: { detail?: string } } })?.response?.data?.detail || String(e)
-      alert(t(`保存新版本失败：${msg}`, `Failed to save new version: ${msg}`))
+      alert(t(`保存执行计划失败：${msg}`, `Failed to save execution plan: ${msg}`))
     },
   })
 
@@ -292,15 +292,11 @@ export default function ExecutionPlanManager({ suiteId, platform, device }: { su
           )}
         </div>
 
-        {plansLoading ? <div className="text-sm text-gray-400">{t('读取计划版本…', 'Loading plan versions…')}</div> : (
+        {plansLoading ? <div className="text-sm text-gray-400">{t('读取执行计划…', 'Loading execution plan…')}</div> : (
           <>
             {plans.length > 0 && selectedPlan && (
               <div className="flex flex-wrap items-center gap-2 rounded-lg border border-gray-100 bg-gray-50 p-3">
-                <span className="text-xs text-gray-500">{t('当前版本', 'Current version')}</span>
-                <select className="rounded-md border border-gray-200 bg-white px-2.5 py-1.5 text-sm" value={selectedPlan.id}
-                  onChange={e => { setPlanId(e.target.value); setEditing(false) }}>
-                  {plans.map(p => <option key={p.id} value={p.id}>v{p.version} · {p.status}</option>)}
-                </select>
+                <span className="text-xs font-medium text-gray-700">{t('当前执行计划', 'Current execution plan')}</span>
                 <span className={`rounded-full px-2 py-1 text-[11px] ${STATUS_STYLE[selectedPlan.status] || 'bg-gray-100 text-gray-600'}`}>{selectedPlan.status}</span>
                 <span className="text-xs text-gray-400">{selectedPlan.steps.length} {t('个步骤', 'steps')}</span>
                 {!editing && <div className="ml-auto flex items-center gap-2">
@@ -377,7 +373,7 @@ export default function ExecutionPlanManager({ suiteId, platform, device }: { su
             <div className="flex flex-wrap items-center justify-between gap-2">
               <div>
                 <div className="text-sm font-semibold text-gray-800">{t('步骤编辑器', 'Step editor')}</div>
-                <p className="text-xs text-gray-500">{t('修改步骤属性、调整顺序或增删步骤。保存后生成新的草稿版本。', 'Edit step settings, reorder, add, or remove steps. Saving creates a new draft version.')}</p>
+                <p className="text-xs text-gray-500">{t('修改步骤属性、调整顺序或增删步骤，保存后直接更新当前执行计划。', 'Edit step settings, reorder, add, or remove steps. Save updates this execution plan directly.')}</p>
               </div>
               <button className="rounded-md border border-blue-200 bg-blue-50 px-3 py-2 text-xs font-medium text-blue-700 hover:bg-blue-100" onClick={addStep}>＋ {t('新增步骤', 'Add step')}</button>
             </div>
@@ -519,17 +515,17 @@ export default function ExecutionPlanManager({ suiteId, platform, device }: { su
 
             {editError && <div className="rounded-md bg-red-50 px-3 py-2 text-xs text-red-700">{editError}</div>}
             <div className="flex flex-wrap items-center justify-between gap-2 border-t pt-3">
-              <span className="text-xs text-gray-500">{draftSteps.length} {t('个步骤 · 保存会创建新版本', 'steps · saving creates a new version')}</span>
+              <span className="text-xs text-gray-500">{draftSteps.length} {t('个步骤', 'steps')}</span>
               <div className="flex gap-2">
                 <button className="rounded-md border border-gray-200 px-3 py-2 text-xs hover:bg-gray-50" onClick={() => { setEditing(false); setEditError('') }}>{t('取消', 'Cancel')}</button>
-                <button className="rounded-md bg-blue-600 px-4 py-2 text-xs font-medium text-white hover:bg-blue-700 disabled:opacity-50" disabled={saveMut.isPending} onClick={saveVersion}>{saveMut.isPending ? t('保存中…', 'Saving…') : t('保存为新版本', 'Save new version')}</button>
+                <button className="rounded-md bg-blue-600 px-4 py-2 text-xs font-medium text-white hover:bg-blue-700 disabled:opacity-50" disabled={saveMut.isPending} onClick={saveVersion}>{saveMut.isPending ? t('保存中…', 'Saving…') : t('保存', 'Save')}</button>
               </div>
             </div>
           </div>
         )}
 
         <div className="rounded-lg border border-slate-200 bg-slate-50 px-3 py-2.5 text-xs leading-5 text-gray-500">
-          <strong className="text-gray-700">{t('说明：', 'Note: ')}</strong>{t('操作意图会随步骤版本保存；AI / 混合步骤必须先确认操作意图和预期结果。运行整份计划时，系统按步骤分发确定性、AI、混合或系统执行器；混合步骤优先执行确定性操作；执行失败、验证不通过或未配置可判定的验证条件时，才调用 AI 检查并恢复。', 'Step intent is saved with each plan version. AI / hybrid steps require a confirmed intent and expected result. Full-plan runs dispatch deterministic, AI, hybrid, and system steps through the shared runner; hybrid steps try deterministic execution first, then invoke AI to inspect and recover only on execution failure, failed verification, or missing verification conditions.')}
+          <strong className="text-gray-700">{t('说明：', 'Note: ')}</strong>{t('操作意图会随执行计划保存；AI / 混合步骤必须先确认操作意图和预期结果。运行整份计划时，系统按步骤分发确定性、AI、混合或系统执行器；混合步骤优先执行确定性操作；执行失败、验证不通过或未配置可判定的验证条件时，才调用 AI 检查并恢复。', 'Step intent is saved with the execution plan. AI / hybrid steps require a confirmed intent and expected result. Full-plan runs dispatch deterministic, AI, hybrid, and system steps through the shared runner; hybrid steps try deterministic execution first, then invoke AI to inspect and recover only on execution failure, failed verification, or missing verification conditions.')}
         </div>
       </div>
     </section>
