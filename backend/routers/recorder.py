@@ -68,8 +68,17 @@ def _to_replay_steps(
         args = s.args or {}
         event = event_list[index] if index < len(event_list) and isinstance(event_list[index], dict) else {}
         target = event.get("target") if isinstance(event.get("target"), dict) else {}
+        target_identity = any(target.get(key) for key in (
+            "text", "resource_id", "resourceId", "content_description",
+            "contentDescription", "class_name", "className",
+        ))
+        if not target_identity and isinstance(event.get("observed_target"), dict):
+            target = event["observed_target"]
         step: dict = {"kind": s.action, "delay_ms": int(args.get("delay_ms", 0))}
-        if target:
+        if target and any(target.get(key) for key in (
+            "text", "resource_id", "resourceId", "content_description",
+            "contentDescription", "class_name", "className",
+        )):
             step["target"] = target
         if event.get("event_id"):
             step["source_event_id"] = event["event_id"]
