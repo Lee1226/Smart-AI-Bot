@@ -6,8 +6,8 @@ Flow:
   2. POST /api/recorder/action     → execute one action, return new snapshot
   3. POST /api/recorder/save       → convert step list into TestSuite + TestCase
 
-The saved TestCase uses `path` as a human-readable step description so the
-LLM agent has clear context when replaying:
+The saved TestCase uses `path` as the user-defined case title. Executable
+steps are stored separately in `replay_steps` and event evidence.
 
     [录制步骤]
     1. 启动应用: com.android.settings
@@ -777,7 +777,6 @@ async def save_recording(req: SaveRequest, request: Request):
 
     # Keep the user-defined case title separate from the executable step list.
     # Steps and evidence live in replay_steps / recorder_events, not in TestCase.path.
-    steps_text = "\n".join(f"{i + 1}. {s.description}" for i, s in enumerate(req.steps))
     case_name = (req.case_name or "").strip()
     path = case_name or f"录制用例（{len(req.steps)} 步）"
 
