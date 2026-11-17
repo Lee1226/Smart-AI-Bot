@@ -17,7 +17,7 @@ const ACTIONS = [
   { value: 'input_text', label: '输入文本' },
   { value: 'swipe', label: '滑动屏幕' },
   { value: 'scroll', label: '滚动页面' },
-  { value: 'start_app', label: '启动应用' },
+  { value: 'start_app', label: '系统启动应用' },
   { value: 'press_key', label: '按下按键' },
   { value: 'global_action', label: '系统操作' },
   { value: 'tap_element', label: '点击页面元素（旧格式）' },
@@ -225,7 +225,7 @@ export default function ExecutionPlanManager({ suiteId, platform }: { suiteId: s
                   <div className="min-w-0 flex-1">
                     <div className="flex flex-wrap items-center gap-2">
                       <span className="text-sm font-medium text-gray-800">{ACTIONS.find(a => a.value === step.action)?.label || step.action}</span>
-                      <span className={`rounded px-1.5 py-0.5 text-[10px] ${step.executor === 'deterministic' ? 'bg-green-50 text-green-700' : step.executor === 'hybrid' ? 'bg-blue-50 text-blue-700' : 'bg-amber-50 text-amber-700'}`}>{step.executor === 'deterministic' ? t('自动执行', 'Deterministic') : step.executor === 'hybrid' ? t('混合执行', 'Hybrid') : 'AI'}</span>
+                      <span className={`rounded px-1.5 py-0.5 text-[10px] ${step.executor === 'system' ? 'bg-sky-50 text-sky-700' : step.executor === 'deterministic' ? 'bg-green-50 text-green-700' : step.executor === 'hybrid' ? 'bg-blue-50 text-blue-700' : 'bg-amber-50 text-amber-700'}`}>{step.executor === 'system' ? t('系统 API', 'System API') : step.executor === 'deterministic' ? t('UI 自动化', 'UI automation') : step.executor === 'hybrid' ? t('混合执行', 'Hybrid') : 'AI'}</span>
                       {typeof step.import_status === 'string' && step.import_status !== 'ready' && <span className="text-[10px] text-amber-600">{step.import_status === 'needs_locator' ? t('需要补充定位', 'Locator needed') : t('待检查', 'Review')}</span>}
                     </div>
                     <p className="mt-1 truncate text-xs text-gray-500">
@@ -267,14 +267,15 @@ export default function ExecutionPlanManager({ suiteId, platform }: { suiteId: s
                   <div className="grid grid-cols-1 gap-3 p-3 md:grid-cols-2">
                     <div>
                       <label className={labelClass}>{t('操作类型', 'Action')}</label>
-                      <select className={fieldClass} value={step.action} onChange={e => patchStep(index, { action: e.target.value })}>
+                      <select className={fieldClass} value={step.action} onChange={e => { const action = e.target.value; patchStep(index, { action, ...( ['start_app', 'global_action', 'press_key'].includes(action) ? { executor: 'system' } : step.executor === 'system' ? { executor: 'deterministic' } : {}) }) }}>
                         {ACTIONS.map(a => <option key={a.value} value={a.value}>{a.label}</option>)}
                       </select>
                     </div>
                     <div>
                       <label className={labelClass}>{t('执行方式', 'Execution strategy')}</label>
                       <select className={fieldClass} value={step.executor} onChange={e => patchStep(index, { executor: e.target.value as ExecutionPlanStep['executor'] })}>
-                        <option value="deterministic">{t('确定性自动执行（优先）', 'Deterministic (preferred)')}</option>
+                        <option value="system">{t('系统 API / Package 执行', 'System API / Package')}</option>
+                        <option value="deterministic">{t('UI 确定性自动执行（优先）', 'Deterministic UI automation (preferred)')}</option>
                         <option value="hybrid">{t('混合执行（必要时调用 AI）', 'Hybrid (AI fallback)')}</option>
                         <option value="ai">{t('AI 执行', 'AI execution')}</option>
                       </select>
@@ -310,7 +311,7 @@ export default function ExecutionPlanManager({ suiteId, platform }: { suiteId: s
                     {step.action === 'start_app' && (
                       <div className="md:col-span-2">
                         <label className={labelClass}>{t('应用包名', 'App package')}</label>
-                        <input className={fieldClass} value={String(step.args?.package || '')} onChange={e => patchArgs(index, 'package', e.target.value)} placeholder="com.example.app" />
+                        <input className={fieldClass} value={String(step.args?.package_name || step.args?.package || '')} onChange={e => patchStep(index, { args: { ...(step.args || {}), package_name: e.target.value, package: e.target.value } })} placeholder="com.example.app" />
                       </div>
                     )}
                     {(step.action === 'swipe' || step.action === 'scroll') && (
