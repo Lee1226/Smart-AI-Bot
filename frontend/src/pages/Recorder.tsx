@@ -870,7 +870,7 @@ export default function Recorder() {
                         <span>{event.source || (realRecording ? 'portal_touch' : 'web_action')}</span>
                       </div>
                         </button>
-                        <button type="button" className="shrink-0 text-xs text-red-600 hover:underline" title={t('删除这条事件', 'Delete event')} onClick={() => {
+                        <button type="button" disabled={recording || realRecording} className="shrink-0 text-xs text-red-600 hover:underline disabled:opacity-40 disabled:cursor-not-allowed" title={t('停止录制后可删除事件', 'Stop recording before removing events')} onClick={() => {
                           const eventId = event.event_id
                           setRealEvents(prev => prev.filter(item => item.event_id !== eventId))
                           setWebEvents(prev => prev.filter(item => item.event_id !== eventId))
@@ -1022,7 +1022,7 @@ export default function Recorder() {
               <li key={i} className="flex items-start gap-2 text-sm">
                 <span className="shrink-0 font-mono text-xs text-gray-400 mt-0.5 w-5 text-right">{i + 1}.</span>
                 <span className="flex-1 text-gray-700">{s.description}</span>
-                <button type="button" className="text-xs text-red-600 hover:underline" onClick={() => {
+                <button type="button" disabled={recording || realRecording} className="text-xs text-red-600 hover:underline disabled:opacity-40 disabled:cursor-not-allowed" onClick={() => {
                   const eventId = s.args.event_id
                   setSteps(prev => prev.filter((_, index) => index !== i))
                   if (eventId) {
