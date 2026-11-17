@@ -310,13 +310,17 @@ class WebSocketDevice:
             raise ValueError(
                 f"No element with index {index}. Available: {available}"
             )
-        cx, cy = el["cx"], el["cy"]
+        tap_target = el.get("tap_target") or {}
+        cx = tap_target.get("cx", el["cx"])
+        cy = tap_target.get("cy", el["cy"])
         if cx == 0 and cy == 0:
             raise ValueError(
                 f"Element {index} ('{el['text']}') has no valid bounds"
             )
         await self._rpc("tap", {"x": cx, "y": cy})
-        return f"Tapped element {index} ('{el['text']}') at ({cx}, {cy})"
+        target_label = tap_target.get("text") or el.get("text", "")
+        target_note = " via clickable parent" if tap_target else ""
+        return f"Tapped element {index} ('{target_label}'){target_note} at ({cx}, {cy})"
 
     async def _tap_first_match(self, key: str, value: str) -> Optional[str]:
         """Tap the first visible element whose `key` field contains `value`.
