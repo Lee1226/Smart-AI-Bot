@@ -4,7 +4,7 @@ import { api, type Device } from '../lib/api'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import {
   createExecutionPlanVersion, ExecutionPlanStep,
-  fetchAppCatalog, fetchExecutionPlans, fetchSuiteCases, importLegacyExecutionPlan,
+  fetchAppCatalog, fetchExecutionPlans, fetchSuiteCases, importLegacyExecutionPlan, runExecutionPlan,
 } from '../lib/api'
 import { useT } from '../lib/i18n'
 
@@ -93,6 +93,21 @@ export default function ExecutionPlanManager({ suiteId, platform, device }: { su
     onError: (e: unknown) => {
       const msg = (e as { response?: { data?: { detail?: string } } })?.response?.data?.detail || String(e)
       alert(t(`保存新版本失败：${msg}`, `Failed to save new version: ${msg}`))
+    },
+  })
+
+  const runMut = useMutation({
+    mutationFn: () => {
+      if (!selectedPlan || !device) throw new Error('请先选择已连接的测试设备')
+      return runExecutionPlan(selectedPlan.id, { device_id: device.id, max_steps: 8 })
+    },
+    onSuccess: run => {
+      alert(t(`执行任务已创建：${run.id}，可在测试运行记录中查看进度和结果。`, `Run created: ${run.id}. Track progress and results in Run History.`))
+      qc.invalidateQueries({ queryKey: ['runs'] })
+    },
+    onError: (e: unknown) => {
+      const msg = (e as { response?: { data?: { detail?: string } } })?.response?.data?.detail || String(e)
+      alert(t(`执行计划启动失败：${msg}`, `Failed to start execution plan: ${msg}`))
     },
   })
 
@@ -288,7 +303,14 @@ export default function ExecutionPlanManager({ suiteId, platform, device }: { su
                 </select>
                 <span className={`rounded-full px-2 py-1 text-[11px] ${STATUS_STYLE[selectedPlan.status] || 'bg-gray-100 text-gray-600'}`}>{selectedPlan.status}</span>
                 <span className="text-xs text-gray-400">{selectedPlan.steps.length} {t('个步骤', 'steps')}</span>
-                {!editing && <button className="ml-auto rounded-md border border-gray-200 bg-white px-3 py-1.5 text-xs hover:bg-gray-50" onClick={beginEdit}>{t('编辑步骤', 'Edit steps')}</button>}
+                {!editing && <div className="ml-auto flex items-center gap-2">
+                  <button className="rounded-md bg-blue-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-blue-700 disabled:cursor-not-allowed disabled:opacity-50"
+                    disabled={!device || runMut.isPending || selectedPlan.steps.some(step => ['ai', 'hybrid'].includes(step.executor) && (step.intent?.status !== 'confirmed' || !step.intent.description.trim() || !step.intent.expected_result.trim()))}
+                    onClick={() => runMut.mutate()}>
+                    {runMut.isPending ? t('启动中…', 'Starting…') : t('运行执行计划', 'Run plan')}
+                  </button>
+                  <button className="rounded-md border border-gray-200 bg-white px-3 py-1.5 text-xs hover:bg-gray-50" onClick={beginEdit}>{t('编辑步骤', 'Edit steps')}</button>
+                </div>}
               </div>
             )}
 
