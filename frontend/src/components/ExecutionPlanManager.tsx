@@ -434,7 +434,6 @@ export default function ExecutionPlanManager({ suiteId, platform, device }: { su
                         </select>
                         {appsLoading ? <p className="text-[10px] text-gray-500">正在读取账号应用库…</p> : appsError ? <p className="text-[10px] text-red-600">应用库读取失败，请检查登录状态或刷新页面。</p> : selectableTestApps.length === 0 ? <p className="text-[10px] text-amber-700">账号应用库中还没有已标记的测试应用，请先到「设备应用库」加入测试应用。</p> : null}
                         <div className="text-[10px] text-gray-400">执行时使用包名直接启动；未安装在当前设备的应用不可选择。</div>
-                        <p className="text-[10px] text-gray-400">执行时使用包名直接启动应用；应用名称仅用于识别和展示。</p>
                       </div>
                     )}
                     {(step.action === 'swipe' || step.action === 'scroll') && (
