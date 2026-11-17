@@ -14,6 +14,9 @@ SUPPORTED_ACTIONS = {
     "global_action", "press_key", "start_app",
 }
 
+# These actions use the device/system bridge, not on-screen element locators.
+SYSTEM_ACTIONS = {"start_app", "global_action", "press_key"}
+
 
 def legacy_replay_to_plan(replay_steps: str) -> Tuple[List[Dict[str, Any]], List[str]]:
     """Convert legacy TestCase.replay_steps JSON into draft PlanStep objects.
@@ -47,6 +50,14 @@ def legacy_replay_to_plan(replay_steps: str) -> Tuple[List[Dict[str, Any]], List
 
         action = str(raw.get("kind") or raw.get("action") or "").strip().lower()
         args = {k: v for k, v in raw.items() if k not in {"kind", "delay_ms"}}
+        # Normalize both legacy "package" and the canonical "package_name".
+        # Keep "package" for compatibility with the existing Replay adapter.
+        if action == "start_app":
+            package_name = str(raw.get("package_name") or raw.get("package") or "").strip()
+            if package_name:
+                args["package_name"] = package_name
+                args["package"] = package_name
+
         locator: Dict[str, Any] = {}
         if isinstance(raw.get("locator"), dict):
             locator.update({key: value for key, value in raw["locator"].items() if value})
@@ -78,6 +89,12 @@ def legacy_replay_to_plan(replay_steps: str) -> Tuple[List[Dict[str, Any]], List
             executor = "ai"
             import_status = "unsupported"
             step_warnings.append(f"步骤 {index + 1}: 不支持的动作类型 {action or '(空)'}")
+        elif action in SYSTEM_ACTIONS:
+            executor = "system"
+            import_status = "ready"
+            if action == "start_app" and not args.get("package_name"):
+                import_status = "needs_package"
+                step_warnings.append(f"步骤 {index + 1}: 启动应用缺少 Package / Bundle 标识，不能自动执行")
         elif action == "tap" and locator:
             executor = "deterministic"
             import_status = "ready"
@@ -105,6 +122,7 @@ def legacy_replay_to_plan(replay_steps: str) -> Tuple[List[Dict[str, Any]], List
             "action": action or "unsupported",
             "args": args,
             "executor": executor,
+            "execution_channel": "system_api" if executor == "system" else ("ui_automation" if executor in {"deterministic", "hybrid"} else "ai_agent"),
             "locator": locator,
             "fallback": fallback,
             "precondition": None,
