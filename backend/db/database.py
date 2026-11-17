@@ -64,7 +64,10 @@ async def init_db():
             "checkpoints": "TEXT DEFAULT ''",
             "loop_task": "BOOLEAN DEFAULT 0",
         })
-        await _ensure_columns("test_cases", {"replay_steps": "TEXT DEFAULT ''"})
+        await _ensure_columns("test_cases", {
+            "replay_steps": "TEXT DEFAULT ''",
+            "recorder_events": "TEXT DEFAULT ''",
+        })
 
         await _ensure_columns("step_nodes", {
             "source_id": "VARCHAR",
