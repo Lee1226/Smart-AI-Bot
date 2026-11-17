@@ -77,8 +77,8 @@ def _validate_lifecycle_actions(metadata: Dict[str, Any]) -> None:
                 raise HTTPException(status_code=422, detail=f"metadata.{phase}[{index}] requires args.package_name")
             if action == "global_action" and str(args.get("action") or "").lower() not in {"back", "home", "recent", "notifications"}:
                 raise HTTPException(status_code=422, detail=f"metadata.{phase}[{index}] invalid global action")
-            if action == "press_key" and not str(args.get("key") or "").strip():
-                raise HTTPException(status_code=422, detail=f"metadata.{phase}[{index}] requires args.key")
+            if action == "press_key" and str(args.get("key") or "").strip().lower() not in {"back", "home", "recent", "power", "enter", "del", "tab", "space"}:
+                raise HTTPException(status_code=422, detail=f"metadata.{phase}[{index}] has an unsupported key")
             if action == "wait":
                 try:
                     duration = float(args.get("duration_ms", 1000))
