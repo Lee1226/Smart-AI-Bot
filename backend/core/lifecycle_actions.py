@@ -33,8 +33,6 @@ async def run_lifecycle_actions(device, actions: list, phase: str, emit: Callabl
                 result = await device.global_action(str(args.get("action") or ""))
             elif action == "press_key":
                 result = await device.press_key(str(args.get("key") or ""))
-            elif action == "press_key":
-                result = await device.press_key(str(args.get("key") or ""))
             elif action == "tap":
                 result = await device.tap_absolute(int(args["x"]), int(args["y"]))
             elif action == "input_text":
