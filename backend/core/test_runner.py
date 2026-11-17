@@ -370,6 +370,10 @@ async def execute_batch_run(run_id: str, state: "RunState", base_path: str,
                 language=language,
             )
             try:
+                lifecycle = json.loads(case.lifecycle_actions_json or "{}")
+                if not isinstance(lifecycle, dict):
+                    raise ValueError("用例执行前/后处理配置格式无效")
+                await run_lifecycle_actions(device, lifecycle.get("pre_actions", []), "执行前处理", emit)
                 case_result = await agent.run(case_data)
             except asyncio.CancelledError:
                 if result_row:
@@ -906,6 +910,21 @@ async def execute_replay_run(
                 raise
             except Exception as e:
                 case_result = CaseResult(status="error", reason=str(e), steps=0)
+
+            try:
+                lifecycle = json.loads(case.lifecycle_actions_json or "{}")
+                if isinstance(lifecycle, dict):
+                    await run_lifecycle_actions(device, lifecycle.get("post_actions", []), "执行后处理", emit)
+            except Exception as cleanup_error:
+                case_result = CaseResult(
+                    status="error",
+                    reason=(case_result.reason + "；" if case_result.reason else "") + f"执行后处理失败：{cleanup_error}",
+                    steps=case_result.steps,
+                    screenshot_b64=case_result.screenshot_b64,
+                    action_history=case_result.action_history,
+                    step_logs=case_result.step_logs,
+                    total_tokens=case_result.total_tokens,
+                )
 
             if result_row:
                 async with AsyncSessionLocal() as session:
