@@ -66,3 +66,68 @@ async def test_package_foreground_verification():
     assert await verify_plan_condition(
         FakeDevice(), {"type": "package_foreground", "package": "com.demo.app"}
     ) is True
+
+
+
+@pytest.mark.asyncio
+async def test_replay_step_ignores_class_name_only_and_uses_coordinates():
+    from core.test_runner import _replay_step
+
+    class Device:
+        def __init__(self):
+            self.tapped = None
+
+        async def tap(self, x, y):
+            self.tapped = ("image", x, y)
+
+        async def tap_absolute(self, x, y):
+            self.tapped = ("device", x, y)
+
+        async def tap_element_by_class(self, class_name):
+            raise AssertionError("ClassName must not be used as a standalone tap locator")
+
+    logs = []
+    async def emit(message):
+        logs.append(message)
+
+    device = Device()
+    result = await _replay_step(
+        device,
+        {"kind": "tap", "className": "LinearLayout", "x": 625, "y": 2485, "coordinate_space": "device_px"},
+        emit,
+    )
+    assert device.tapped == ("device", 625, 2485)
+    assert result == "tap (625,2485)"
+    assert any("忽略 ClassName=LinearLayout" in line for line in logs)
+    assert any("使用坐标兜底" in line for line in logs)
+
+
+@pytest.mark.asyncio
+async def test_replay_step_uses_text_after_ambiguous_resource_id():
+    from core.test_runner import _replay_step
+
+    class Device:
+        def __init__(self):
+            self.calls = []
+
+        async def tap_element_by_id(self, resource_id):
+            self.calls.append(("id", resource_id))
+            raise ValueError("Ambiguous resourceId locator: 3 visible candidates")
+
+        async def tap_element_by_text(self, text):
+            self.calls.append(("text", text))
+            return "Tapped 千问"
+
+    logs = []
+    async def emit(message):
+        logs.append(message)
+
+    device = Device()
+    result = await _replay_step(
+        device,
+        {"kind": "tap", "resourceId": "tab_item", "text": "千问", "x": 625, "y": 2485},
+        emit,
+    )
+    assert result == "Tapped 千问"
+    assert device.calls == [("id", "tab_item"), ("text", "千问")]
+    assert any("Resource ID 定位未采用" in line for line in logs)
