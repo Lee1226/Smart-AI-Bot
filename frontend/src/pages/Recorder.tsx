@@ -545,20 +545,24 @@ export default function Recorder() {
     try {
       const { data } = await api.post<{ events: RecordEvent[] }>(`/recorder/record/stop?device_id=${deviceId}`)
       const events = data.events ?? []
-      setRealEvents(events.map((event, index) => ({
+      const enrichedEvents = events.map((event, index) => ({
         ...event,
         // Keep the UI observation/target annotation attached by the polling
         // workbench; the stop response contains the server's raw event only.
         ...(realEvents[index] || {}),
         screenshot_b64: realEvents[index]?.screenshot_b64,
         screenshot_captured_at_ms: realEvents[index]?.screenshot_captured_at_ms,
-      })))
+      }))
+      setRealEvents(enrichedEvents)
       setSelectedEventIndex(0)
-      // Convert captured events into recordable steps (reuse the save flow),
-      // deriving inter-action delay_ms from each event's wall-clock timestamp.
-      setSteps(events.map((e, i) => {
+      // Merge real touch events with system actions issued from the recorder
+      // toolbar so both sources become one chronological, editable procedure.
+      const allEvents = [...enrichedEvents, ...webEvents].sort((a, b) =>
+        (a.timestamp_ms ?? a.received_at_ms ?? 0) - (b.timestamp_ms ?? b.received_at_ms ?? 0)
+      )
+      setSteps(allEvents.map((e, i) => {
         const currentTs = e.timestamp_ms ?? e.received_at_ms ?? (typeof e.ts === 'number' ? e.ts * 1000 : 0)
-        const previous = events[i - 1]
+        const previous = allEvents[i - 1]
         const previousTs = previous
           ? (previous.timestamp_ms ?? previous.received_at_ms ?? (typeof previous.ts === 'number' ? previous.ts * 1000 : currentTs))
           : currentTs
@@ -568,12 +572,10 @@ export default function Recorder() {
           delay_ms: delayMs,
           coordinate_space: e.coordinates?.space || 'device_px',
         }
-        // Keep Portal coordinates in their native device-pixel space. Replay
-        // dispatches them through tap_absolute/swipe_absolute; never assume 2x.
         return {
           action: e.action || e.kind,
           args,
-          description: eventToDescription(e),
+          description: e.description || eventToDescription(e),
         }
       }))
     } catch (e: unknown) {
@@ -1037,7 +1039,7 @@ export default function Recorder() {
       {(steps.length > 0) && !saved && (
         <div className="bg-white border rounded-lg shadow-sm p-4 space-y-3">
           <div className="text-sm font-semibold">{t('保存为测试用例', 'Save as test case')}</div>
-          <div className="grid grid-cols-2 gap-3">
+          <div className="grid grid-cols-3 gap-3">
             <div>
               <label className="block text-xs text-gray-500 mb-1">{t('套件名称', 'Suite name')}</label>
               <input
