@@ -46,6 +46,34 @@ class DeviceApp(Base):
     last_seen_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
 
 
+class AppCatalog(Base):
+    """Account-scoped app identity and testing metadata shared across devices."""
+    __tablename__ = "app_catalog"
+    __table_args__ = (UniqueConstraint("account_id", "package_name", name="uq_app_catalog_account_package"),)
+
+    id: Mapped[str] = mapped_column(String, primary_key=True, default=_uuid)
+    account_id: Mapped[str] = mapped_column(String, index=True)
+    package_name: Mapped[str] = mapped_column(String, index=True)
+    app_name: Mapped[str] = mapped_column(String, default="")
+    is_test_app: Mapped[bool] = mapped_column(Boolean, default=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+    updated_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+
+class DeviceAppInstallation(Base):
+    """Per-device installation state for an account catalog app."""
+    __tablename__ = "device_app_installations"
+    __table_args__ = (UniqueConstraint("account_id", "device_id", "package_name", name="uq_device_app_installation"),)
+
+    id: Mapped[str] = mapped_column(String, primary_key=True, default=_uuid)
+    account_id: Mapped[str] = mapped_column(String, index=True)
+    device_id: Mapped[str] = mapped_column(ForeignKey("devices.id", ondelete="CASCADE"), index=True)
+    package_name: Mapped[str] = mapped_column(String, index=True)
+    installed: Mapped[bool] = mapped_column(Boolean, default=True)
+    first_seen_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+    last_seen_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+
+
 class IosHost(Base):
     """Account-scoped Mac helper; never stores the helper's bearer token."""
     __tablename__ = "ios_hosts"
