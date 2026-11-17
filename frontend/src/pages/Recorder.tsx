@@ -693,7 +693,7 @@ export default function Recorder() {
                 {elements.map((el, i) => (
                   <button
                     key={el.index}
-                    disabled={loading}
+                    disabled={loading || !el.visible || !el.enabled || (!el.clickable && !el.tap_target && el.tap_evidence !== 'class_heuristic')}
                     onClick={() => doAction('tap_element', { index: el.index })}
                     className={`w-full text-left px-3 py-2 hover:bg-primary-soft disabled:opacity-50 transition-colors ${
                       i > 0 ? 'border-t' : ''
