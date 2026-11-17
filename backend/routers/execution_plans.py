@@ -347,6 +347,13 @@ async def import_legacy_replay(
         raise HTTPException(status_code=422, detail=str(exc))
 
     account_id = require_account_id(request)
+    try:
+        lifecycle_metadata = json.loads(case.lifecycle_actions_json or "{}")
+    except (TypeError, json.JSONDecodeError) as exc:
+        raise HTTPException(status_code=422, detail="用例的执行前/后处理配置不是有效 JSON") from exc
+    if not isinstance(lifecycle_metadata, dict):
+        raise HTTPException(status_code=422, detail="用例的执行前/后处理配置格式无效")
+    _validate_lifecycle_actions(lifecycle_metadata)
     latest_version = await db.scalar(
         select(func.max(ExecutionPlan.version)).where(
             ExecutionPlan.test_case_id == case.id,
@@ -372,7 +379,7 @@ async def import_legacy_replay(
             "expected": case.expected or "",
             "source_format": suite.source_format or "",
             "legacy_path": case.path or "",
-            **(json.loads(case.lifecycle_actions_json or "{}") if case.lifecycle_actions_json else {}),
+            **lifecycle_metadata,
         }, ensure_ascii=False),
         steps_json=json.dumps(steps, ensure_ascii=False),
         warnings_json=json.dumps(warnings, ensure_ascii=False),
