@@ -57,9 +57,11 @@ export default function ExecutionPlanManager({ suiteId, platform, device }: { su
   })
   const selectedPlan = plans.find(p => p.id === planId) || plans[0]
   const { data: testApps = [], isLoading: appsLoading, isError: appsError } = useQuery({
-    queryKey: ['app-catalog', device?.id],
-    queryFn: () => fetchAppCatalog(device!.id),
-    enabled: !!device && device.platform === 'android' && device.connection_type === 'adb_usb',
+    queryKey: ['app-catalog', device?.id || 'account'],
+    // The catalog is account-scoped; it can be loaded even before a device is selected.
+    // When a device is selected, the same endpoint also returns its installation state.
+    queryFn: () => fetchAppCatalog(device?.platform === 'android' && device.connection_type === 'adb_usb' ? device.id : undefined),
+    enabled: !device || (device.platform === 'android' && device.connection_type === 'adb_usb'),
     staleTime: 0,
     refetchOnWindowFocus: true,
   })
@@ -432,7 +434,7 @@ export default function ExecutionPlanManager({ suiteId, platform, device }: { su
                           <option value="">选择已加入测试应用的应用…</option>
                           {selectableTestApps.map(app => <option key={app.package_name} value={app.package_name} disabled={!app.installed}>{app.app_name || app.package_name} · {app.package_name}{app.installed ? '' : '（当前设备未安装）'}</option>)}
                         </select>
-                        {appsLoading ? <p className="text-[10px] text-gray-500">正在读取账号应用库…</p> : appsError ? <p className="text-[10px] text-red-600">应用库读取失败，请检查登录状态或刷新页面。</p> : selectableTestApps.length === 0 ? <p className="text-[10px] text-amber-700">账号应用库中还没有已标记的测试应用，请先到「设备应用库」加入测试应用。</p> : null}
+                        {appsLoading ? <p className="text-[10px] text-gray-500">正在读取账号应用库…</p> : appsError ? <p className="text-[10px] text-red-600">应用库读取失败，请检查登录状态或刷新页面。</p> : selectableTestApps.length === 0 ? <p className="text-[10px] text-amber-700">账号应用库中还没有已标记的测试应用，请先到「设备应用库」加入测试应用。</p> : !device ? <p className="text-[10px] text-amber-700">已显示账号内标记的应用；请先在右侧选择 Android ADB 设备，才能选择已安装的应用。</p> : null}
                         <div className="text-[10px] text-gray-400">执行时使用包名直接启动；未安装在当前设备的应用不可选择。</div>
                       </div>
                     )}
