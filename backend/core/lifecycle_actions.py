@@ -7,6 +7,8 @@ from typing import Any, Awaitable, Callable
 
 async def run_lifecycle_actions(device, actions: list, phase: str, emit: Callable[[str], Awaitable[None]]) -> None:
     """Run enabled lifecycle actions in order using the shared device adapter."""
+    if not isinstance(actions, list):
+        raise ValueError(f"{phase}配置必须是操作列表")
     enabled = [item for item in actions if isinstance(item, dict) and item.get("enabled", True)]
     if not enabled:
         return
@@ -31,6 +33,25 @@ async def run_lifecycle_actions(device, actions: list, phase: str, emit: Callabl
                 result = await device.global_action(str(args.get("action") or ""))
             elif action == "press_key":
                 result = await device.press_key(str(args.get("key") or ""))
+            elif action == "press_key":
+                result = await device.press_key(str(args.get("key") or ""))
+            elif action == "tap":
+                result = await device.tap_absolute(int(args["x"]), int(args["y"]))
+            elif action == "input_text":
+                text = str(args.get("text") or "")
+                if not text:
+                    raise ValueError("输入文本内容不能为空")
+                result = await device.input_text(text, bool(args.get("clear", False)))
+            elif action == "swipe":
+                result = await device.swipe_absolute(
+                    int(args["x1"]), int(args["y1"]), int(args["x2"]), int(args["y2"]),
+                    duration_ms=int(args.get("duration_ms", 500)),
+                )
+            elif action == "scroll":
+                result = await device.scroll(
+                    str(args.get("direction") or "down"),
+                    str(args.get("distance") or "medium"),
+                )
             elif action == "wait":
                 duration_ms = max(0, min(float(args.get("duration_ms", 1000)), 60000))
                 await asyncio.sleep(duration_ms / 1000)
