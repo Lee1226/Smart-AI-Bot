@@ -279,7 +279,7 @@ export default function Recorder() {
     setError('')
     gestureQueue.current = gestureQueue.current.then(async () => {
       try {
-        const { data } = await api.post<{ result: string; description: string; event?: RecordEvent }>('/recorder/gesture', {
+        const { data } = await api.post<{ result: string; description: string; event?: RecordEvent; before_screenshot_b64?: string; screenshot_captured_at_ms?: number }>('/recorder/gesture', {
           device_id: deviceId, action, args,
         })
         setSteps(prev => [...prev, { action, args: { ...args, event_id: data.event?.event_id }, description: data.description || description }])
