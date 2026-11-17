@@ -96,9 +96,9 @@ export default function Recorder() {
 
   const { data: allDevices = [] } = useQuery({ queryKey: ['devices'], queryFn: fetchDevices, refetchInterval: 5000 })
   const onlineDevices = allDevices.filter(d => d.status === 'online')
-  const { data: deviceApps = [] } = useQuery({ queryKey: ['device-apps', deviceId], queryFn: () => fetchDeviceApps(deviceId), enabled: !!deviceId })
 
   const [deviceId, setDeviceId] = useState('')
+  const { data: deviceApps = [] } = useQuery({ queryKey: ['device-apps', deviceId], queryFn: () => fetchDeviceApps(deviceId), enabled: !!deviceId })
   const [recording, setRecording] = useState(false)
   const [screenshot, setScreenshot] = useState('')
   const [elements, setElements] = useState<Element[]>([])
