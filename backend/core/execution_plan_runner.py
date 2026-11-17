@@ -247,6 +247,7 @@ async def execute_execution_plan_run(
     recorder = RunRecorder(run_id)
     lifecycle_device = None
     lifecycle_post_actions = []
+    lifecycle_result_id = None
     try:
         async with AsyncSessionLocal() as db:
             run = await db.get(TestRun, run_id)
@@ -259,6 +260,7 @@ async def execute_execution_plan_run(
             ))).scalar_one_or_none()
             if not case or not result:
                 raise RuntimeError("执行计划关联的用例或结果记录不存在")
+            lifecycle_result_id = result.id
             steps = json.loads(plan.steps_json or "[]")
             plan_metadata = json.loads(plan.metadata_json or "{}")
             lifecycle_post_actions = plan_metadata.get("post_actions", []) if isinstance(plan_metadata, dict) else []
@@ -469,4 +471,20 @@ async def execute_execution_plan_run(
                     await emit(f"执行后处理失败：{cleanup_error}")
                 except Exception:
                     pass
+                if lifecycle_result_id:
+                    try:
+                        async with AsyncSessionLocal() as db:
+                            current = await db.get(TestResult, lifecycle_result_id)
+                            previous_reason = current.reason or "" if current else ""
+                            await db.execute(update(TestResult).where(TestResult.id == lifecycle_result_id).values(
+                                status="error",
+                                reason=(previous_reason + "；执行后处理失败：" + str(cleanup_error)).strip("；"),
+                                finished_at=datetime.utcnow(),
+                            ))
+                            await db.execute(update(TestRun).where(TestRun.id == run_id).values(
+                                status="error", finished_at=datetime.utcnow()
+                            ))
+                            await db.commit()
+                    except Exception:
+                        logger.exception("Could not persist post-action failure: %s", run_id)
         await recorder.stop()
