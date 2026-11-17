@@ -265,6 +265,7 @@ async def execute_execution_plan_run(
         final_status = "pass"
         final_reason = ""
         final_screenshot = ""
+        all_steps_verified = True
 
         for index, step in enumerate(steps):
             if not isinstance(step, dict):
@@ -288,6 +289,7 @@ async def execute_execution_plan_run(
             step_result = ""
             step_status = "success"
             step_tokens = 0
+            step_verified = False
             try:
                 if executor == "ai":
                     ai_result = await _execute_ai(
@@ -298,12 +300,14 @@ async def execute_execution_plan_run(
                     step_result = ai_result.reason
                     if ai_result.status != "pass":
                         raise RuntimeError(ai_result.reason or "AI 未能完成当前步骤")
+                    step_verified = True
                 else:
                     try:
                         step_result = await _execute_deterministic(device, step, emit)
                         condition_result = await verify_plan_condition(device, step.get("verification"))
                         if condition_result is False:
                             raise RuntimeError("步骤验证条件未满足")
+                        step_verified = condition_result is True
                         if executor == "hybrid" and condition_result is None:
                             raise RuntimeError("混合执行步骤尚未配置可判定的验证条件")
                     except Exception as deterministic_error:
@@ -318,6 +322,7 @@ async def execute_execution_plan_run(
                         step_result = f"AI 恢复：{ai_result.reason}"
                         if ai_result.status != "pass":
                             raise RuntimeError(ai_result.reason or "AI 恢复失败")
+                        step_verified = True
 
                 wait_condition = step.get("wait_condition") if isinstance(step.get("wait_condition"), dict) else {}
                 if wait_condition.get("type") == "delay" and action != "wait":
@@ -329,6 +334,8 @@ async def execute_execution_plan_run(
                 if gap:
                     await asyncio.sleep(gap)
                 step_count += 1
+                if not step_verified:
+                    all_steps_verified = False
                 action_history.append({
                     "step": index + 1, "executor": executor, "action": action,
                     "result": step_result, "intent": (step.get("intent") or {}).get("description", ""),
@@ -369,8 +376,11 @@ async def execute_execution_plan_run(
             final_reason = reason
             if shot_b64:
                 final_screenshot = shot_b64
+        elif final_status == "pass" and all_steps_verified:
+            final_reason = "所有计划步骤均已完成，且每一步均通过配置的验证条件。"
         elif final_status == "pass":
-            final_reason = "所有计划步骤均已完成；用例未配置最终预期结果，未执行最终断言。"
+            final_status = "fail"
+            final_reason = "步骤执行完成，但用例未配置最终预期结果，且并非所有步骤都有可判定的验证条件，不能判定为通过。"
 
         async with AsyncSessionLocal() as db:
             await db.execute(update(TestResult).where(TestResult.id == result.id).values(
