@@ -140,8 +140,10 @@ export default function Recorder() {
           // Capture a nearby frame for this polling batch. It is deliberately
           // labelled as an approximate event frame, not an exact per-touch frame.
           let nearbyScreenshot = ''
+          let nearbySnapshot: SnapshotData | null = null
           try {
             const snapshot = await api.get<SnapshotData>(`/recorder/snapshot?device_id=${deviceId}`)
+            nearbySnapshot = snapshot.data
             nearbyScreenshot = snapshot.data.screenshot_b64
             latestSnapshotRef.current = snapshot.data
             elementsRef.current = snapshot.data.elements
@@ -153,21 +155,21 @@ export default function Recorder() {
             const observedAt = Date.now()
             const x = event.coordinates?.x ?? event.x
             const y = event.coordinates?.y ?? event.y
-            const hit = isLast && typeof x === 'number' && typeof y === 'number'
-              ? [...elementsRef.current].reverse().find(el => !!el.bounds
+            const hit = isLast && nearbySnapshot && typeof x === 'number' && typeof y === 'number'
+              ? [...nearbySnapshot.elements].reverse().find(el => !!el.bounds
                 && el.bounds.left <= x && el.bounds.right >= x
                 && el.bounds.top <= y && el.bounds.bottom >= y)
               : undefined
             return {
               ...event,
-              ...(isLast && latestSnapshotRef.current ? {
+              ...(isLast && nearbySnapshot ? {
                 ui_observation: {
                   phase: 'post_event_poll_approximate',
-                  ui_text: latestSnapshotRef.current.ui_text,
-                  elements: latestSnapshotRef.current.elements,
+                  ui_text: nearbySnapshot.ui_text,
+                  elements: nearbySnapshot.elements,
                   screen: {
-                    width: latestSnapshotRef.current.screen_width ?? 0,
-                    height: latestSnapshotRef.current.screen_height ?? 0,
+                    width: nearbySnapshot.screen_width ?? 0,
+                    height: nearbySnapshot.screen_height ?? 0,
                   },
                   captured_at_ms: observedAt,
                 },
