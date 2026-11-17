@@ -25,6 +25,7 @@ from core.run_memory import (
     task_keyword_for,
 )
 from core.run_recorder import RunRecorder
+from core.lifecycle_actions import run_lifecycle_actions
 from core.step_tree import NodeRow, RunTarget, backtrack_plan, chain_to_node, dfs_run_targets, flatten_chain, resolve_links
 from core.test_agent import CaseResult, TestCaseAgent
 from core.test_parser import Step, TestCaseData
@@ -379,6 +380,18 @@ async def execute_batch_run(run_id: str, state: "RunState", base_path: str,
                 raise
             except Exception as e:
                 case_result = CaseResult(status="error", reason=str(e), steps=0)
+
+            try:
+                lifecycle = json.loads(case.lifecycle_actions_json or "{}")
+                if isinstance(lifecycle, dict):
+                    await run_lifecycle_actions(device, lifecycle.get("post_actions", []), "执行后处理", emit)
+            except Exception as cleanup_error:
+                case_result = CaseResult(
+                    status="error", reason=(case_result.reason + "；" if case_result.reason else "") + f"执行后处理失败：{cleanup_error}",
+                    steps=case_result.steps, screenshot_b64=case_result.screenshot_b64,
+                    action_history=case_result.action_history, step_logs=case_result.step_logs,
+                    total_tokens=case_result.total_tokens,
+                )
 
             if result_row:
                 async with AsyncSessionLocal() as session:
@@ -855,6 +868,10 @@ async def execute_replay_run(
 
             await emit(f"\n[{case.path[:60]}]")
             try:
+                lifecycle = json.loads(case.lifecycle_actions_json or "{}")
+                if not isinstance(lifecycle, dict):
+                    raise ValueError("用例执行前/后处理配置格式无效")
+                await run_lifecycle_actions(device, lifecycle.get("pre_actions", []), "执行前处理", emit)
                 replay = json.loads(case.replay_steps or "[]")
                 if not replay:
                     case_result = CaseResult(
@@ -1144,7 +1161,19 @@ async def execute_run(
             )
 
             case_result: Optional[CaseResult] = None
+            pre_actions_failed = False
+            try:
+                lifecycle = json.loads(case_row.lifecycle_actions_json or "{}")
+                if not isinstance(lifecycle, dict):
+                    raise ValueError("用例执行前/后处理配置格式无效")
+                await run_lifecycle_actions(device, lifecycle.get("pre_actions", []), "执行前处理", emit)
+            except Exception as pre_error:
+                pre_actions_failed = True
+                case_result = CaseResult(status="error", reason=f"执行前处理失败：{pre_error}", steps=0)
+
             for attempt in range(1 + max_retries):
+                if pre_actions_failed:
+                    break
                 try:
                     case_result = await agent.run(case_data)
                 except asyncio.CancelledError:
@@ -1186,6 +1215,22 @@ async def execute_run(
                     )
                     continue
                 break  # pass or no retries left
+
+            try:
+                lifecycle = json.loads(case_row.lifecycle_actions_json or "{}")
+                if isinstance(lifecycle, dict):
+                    await run_lifecycle_actions(device, lifecycle.get("post_actions", []), "执行后处理", emit)
+            except Exception as cleanup_error:
+                existing_reason = case_result.reason if case_result else ""
+                case_result = CaseResult(
+                    status="error",
+                    reason=(existing_reason + "；" if existing_reason else "") + f"执行后处理失败：{cleanup_error}",
+                    steps=case_result.steps if case_result else 0,
+                    screenshot_b64=case_result.screenshot_b64 if case_result else "",
+                    action_history=case_result.action_history if case_result else [],
+                    step_logs=case_result.step_logs if case_result else [],
+                    total_tokens=case_result.total_tokens if case_result else 0,
+                )
 
             if result_row:
                 async with AsyncSessionLocal() as session:
