@@ -117,6 +117,14 @@ class Element(BaseModel):
     contentDescription: str = ""
     bounds: Optional[Dict[str, int]] = None
     clickable: bool = False
+    tap_candidate: bool = False
+    tap_evidence: str = "none"
+    focusable: bool = False
+    checkable: bool = False
+    longClickable: bool = False
+    editable: bool = False
+    capabilities: List[str] = []
+    tap_target: Optional[Dict[str, Any]] = None
     enabled: bool = True
     visible: bool = True
     scrollable: bool = False
@@ -222,6 +230,14 @@ async def _snapshot(device: WebSocketDevice) -> SnapshotResponse:
             contentDescription=e.get("contentDescription", ""),
             bounds=e.get("bounds"),
             clickable=e.get("clickable", False),
+            tap_candidate=e.get("tap_candidate", e.get("clickable", False)),
+            tap_evidence=e.get("tap_evidence", "none"),
+            focusable=e.get("focusable", False),
+            checkable=e.get("checkable", False),
+            longClickable=e.get("longClickable", False),
+            editable=e.get("editable", False),
+            capabilities=e.get("capabilities", []),
+            tap_target=e.get("tap_target"),
             enabled=e.get("enabled", True),
             visible=e.get("visible", True),
             scrollable=e.get("scrollable", False),
@@ -546,8 +562,34 @@ async def _execute_action(req: ActionRequest):
                 "y": target_element.get("cy"),
                 "coordinate_space": "device_px",
             })
-    recorder_engine.append(req.device_id, event_payload)
+    # A visible accessibility-tree delta is evidence of UI response, not proof
+    # that the business operation passed.
     snap = await _snapshot(device)
+    def _state_signature(items: List[Any]) -> tuple:
+        def value(item: Any, key: str, default: Any = None) -> Any:
+            return item.get(key, default) if isinstance(item, dict) else getattr(item, key, default)
+        return tuple((
+            value(item, "resourceId", ""), value(item, "text", ""),
+            value(item, "className", ""),
+            (value(item, "bounds", None) or {}).get("left"),
+            (value(item, "bounds", None) or {}).get("top"),
+            (value(item, "bounds", None) or {}).get("right"),
+            (value(item, "bounds", None) or {}).get("bottom"),
+            value(item, "enabled", True), value(item, "visible", True),
+            value(item, "selected", False), value(item, "checked", False),
+        ) for item in items)
+    state_changed = _state_signature(pre_elements) != _state_signature(snap.elements)
+    if action in {"tap", "tap_element", "input_text", "scroll", "swipe"}:
+        event_payload["verification"] = {
+            "action_dispatched": True,
+            "ui_state_changed": state_changed,
+            "status": "effect_observed" if state_changed else "no_visible_change",
+            "scope": "accessibility_tree",
+            "note": "UI 状态变化仅代表观察到界面响应，不代表业务结果成功"
+                    if state_changed else
+                    "未观察到可访问性树变化；不等于操作必然失败，可能存在无障碍树不可见的响应",
+        }
+    recorder_engine.append(req.device_id, event_payload)
 
     return ActionResponse(
         result=result,
