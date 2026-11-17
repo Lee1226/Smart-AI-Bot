@@ -13,7 +13,8 @@ export default function ExecutionPlanStudio() {
   const requestedSuiteId = searchParams.get('suite') || ''
   const { data: devices = [] } = useQuery({ queryKey: ['devices'], queryFn: fetchDevices, refetchInterval: 5000 })
   const onlineDevices = devices.filter(device => device.status === 'online')
-  const selectedDevice = onlineDevices.find(device => device.id === deviceId)
+  const debugDevices = onlineDevices.filter(device => device.platform === 'android' && device.connection_type === 'adb_usb')
+  const selectedDevice = onlineDevices.find(device => device.id === deviceId) || null
 
   const { data, isLoading, isError, error } = useQuery({
     queryKey: ['execution-plan-studio-suites'],
@@ -110,7 +111,7 @@ export default function ExecutionPlanStudio() {
               </select>
             </div>
             <div>
-              <label className="mb-1.5 block text-xs font-medium text-ink-secondary">{t('调试设备（预留）', 'Debug device (reserved)')}</label>
+              <label className="mb-1.5 block text-xs font-medium text-ink-secondary">{t('调试设备（Android ADB）', 'Debug device (Android ADB)')}</label>
               <select className="w-full rounded-lg border border-hairline bg-white px-3 py-2.5 text-sm text-ink outline-none focus:border-primary"
                 value={deviceId} onChange={event => {
                   setDeviceId(event.target.value)
@@ -118,9 +119,9 @@ export default function ExecutionPlanStudio() {
                   if (device?.platform) setPlatform(device.platform)
                 }}>
                 <option value="">{t('暂不选择设备', 'No device selected')}</option>
-                {onlineDevices.map(device => <option key={device.id} value={device.id}>{device.name} · {device.platform || device.connection_type}</option>)}
+                {debugDevices.map(device => <option key={device.id} value={device.id}>{device.name} · Android ADB</option>)}
               </select>
-              <p className="mt-1 text-[11px] text-ink-faint">{selectedDevice ? t('已选择在线设备，真实执行入口尚未接入。', 'Online device selected; live execution is not connected yet.') : t('设备选择仅用于后续单步调试接入。', 'Device selection is reserved for future step debugging.')}</p>
+              <p className="mt-1 text-[11px] text-ink-faint">{selectedDevice ? t('已连接设备，可读取 UI Tree 并进行交互调试。', 'Connected device is ready for UI inspection and interactive debugging.') : t('首期选择已连接的 Android 本机 ADB 设备。', 'Select an online Android local ADB device.')} </p>
             </div>
             <div>
               <label className="mb-1.5 block text-xs font-medium text-ink-secondary">{t('目标平台', 'Target platform')}</label>
@@ -135,7 +136,7 @@ export default function ExecutionPlanStudio() {
       </section>
 
       {selectedSuite && (
-        <ExecutionPlanManager key={selectedSuite.id} suiteId={selectedSuite.id} platform={platform} />
+        <ExecutionPlanManager key={selectedSuite.id} suiteId={selectedSuite.id} platform={platform} device={selectedDevice} />
       )}
     </div>
   )
