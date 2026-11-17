@@ -10,7 +10,7 @@ from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from auth.access import require_account_id
-from core.execution_plan import legacy_replay_to_plan
+from core.execution_plan import SYSTEM_ACTIONS, legacy_replay_to_plan
 from db.database import AsyncSessionLocal
 from db.models import ExecutionPlan, TestCase, TestSuite
 
@@ -131,8 +131,15 @@ async def create_plan_version(
     for index, step in enumerate(body.steps):
         if not isinstance(step.get("sequence"), int) or step["sequence"] < 1:
             raise HTTPException(status_code=422, detail=f"steps[{index}].sequence must be a positive integer")
-        if step.get("executor") not in {"deterministic", "ai", "hybrid", "system"}:
+        executor = step.get("executor")
+        action = str(step.get("action") or "").strip().lower()
+        args = step.get("args") if isinstance(step.get("args"), dict) else {}
+        if executor not in {"deterministic", "ai", "hybrid", "system"}:
             raise HTTPException(status_code=422, detail=f"steps[{index}].executor is invalid")
+        if executor == "system" and action not in SYSTEM_ACTIONS:
+            raise HTTPException(status_code=422, detail=f"steps[{index}] system executor only supports {sorted(SYSTEM_ACTIONS)}")
+        if action == "start_app" and not str(args.get("package_name") or args.get("package") or "").strip():
+            raise HTTPException(status_code=422, detail=f"steps[{index}] start_app requires args.package_name")
 
     latest_version = await db.scalar(
         select(func.max(ExecutionPlan.version)).where(
