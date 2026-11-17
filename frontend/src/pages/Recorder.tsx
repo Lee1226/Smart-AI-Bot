@@ -488,9 +488,9 @@ export default function Recorder() {
         (['stop_app', 'start_app'].includes(action.action) && !String(action.args.package_name || action.args.package || '').trim()) ||
         (action.action === 'press_key' && !String(action.args.key || '').trim()) ||
         (action.action === 'global_action' && !String(action.args.action || '').trim()) ||
-        (action.action === 'tap' && !['x', 'y'].every(key => Number.isFinite(Number(action.args[key])))) ||
+        (action.action === 'tap' && !['x', 'y'].every(key => String(action.args[key] ?? '').trim() !== '' && Number.isFinite(Number(action.args[key])))) ||
         (action.action === 'input_text' && !String(action.args.text || '')) ||
-        (action.action === 'swipe' && !['x1', 'y1', 'x2', 'y2'].every(key => Number.isFinite(Number(action.args[key]))))
+        (action.action === 'swipe' && !['x1', 'y1', 'x2', 'y2'].every(key => String(action.args[key] ?? '').trim() !== '' && Number.isFinite(Number(action.args[key]))))
       ))
       if (invalid) {
         setError(`${phase}中有已启用的操作尚未填写完整，请补充参数或禁用该操作。`)
