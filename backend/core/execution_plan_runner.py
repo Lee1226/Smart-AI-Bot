@@ -122,12 +122,22 @@ async def _execute_deterministic(device: WebSocketDevice, step: Dict[str, Any], 
         if str(result).startswith("ERROR:"):
             raise RuntimeError(result)
         return result
+    if action == "tap" and raw.get("x") is None and raw.get("contentDescription"):
+        _, elements = await device.get_ui_state()
+        expected = str(raw["contentDescription"])
+        match = next((el for el in elements if expected in str(el.get("contentDescription") or el.get("content_description") or "")), None)
+        if not match:
+            raise ValueError(f"no visible element matches contentDescription '{expected}'")
+        return await device.tap_element(match["index"])
     if action == "tap" and raw.get("x") is None and not any(raw.get(k) for k in ("resourceId", "text", "className")):
         raise ValueError("tap requires a locator or recorded coordinates")
     if action == "swipe" and not all(raw.get(k) is not None for k in ("x1", "y1", "x2", "y2")):
         raise ValueError("swipe requires x1/y1/x2/y2 coordinates")
     from core.test_runner import _replay_step
-    return await _replay_step(device, raw, emit)
+    result = await _replay_step(device, raw, emit)
+    if action == "tap" and result == "tap (no target)":
+        raise RuntimeError("点击目标未解析，未执行任何触摸操作")
+    return result
 
 
 async def _execute_ai(
