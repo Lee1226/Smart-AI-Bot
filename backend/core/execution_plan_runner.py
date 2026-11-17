@@ -262,6 +262,9 @@ async def execute_execution_plan_run(
                 raise ValueError(f"步骤 {index + 1} 格式无效")
             executor = str(step.get("executor") or "").lower()
             action = str(step.get("action") or "").lower()
+            from core.execution_plan import SUPPORTED_ACTIONS
+            if action not in SUPPORTED_ACTIONS and action != "wait":
+                raise ValueError(f"步骤 {index + 1} 动作类型不受支持：{action}")
             if executor not in {"deterministic", "ai", "hybrid", "system"}:
                 raise ValueError(f"步骤 {index + 1} 执行方式无效：{executor}")
             if executor == "system" and action not in {"start_app", "global_action", "press_key"}:
