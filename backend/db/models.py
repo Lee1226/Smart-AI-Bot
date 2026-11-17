@@ -83,6 +83,8 @@ class TestCase(Base):
     # record time. When present, a run in "replay" mode executes these verbatim
     # (coordinates + timing) without per-step AI decisions.
     replay_steps: Mapped[str] = mapped_column(Text, default="")
+    # Versioned recorder evidence: event-level targets, UI snapshots and verification metadata.
+    recorder_events: Mapped[str] = mapped_column(Text, default="")
 
     suite: Mapped["TestSuite"] = relationship(back_populates="cases")
 
