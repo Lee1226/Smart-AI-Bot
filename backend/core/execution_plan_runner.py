@@ -133,6 +133,10 @@ async def _execute_deterministic(device: WebSocketDevice, step: Dict[str, Any], 
         raise ValueError("tap requires a locator or recorded coordinates")
     if action == "swipe" and not all(raw.get(k) is not None for k in ("x1", "y1", "x2", "y2")):
         raise ValueError("swipe requires x1/y1/x2/y2 coordinates")
+    if action in {"tap_element", "input_text"}:
+        # Refresh the accessibility cache and keyboard focus state before using
+        # an index or attempting text input.
+        await device.get_ui_state()
     from core.test_runner import _replay_step
     result = await _replay_step(device, raw, emit)
     if action == "tap" and result == "tap (no target)":
