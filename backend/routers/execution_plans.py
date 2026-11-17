@@ -6,7 +6,7 @@ from typing import Any, Dict, List, Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Request
 from pydantic import BaseModel, Field
-from sqlalchemy import func, select
+from sqlalchemy import func, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from auth.access import require_account_id, require_device
@@ -237,6 +237,13 @@ async def run_execution_plan(
     try:
         await start_execution_plan_run(run.id, plan.id, max_steps=max(1, min(body.max_steps, 20)))
     except Exception as exc:
+        await db.execute(update(TestRun).where(TestRun.id == run.id).values(
+            status="error", finished_at=__import__("datetime").datetime.utcnow()
+        ))
+        await db.execute(update(TestResult).where(
+            TestResult.run_id == run.id, TestResult.status == "pending"
+        ).values(status="error", reason=str(exc)))
+        await db.commit()
         raise HTTPException(status_code=500, detail=f"无法启动执行计划：{exc}")
     from routers.testruns import _run_out
     return await _run_out(run, db)
