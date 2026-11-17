@@ -203,7 +203,7 @@ def sanitize_events_for_storage(events: List[Dict[str, Any]]) -> List[Dict[str, 
             event["screenshot_evidence"] = {
                 "captured": True,
                 "captured_at_ms": event.get("screenshot_captured_at_ms"),
-                "storage": "workbench_only",
+                "storage": "not_persisted",
             }
         sanitized.append(event)
     return sanitized
