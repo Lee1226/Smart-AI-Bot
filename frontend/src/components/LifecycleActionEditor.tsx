@@ -54,9 +54,9 @@ export default function LifecycleActionEditor({
       action === 'stop_app' || action === 'start_app' ? { package_name: '' } :
       action === 'global_action' ? { action: 'home' } :
       action === 'press_key' ? { key: 'BACK' } :
-      action === 'tap' ? { x: 540, y: 1200 } :
+      action === 'tap' ? { x: '', y: '' } :
       action === 'input_text' ? { text: '', clear: false } :
-      action === 'swipe' ? { x1: 540, y1: 1600, x2: 540, y2: 600, duration_ms: 500 } :
+      action === 'swipe' ? { x1: '', y1: '', x2: '', y2: '', duration_ms: 500 } :
       action === 'scroll' ? { direction: 'down', distance: 'medium' } :
       action === 'wait' ? { duration_ms: 1000 } : {}
     patch(index, { action, args })
@@ -112,7 +112,7 @@ export default function LifecycleActionEditor({
               {item.action === 'tap' && (
                 <div className="grid grid-cols-2 gap-2">
                   {(['x', 'y'] as const).map(key => <label key={key} className="text-[11px] text-gray-500">设备坐标 {key.toUpperCase()}（px）
-                    <input type="number" className={inputClass} value={String(item.args[key] ?? '')} onChange={e => patch(index, { args: { [key]: Number(e.target.value) } })} />
+                    <input type="number" className={inputClass} value={String(item.args[key] ?? '')} onChange={e => patch(index, { args: { [key]: e.target.value === '' ? '' : Number(e.target.value) } })} />
                   </label>)}
                 </div>
               )}
