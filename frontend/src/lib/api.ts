@@ -841,3 +841,10 @@ export const createExecutionPlanVersion = (planId: string, body: {
   warnings?: string[]
   platform?: string
 }) => api.post<ExecutionPlan>(`/execution-plans/${planId}/versions`, body).then(r => r.data)
+
+export const runExecutionPlan = (planId: string, body: {
+  device_id: string
+  provider?: string
+  model?: string
+  max_steps?: number
+}) => api.post<Run>(`/execution-plans/${planId}/run`, body).then(r => r.data)
