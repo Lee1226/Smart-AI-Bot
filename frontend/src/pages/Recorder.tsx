@@ -433,6 +433,7 @@ export default function Recorder() {
     setSteps([])
     setRealEvents([])
     setWebEvents([])
+    setSessionStartSnapshot(null)
     setSelectedEventIndex(0)
     setPreviewSize({ width: 0, height: 0 })
     setSaved(null)
