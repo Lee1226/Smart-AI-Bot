@@ -331,18 +331,30 @@ class WebSocketDevice:
         return f"Tapped element {index} ('{target_label}'){target_note} at ({cx}, {cy})"
 
     async def _tap_first_match(self, key: str, value: str) -> Optional[str]:
-        """Tap the first visible element whose `key` field contains `value`.
+        """Tap only when the locator resolves to exactly one visible candidate.
 
-        Returns a description, or None if no element matched. Used by replay to
-        re-locate elements by id/text/class instead of stale coordinates, so a
-        minor UI shift doesn't break the run.
+        Ambiguous matches are rejected so replay can try a stronger semantic
+        locator or its explicitly recorded coordinate fallback.
         """
         await self.get_ui_state()  # refresh the cached element list
-        matches = [e for e in self._elements if value in (e.get(key) or "")]
+        matches = [
+            e for e in self._elements
+            if value in (e.get(key) or "")
+            and e.get("visible", True) is not False
+            and e.get("enabled", True) is not False
+        ]
         if not matches and key == "className":
-            # Fall back to the simple class name (last segment) on full-name mismatch.
+            # Class names are intentionally not used as standalone tap locators.
+            # Keep this branch defensive for any legacy caller.
             short = value.rsplit(".", 1)[-1]
-            matches = [e for e in self._elements if short in (e.get("className") or "")]
+            matches = [
+                e for e in self._elements
+                if short in (e.get("className") or "")
+                and e.get("visible", True) is not False
+                and e.get("enabled", True) is not False
+            ]
+        if len(matches) > 1:
+            raise ValueError(f"Ambiguous {key} locator '{value}': {len(matches)} visible candidates")
         if not matches:
             return None
         el = matches[0]
