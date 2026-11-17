@@ -10,7 +10,7 @@ from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from auth.access import require_account_id, require_device
-from core.execution_plan import SYSTEM_ACTIONS, legacy_replay_to_plan
+from core.execution_plan import SUPPORTED_ACTIONS, SYSTEM_ACTIONS, legacy_replay_to_plan
 from db.database import AsyncSessionLocal
 from db.models import ExecutionPlan, TestCase, TestSuite, TestRun, TestResult
 
@@ -205,6 +205,8 @@ async def run_execution_plan(
         action = str(step.get("action") or "").lower()
         if executor not in {"deterministic", "ai", "hybrid", "system"}:
             raise HTTPException(status_code=422, detail=f"步骤 {index + 1} 执行方式无效")
+        if action not in SUPPORTED_ACTIONS and action != "wait":
+            raise HTTPException(status_code=422, detail=f"步骤 {index + 1} 动作类型不受支持：{action}")
         if executor in {"ai", "hybrid"}:
             intent = step.get("intent") if isinstance(step.get("intent"), dict) else {}
             if intent.get("status") != "confirmed" or not str(intent.get("description") or "").strip() or not str(intent.get("expected_result") or "").strip():
