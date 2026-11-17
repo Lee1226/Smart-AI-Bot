@@ -152,6 +152,8 @@ export interface DeviceApp {
 }
 export const fetchDeviceApps = (deviceId: string) =>
   api.get<{ device_id: string; apps: DeviceApp[] }>(`/devices/${deviceId}/apps`).then(r => r.data.apps)
+export const fetchAppCatalog = (deviceId?: string) =>
+  api.get<{ apps: DeviceApp[] }>('/devices/apps/catalog', { params: deviceId ? { device_id: deviceId } : {} }).then(r => r.data.apps)
 export const updateDeviceApp = (deviceId: string, packageName: string, data: { app_name: string; is_test_app: boolean }) =>
   api.put<DeviceApp>(`/devices/${deviceId}/apps/${encodeURIComponent(packageName)}`, data).then(r => r.data)
 export const launchDeviceApp = (deviceId: string, packageName: string) =>
