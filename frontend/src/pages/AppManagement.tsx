@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { fetchDevices, fetchDeviceApps, updateDeviceApp, launchDeviceApp, type DeviceApp } from '../lib/api'
 
@@ -12,6 +12,8 @@ export default function AppManagement() {
   const [editing, setEditing] = useState<DeviceApp | null>(null)
   const [draftName, setDraftName] = useState('')
   const [notice, setNotice] = useState('')
+  const [page, setPage] = useState(1)
+  const [pageSize, setPageSize] = useState(20)
   const { data: devices = [] } = useQuery({ queryKey: ['devices'], queryFn: fetchDevices, refetchInterval: 5000 })
   const androidDevices = devices.filter(d => d.connection_type === 'adb_usb' && d.platform === 'android')
   const activeDevice = androidDevices.find(d => d.id === deviceId) || androidDevices.find(d => d.status === 'online') || androidDevices[0]
@@ -40,6 +42,10 @@ export default function AppManagement() {
       return !q || app.package_name.toLowerCase().includes(q) || app.app_name.toLowerCase().includes(q)
     }).sort((a, b) => Number(b.is_test_app) - Number(a.is_test_app) || (a.app_name || a.package_name).localeCompare(b.app_name || b.package_name))
   }, [apps, filter, keyword])
+  const totalPages = Math.max(1, Math.ceil(filteredApps.length / pageSize))
+  const pagedApps = filteredApps.slice((page - 1) * pageSize, page * pageSize)
+  useEffect(() => { setPage(1) }, [keyword, filter, pageSize, activeId])
+  useEffect(() => { if (page > totalPages) setPage(totalPages) }, [page, totalPages])
   const beginEdit = (app: DeviceApp) => { setEditing(app); setDraftName(app.app_name || '') }
   const save = (app: DeviceApp, is_test_app = app.is_test_app) => saveMutation.mutate({ app, app_name: draftName.trim(), is_test_app })
   const toggleTestApp = (app: DeviceApp) => saveMutation.mutate({ app, app_name: app.app_name, is_test_app: !app.is_test_app })
@@ -53,7 +59,7 @@ export default function AppManagement() {
     </header>
     <section className="rounded-xl border border-hairline bg-white p-4 shadow-sm">
       <div className="flex flex-wrap items-center justify-between gap-3">
-        <div><div className="text-sm font-semibold text-ink">当前设备</div><div className="mt-1 text-xs text-ink-mute">应用清单按设备维护，标记不会因浏览器或电脑更换而丢失。</div></div>
+        <div><div className="text-sm font-semibold text-ink">当前设备</div><div className="mt-1 text-xs text-ink-mute">应用名称和测试标记按账号共享；安装状态按设备独立记录。</div></div>
         <select className="min-w-[260px] rounded-lg border border-hairline bg-white px-3 py-2.5 text-sm" value={activeId} onChange={e => { setDeviceId(e.target.value); setNotice('') }}>
           {androidDevices.length === 0 && <option value="">暂无本机 ADB Android 设备</option>}
           {androidDevices.map(d => <option key={d.id} value={d.id}>{d.name} · {d.status === 'online' ? '在线' : '离线'}</option>)}
@@ -76,7 +82,7 @@ export default function AppManagement() {
         : isLoading ? <div className="p-12 text-center text-sm text-ink-mute">正在读取设备应用…</div>
         : isError ? <div className="p-12 text-center"><p className="text-sm text-red-600">读取应用失败，请确认 ADB 授权和设备连接状态。</p><button onClick={() => void refetch()} className="mt-3 rounded-lg border px-3 py-2 text-xs">重试</button></div>
         : filteredApps.length === 0 ? <div className="p-12 text-center text-sm text-ink-mute">没有符合条件的应用。</div>
-        : <div className="divide-y divide-hairline">{filteredApps.map(app => <div key={app.package_name} className="flex flex-wrap items-center gap-3 px-4 py-3.5 transition hover:bg-canvas-soft/60">
+        : <div className="divide-y divide-hairline">{pagedApps.map(app => <div key={app.package_name} className="flex flex-wrap items-center gap-3 px-4 py-3.5 transition hover:bg-canvas-soft/60">
           <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl border border-hairline bg-canvas-soft text-sm font-semibold uppercase text-ink-mute">{(app.app_name || app.package_name.split('.').filter(Boolean).pop() || 'A').slice(0, 2)}</div>
           <div className="min-w-0 flex-1">
             <div className="flex flex-wrap items-center gap-2"><span className="truncate text-sm font-semibold text-ink">{app.app_name || '未识别应用'}</span>{app.is_test_app && <span className="rounded-full bg-emerald-50 px-2 py-0.5 text-[10px] font-medium text-emerald-700">测试应用</span>}{!app.installed && <span className="rounded-full bg-amber-50 px-2 py-0.5 text-[10px] text-amber-700">设备已卸载</span>}</div>
@@ -93,6 +99,18 @@ export default function AppManagement() {
             <p className="mt-2 text-[11px] text-ink-mute">包名是执行时使用的唯一标识；名称仅用于界面展示和步骤选择。</p>
           </div>}
         </div>)}</div>}
+      {filteredApps.length > 0 && <div className="flex flex-wrap items-center justify-between gap-3 border-t border-hairline px-4 py-3">
+        <div className="text-xs text-ink-mute">显示 {(page - 1) * pageSize + 1}–{Math.min(page * pageSize, filteredApps.length)} 条，共 {filteredApps.length} 条</div>
+        <div className="flex items-center gap-2">
+          <label className="text-xs text-ink-mute">每页</label>
+          <select className="rounded-md border border-hairline bg-white px-2 py-1.5 text-xs" value={pageSize} onChange={e => setPageSize(Number(e.target.value))}>
+            {[10, 20, 50, 100].map(size => <option key={size} value={size}>{size} 条</option>)}
+          </select>
+          <button onClick={() => setPage(p => Math.max(1, p - 1))} disabled={page <= 1} className="rounded-md border border-hairline px-3 py-1.5 text-xs disabled:opacity-40">上一页</button>
+          <span className="min-w-[64px] text-center text-xs tabular-nums text-ink-mute">{page} / {totalPages}</span>
+          <button onClick={() => setPage(p => Math.min(totalPages, p + 1))} disabled={page >= totalPages} className="rounded-md border border-hairline px-3 py-1.5 text-xs disabled:opacity-40">下一页</button>
+        </div>
+      </div>}
     </section>
     {notice && <div className="rounded-lg border border-hairline bg-white px-4 py-3 text-sm text-ink-mute">{notice}</div>}
   </div>
