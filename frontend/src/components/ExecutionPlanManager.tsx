@@ -4,7 +4,7 @@ import { api, type Device } from '../lib/api'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import {
   createExecutionPlanVersion, ExecutionPlanStep,
-  fetchDeviceApps, fetchExecutionPlans, fetchSuiteCases, importLegacyExecutionPlan,
+  fetchAppCatalog, fetchExecutionPlans, fetchSuiteCases, importLegacyExecutionPlan,
 } from '../lib/api'
 import { useT } from '../lib/i18n'
 
@@ -56,13 +56,14 @@ export default function ExecutionPlanManager({ suiteId, platform, device }: { su
     enabled: !!activeCaseId,
   })
   const selectedPlan = plans.find(p => p.id === planId) || plans[0]
-  const { data: installedApps = [] } = useQuery({
-    queryKey: ['device-apps', device?.id],
-    queryFn: () => fetchDeviceApps(device!.id),
+  const { data: testApps = [], isLoading: appsLoading, isError: appsError } = useQuery({
+    queryKey: ['app-catalog', device?.id],
+    queryFn: () => fetchAppCatalog(device!.id),
     enabled: !!device && device.platform === 'android' && device.connection_type === 'adb_usb',
-    staleTime: 30000,
+    staleTime: 0,
+    refetchOnWindowFocus: true,
   })
-  const testApps = installedApps.filter(app => app.is_test_app && app.installed)
+  const selectableTestApps = testApps.filter(app => app.is_test_app)
   const invalidate = async () => {
     await qc.invalidateQueries({ queryKey: ['execution-plans', activeCaseId] })
   }
@@ -429,11 +430,10 @@ export default function ExecutionPlanManager({ suiteId, platform, device }: { su
                         <label className={labelClass}>选择已标记应用</label>
                         <select className={fieldClass} value={String(step.args?.package_name || step.args?.package || '')} onChange={e => { const pkg = e.target.value; patchStep(index, { args: { ...(step.args || {}), package_name: pkg, package: pkg } }) }}>
                           <option value="">选择已加入测试应用的应用…</option>
-                          {testApps.map(app => <option key={app.package_name} value={app.package_name}>{app.app_name || app.package_name} · {app.package_name}</option>)}
+                          {selectableTestApps.map(app => <option key={app.package_name} value={app.package_name} disabled={!app.installed}>{app.app_name || app.package_name} · {app.package_name}{app.installed ? '' : '（当前设备未安装）'}</option>)}
                         </select>
-                        {testApps.length === 0 && <p className="text-[10px] text-amber-700">当前设备还没有标记测试应用，请先到「设备应用库」识别并加入测试应用。</p>}
-                        <label className={labelClass}>{t('应用包名', 'App package')}</label>
-                        <input className={fieldClass} value={String(step.args?.package_name || step.args?.package || '')} onChange={e => patchStep(index, { args: { ...(step.args || {}), package_name: e.target.value, package: e.target.value } })} placeholder="com.example.app" />
+                        {appsLoading ? <p className="text-[10px] text-gray-500">正在读取账号应用库…</p> : appsError ? <p className="text-[10px] text-red-600">应用库读取失败，请检查登录状态或刷新页面。</p> : selectableTestApps.length === 0 ? <p className="text-[10px] text-amber-700">账号应用库中还没有已标记的测试应用，请先到「设备应用库」加入测试应用。</p> : null}
+                        <div className="text-[10px] text-gray-400">执行时使用包名直接启动；未安装在当前设备的应用不可选择。</div>
                         <p className="text-[10px] text-gray-400">执行时使用包名直接启动应用；应用名称仅用于识别和展示。</p>
                       </div>
                     )}
