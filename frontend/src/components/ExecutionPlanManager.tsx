@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import type { Device } from '../lib/api'
+import { api, type Device } from '../lib/api'
 import ExecutionPlanDeviceInspector from './ExecutionPlanDeviceInspector'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import {
@@ -41,6 +41,8 @@ export default function ExecutionPlanManager({ suiteId, platform, device }: { su
   const [draftSteps, setDraftSteps] = useState<ExecutionPlanStep[]>([])
   const [editError, setEditError] = useState('')
   const [targetStepIndex, setTargetStepIndex] = useState(0)
+  const [executingStep, setExecutingStep] = useState<number | null>(null)
+  const [executionLogs, setExecutionLogs] = useState<Array<{ id: string; time: string; step: number; status: 'success' | 'error'; message: string }>>([])
 
   const { data: cases = [], isLoading: casesLoading } = useQuery({
     queryKey: ['suite-cases', suiteId],
@@ -152,6 +154,77 @@ export default function ExecutionPlanManager({ suiteId, platform, device }: { su
     const step: ExecutionPlanStep = { step_id: 'device_' + Date.now(), sequence: base.length + 1, action, args, executor: 'deterministic', locator: locator || {}, fallback: null, precondition: null, wait_condition: null, verification: null, on_failure: 'fail', import_status: 'manual' }
     setDraftSteps([...base, step]); setTargetStepIndex(base.length); setEditing(true); setEditError('')
   }
+  const executeDeviceStep = async (step: ExecutionPlanStep, index: number) => {
+    if (!device || device.platform !== 'android' || device.connection_type !== 'adb_usb') {
+      setExecutionLogs(current => [{ id: String(Date.now()), time: new Date().toLocaleTimeString(), step: index + 1, status: 'error', message: '仅支持已连接的 Android 本机 ADB 设备' }, ...current])
+      return
+    }
+    if (executingStep !== null) return
+    setExecutingStep(index)
+    const addLog = (status: 'success' | 'error', message: string) =>
+      setExecutionLogs(current => [{ id: String(Date.now()) + Math.random(), time: new Date().toLocaleTimeString(), step: index + 1, status, message }, ...current].slice(0, 30))
+    try {
+      const args = { ...(step.args || {}) } as Record<string, any>
+      const locator = (step.locator || {}) as Record<string, any>
+      let action = step.action
+      if (action === 'wait') {
+        const ms = Number(step.wait_condition?.duration_ms || args.duration_ms || 0)
+        await new Promise(resolve => window.setTimeout(resolve, Math.max(0, Math.min(ms, 60000))))
+        addLog('success', `等待 ${ms} ms 完成`)
+        return
+      }
+      if (action === 'tap' || action === 'tap_element' || action === 'input_text') {
+        const { data: tree } = await api.get<{ elements: Array<Record<string, any>> }>(`/recorder/elements?device_id=${encodeURIComponent(device.id)}`)
+        const keys = [
+          ['resourceId', locator.resource_id || locator.resourceId],
+          ['contentDescription', locator.content_description || locator.contentDescription],
+          ['text', locator.text],
+        ].filter((entry): entry is [string, string] => typeof entry[1] === 'string' && !!entry[1].trim())
+        if (!keys.length) throw new Error('该步骤没有语义定位条件。请先从实时 UI Tree 选择控件并绑定，暂不使用不可靠的旧 index/坐标自动点击。')
+        let matches = tree.elements
+        for (const [key, value] of keys) {
+          const found = matches.filter(element => String(element[key] || '') === value)
+          if (found.length) { matches = found; break }
+        }
+        if (matches.length !== 1) throw new Error(matches.length ? `定位到 ${matches.length} 个同名控件，存在歧义；请补充 Resource ID。` : '当前页面未找到目标控件，请刷新 UI Tree 并重新绑定。')
+        const target = matches[0]
+        if (target.visible === false || target.enabled === false) throw new Error('目标控件不可见或已禁用，已阻止操作。')
+        if (action === 'tap' || action === 'tap_element' || action === 'input_text') {
+          await api.post('/recorder/action', { device_id: device.id, action: 'tap_element', args: { index: target.index } })
+        }
+        if (action === 'input_text') {
+          if (typeof args.text !== 'string' || !args.text.length) throw new Error('输入步骤缺少文本内容。')
+          const { data } = await api.post('/recorder/action', { device_id: device.id, action: 'input_text', args: { text: args.text, clear: !!args.clear } })
+          addLog('success', data.description || '控件已聚焦并输入文本')
+          return
+        }
+        if (action === 'tap' || action === 'tap_element') {
+          addLog('success', `已点击控件：${target.text || target.contentDescription || target.resourceId || target.className}`)
+          return
+        }
+      } else if (action === 'start_app') {
+        const pkg = String(args.package_name || args.package || '').trim()
+        if (!pkg) throw new Error('启动应用步骤缺少 Package 名称。')
+        const { data } = await api.post('/recorder/action', { device_id: device.id, action: 'start_app', args: { package: pkg, activity: args.activity || '' } })
+        addLog('success', data.description || data.result || `已发送启动请求：${pkg}`)
+        return
+      } else if (action === 'global_action' || action === 'press_key') {
+        const { data } = await api.post('/recorder/action', { device_id: device.id, action, args })
+        addLog('success', data.description || data.result || '设备操作已返回')
+        return
+      } else if (action === 'scroll' || action === 'swipe') {
+        const { data } = await api.post('/recorder/action', { device_id: device.id, action, args })
+        addLog('success', data.description || data.result || '设备操作已返回')
+        return
+      }
+      throw new Error(`暂不支持单步调试动作：${action}`)
+    } catch (error: any) {
+      addLog('error', error?.response?.data?.detail || error?.message || String(error))
+    } finally {
+      setExecutingStep(null)
+    }
+  }
+
   const saveVersion = () => {
     if (draftSteps.length === 0) {
       setEditError(t('至少保留一个执行步骤。', 'Keep at least one execution step.'))
@@ -224,6 +297,22 @@ export default function ExecutionPlanManager({ suiteId, platform, device }: { su
         )}
 
         <ExecutionPlanDeviceInspector device={device} onApplyLocator={applyDeviceLocator} onAddAction={addDeviceAction} />
+        <section className="rounded-lg border border-gray-200 bg-white p-3">
+          <div className="mb-2 flex items-center justify-between">
+            <h3 className="text-xs font-semibold text-gray-700">单步执行日志</h3>
+            <button type="button" onClick={() => setExecutionLogs([])} className="text-[11px] text-gray-400 hover:text-gray-700">清空</button>
+          </div>
+          {executionLogs.length === 0 ? <p className="py-3 text-center text-[11px] text-gray-400">尚无执行记录。点击步骤右侧“单步执行”后，这里会显示设备实际返回结果。</p> : (
+            <div className="max-h-40 space-y-1.5 overflow-auto">
+              {executionLogs.map(log => <div key={log.id} className="flex items-start gap-2 text-[11px]">
+                <span className="shrink-0 text-gray-400">{log.time}</span>
+                <span className="shrink-0 text-gray-500">第 {log.step} 步</span>
+                <span className={log.status === 'success' ? 'text-green-700' : 'text-red-700'}>{log.status === 'success' ? '成功' : '失败'}</span>
+                <span className="min-w-0 break-all text-gray-600">{log.message}</span>
+              </div>)}
+            </div>
+          )}
+        </section>
 
         {selectedPlan && !editing && (
           <div className="space-y-3">
@@ -248,6 +337,9 @@ export default function ExecutionPlanManager({ suiteId, platform, device }: { su
                     <p className="mt-1 truncate text-xs text-gray-500">
                       {String(step.locator?.text || step.locator?.resource_id || step.args?.text || step.args?.package_name || step.args?.package || t('尚未设置目标控件或参数', 'Target or arguments not configured'))}
                     </p>
+                    <button type="button" disabled={!device || executingStep !== null} onClick={() => void executeDeviceStep(step, i)} className="mt-2 rounded-md border border-blue-200 bg-blue-50 px-2.5 py-1.5 text-[11px] font-medium text-blue-700 disabled:opacity-40">
+                      {executingStep === i ? '执行中…' : '单步执行'}
+                    </button>
                   </div>
                 </div>
               ))}
