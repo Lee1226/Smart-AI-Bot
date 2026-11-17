@@ -104,6 +104,7 @@ async def init_db():
         await _ensure_columns("test_results", {"account_id": "VARCHAR"})
         await _ensure_columns("test_step_logs", {"account_id": "VARCHAR"})
 
+    from sqlalchemy import select as _select
     # ── Migrate legacy per-device app metadata into shared catalog tables ──
     # Safe to run on every startup; old rows remain available for rollback.
     from db.models import DeviceApp, AppCatalog, DeviceAppInstallation
