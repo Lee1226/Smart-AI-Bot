@@ -310,7 +310,15 @@ class WebSocketDevice:
             raise ValueError(
                 f"No element with index {index}. Available: {available}"
             )
+        if not el.get("visible", True):
+            raise ValueError(f"Element {index} ('{el['text']}') is not visible")
+        if not el.get("enabled", True):
+            raise ValueError(f"Element {index} ('{el['text']}') is disabled")
         tap_target = el.get("tap_target") or {}
+        if not el.get("clickable", False) and not tap_target and el.get("tap_evidence") != "class_heuristic":
+            raise ValueError(
+                f"Element {index} ('{el['text']}') has no accessibility click action or clickable parent"
+            )
         cx = tap_target.get("cx", el["cx"])
         cy = tap_target.get("cy", el["cy"])
         if cx == 0 and cy == 0:
