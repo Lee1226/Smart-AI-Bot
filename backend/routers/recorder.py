@@ -32,7 +32,7 @@ from auth.access import require_device
 from db.database import AsyncSessionLocal
 from db.models import TestCase, TestSuite
 from agent import local_adb
-from core.recorder_engine import recorder_engine
+from core.recorder_engine import recorder_engine, sanitize_events_for_storage
 
 logger = logging.getLogger(__name__)
 
@@ -52,7 +52,10 @@ def handle_record_event(device_id: str, event: dict) -> None:
     recorder_engine.append(device_id, event, source="portal_touch")
 
 
-def _to_replay_steps(steps: List["RecordedStep"]) -> str:
+def _to_replay_steps(
+    steps: List["RecordedStep"],
+    events: Optional[List[Dict[str, Any]]] = None,
+) -> str:
     """Convert recorded steps into a deterministic replay plan (JSON string).
 
     Each entry carries the action + its coordinates/args + delay_ms (time to wait
@@ -60,9 +63,28 @@ def _to_replay_steps(steps: List["RecordedStep"]) -> str:
     verbatim, skipping per-step AI decisions.
     """
     replay: List[dict] = []
-    for s in steps:
+    event_list = events or []
+    for index, s in enumerate(steps):
         args = s.args or {}
+        event = event_list[index] if index < len(event_list) and isinstance(event_list[index], dict) else {}
+        target = event.get("target") if isinstance(event.get("target"), dict) else {}
         step: dict = {"kind": s.action, "delay_ms": int(args.get("delay_ms", 0))}
+        if target:
+            step["target"] = target
+            step["source_event_id"] = event.get("event_id")
+            locator = {
+                "resource_id": target.get("resource_id") or target.get("resourceId"),
+                "text": target.get("text"),
+                "content_description": target.get("content_description") or target.get("contentDescription"),
+                "class_name": target.get("class_name") or target.get("className"),
+            }
+            step["locator"] = {key: value for key, value in locator.items() if value}
+        coordinates = event.get("coordinates") if isinstance(event.get("coordinates"), dict) else {}
+        if coordinates.get("space"):
+            step["coordinate_space"] = coordinates["space"]
+        screen = event.get("screen") or (event.get("before") or {}).get("screen")
+        if isinstance(screen, dict) and screen.get("width") and screen.get("height"):
+            step["screen_size"] = {"width": screen["width"], "height": screen["height"]}
         if s.action == "tap":
             if args.get("x") is not None:
                 step["x"] = args.get("x")
@@ -153,6 +175,7 @@ class ActionResponse(BaseModel):
     ui_text: str
     elements: List[Element]
     description: str     # human-readable step description
+    event: Optional[Dict[str, Any]] = None
 
 
 class RecordedStep(BaseModel):
@@ -166,6 +189,7 @@ class SaveRequest(BaseModel):
     suite_name: str
     expected: str
     steps: List[RecordedStep]
+    events: Optional[List[Dict[str, Any]]] = None
 
 
 class SaveResponse(BaseModel):
@@ -473,9 +497,9 @@ async def _execute_action(req: ActionRequest):
 
     # Pre-fetch elements for description generation (before action changes the screen)
     try:
-        _, pre_elements = await device.get_ui_state()
+        pre_ui_text, pre_elements = await device.get_ui_state()
     except Exception:
-        pre_elements = []
+        pre_ui_text, pre_elements = "", []
 
     # Execute the action
     action = req.action
@@ -525,7 +549,15 @@ async def _execute_action(req: ActionRequest):
     description = _step_description(action, args, pre_elements)
     # The recorder engine is the common event sink for browser actions and
     # external adapters. If no recording session is active this is a no-op.
-    event_payload = {"kind": action, **args, "description": description}
+    event_payload = {
+        "kind": action, **args, "description": description,
+        "before": {
+            "ui_text": pre_ui_text,
+            "elements": pre_elements,
+            "screen": {"width": device.screen_width, "height": device.screen_height},
+            "captured_at_ms": int(time.time() * 1000),
+        },
+    }
     # Enrich element-based browser actions with the element metadata and its
     # center point from the pre-action UI tree. Coordinates stay in the
     # screenshot/model-image space used by this recorder surface.
@@ -589,7 +621,13 @@ async def _execute_action(req: ActionRequest):
                     if state_changed else
                     "未观察到可访问性树变化；不等于操作必然失败，可能存在无障碍树不可见的响应",
         }
-    recorder_engine.append(req.device_id, event_payload)
+    event_payload["after"] = {
+        "ui_text": snap.ui_text,
+        "elements": [element.dict() for element in snap.elements],
+        "screen": {"width": snap.screen_width, "height": snap.screen_height},
+        "captured_at_ms": int(time.time() * 1000),
+    }
+    recorded_event = recorder_engine.append(req.device_id, event_payload)
 
     return ActionResponse(
         result=result,
@@ -597,6 +635,7 @@ async def _execute_action(req: ActionRequest):
         ui_text=snap.ui_text,
         elements=snap.elements,
         description=description,
+        event=recorded_event,
     )
 
 
@@ -634,7 +673,11 @@ async def save_recording(req: SaveRequest, request: Request):
             expected=req.expected.strip(),
             order=0,
             account_id=account_id,
-            replay_steps=_to_replay_steps(req.steps),
+            replay_steps=_to_replay_steps(req.steps, req.events or []),
+            recorder_events=json.dumps(
+                sanitize_events_for_storage(req.events or []),
+                ensure_ascii=False,
+            ),
         )
         db.add(case)
         await db.commit()
