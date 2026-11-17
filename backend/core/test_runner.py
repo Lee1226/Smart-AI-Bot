@@ -708,32 +708,42 @@ async def run_log_stream(run_id: str) -> AsyncGenerator[str, None]:
 # ── Background task ───────────────────────────────────────────────────────────
 
 async def _replay_step(device: WebSocketDevice, step: dict, emit) -> str:
-    """Execute one recorded step verbatim. Returns a short description."""
+    """Execute one recorded step with explicit locator provenance and safe fallback."""
     kind = step.get("kind")
     if kind == "tap":
-        # Prefer element matching (id > text > class) so a minor UI shift doesn't
-        # break the run; fall back to recorded coordinates last.
+        # Resource ID and text are semantic hints. ClassName alone is too broad
+        # (e.g. many unrelated nodes are LinearLayout), so it must never trigger a tap.
         if step.get("resourceId"):
+            await emit(f"    定位尝试：Resource ID={step['resourceId']}")
             try:
-                return await device.tap_element_by_id(step["resourceId"])
-            except Exception:
-                pass
+                result = await device.tap_element_by_id(step["resourceId"])
+                await emit("    定位结果：Resource ID 唯一匹配")
+                return result
+            except Exception as exc:
+                await emit(f"    Resource ID 定位未采用：{exc}")
         if step.get("text"):
+            await emit(f"    定位尝试：Text={step['text']}")
             try:
-                return await device.tap_element_by_text(step["text"])
-            except Exception:
-                pass
+                result = await device.tap_element_by_text(step["text"])
+                await emit("    定位结果：Text 唯一匹配")
+                return result
+            except Exception as exc:
+                await emit(f"    Text 定位未采用：{exc}")
         if step.get("className"):
-            try:
-                return await device.tap_element_by_class(step["className"])
-            except Exception:
-                pass
+            await emit(
+                f"    忽略 ClassName={step['className']}：通用控件类型不能单独确定点击目标"
+            )
         if step.get("x") is not None and step.get("y") is not None:
+            await emit(
+                f"    使用坐标兜底：({step['x']},{step['y']}) "
+                f"· coordinate_space={step.get('coordinate_space') or 'image_px'}"
+            )
             if step.get("coordinate_space") == "device_px":
                 await device.tap_absolute(step["x"], step["y"])
             else:
                 await device.tap(step["x"], step["y"])
             return f"tap ({step['x']},{step['y']})"
+        await emit("    点击失败：没有可靠语义定位条件，也没有坐标")
         return "tap (no target)"
     if kind == "tap_element":
         await device.tap_element(step.get("index", 0))
