@@ -64,7 +64,7 @@ interface RecordEvent {
   description?: string
   before?: { ui_text?: string; elements?: Element[]; screen?: { width: number; height: number }; captured_at_ms?: number }
   after?: { ui_text?: string; elements?: Element[]; screen?: { width: number; height: number }; captured_at_ms?: number }
-  ui_observation?: { phase: string; ui_text: string; elements: Element[]; screen: { width: number; height: number }; captured_at_ms: number }
+  ui_observation?: { phase: string; quality?: 'approximate' | 'exact'; ui_text: string; elements: Element[]; screen: { width: number; height: number }; captured_at_ms: number; event_to_observation_delta_ms?: number | null }
   session_start_snapshot?: { ui_text: string; elements: Element[]; screen: { width: number; height: number } }
   screenshot_evidence?: { captured?: boolean; captured_at_ms?: number; storage?: string }
   [key: string]: unknown
