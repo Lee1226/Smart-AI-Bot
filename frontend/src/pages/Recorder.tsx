@@ -16,6 +16,14 @@ interface Element {
   contentDescription?: string
   bounds?: { left: number; top: number; right: number; bottom: number } | null
   clickable?: boolean
+  tap_candidate?: boolean
+  tap_evidence?: string
+  focusable?: boolean
+  checkable?: boolean
+  longClickable?: boolean
+  editable?: boolean
+  capabilities?: string[]
+  tap_target?: { text?: string; resourceId?: string; className?: string; cx?: number; cy?: number } | null
   enabled?: boolean
   visible?: boolean
   scrollable?: boolean
@@ -704,8 +712,14 @@ export default function Recorder() {
                         )}
                         {el.bounds && <div className="mt-1 text-[10px] text-gray-400 font-mono">[{el.bounds.left},{el.bounds.top}]–[{el.bounds.right},{el.bounds.bottom}]</div>}
                         <div className="mt-1 flex flex-wrap gap-1 text-[10px] text-gray-400">
-                          {el.clickable && <span className="rounded bg-emerald-50 px-1 text-emerald-700">clickable</span>}
-                          {el.scrollable && <span className="rounded bg-blue-50 px-1 text-blue-700">scrollable</span>}
+                          {el.clickable && <span className="rounded bg-emerald-50 px-1 text-emerald-700">系统可点击</span>}
+                          {!el.clickable && el.tap_candidate && <span className="rounded bg-amber-50 px-1 text-amber-700">点击候选</span>}
+                          {el.tap_target && <span className="rounded bg-amber-50 px-1 text-amber-700">父级响应</span>}
+                          {el.editable && <span className="rounded bg-sky-50 px-1 text-sky-700">可输入</span>}
+                          {el.checkable && <span className="rounded bg-orange-50 px-1 text-orange-700">可切换</span>}
+                          {el.scrollable && <span className="rounded bg-blue-50 px-1 text-blue-700">可滚动</span>}
+                          {el.enabled === false && <span className="rounded bg-red-50 px-1 text-red-700">已禁用</span>}
+                          {el.visible === false && <span className="rounded bg-gray-100 px-1 text-gray-500">不可见</span>}
                           {el.selected && <span className="rounded bg-amber-50 px-1 text-amber-700">selected</span>}
                         </div>
                       </div>
