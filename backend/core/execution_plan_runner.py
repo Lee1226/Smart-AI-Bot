@@ -166,8 +166,11 @@ async def _execute_ai(
         raise ValueError("AI 执行步骤必须先填写并确认操作意图和预期结果")
     locator = step.get("locator") if isinstance(step.get("locator"), dict) else {}
     fallback = step.get("fallback") if isinstance(step.get("fallback"), dict) else {}
+    args = step.get("args") if isinstance(step.get("args"), dict) else {}
     context = (
         f"执行计划步骤 {step.get('sequence', '?')}：{description}\n"
+        f"动作类型：{step.get('action', '')}\n"
+        f"动作参数：{json.dumps(args, ensure_ascii=False)}\n"
         f"本步骤预期结果：{expected}\n"
         "只完成当前这一个逻辑步骤，不要擅自执行后续测试步骤；达到预期结果后立即停止。\n"
         "以下定位信息仅是历史线索，不保证当前仍然有效；必须先观察当前页面并重新判断，不可盲目点击旧坐标。\n"
