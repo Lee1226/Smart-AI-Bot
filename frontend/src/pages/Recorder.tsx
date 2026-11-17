@@ -415,6 +415,7 @@ export default function Recorder() {
       const { data } = await api.post<{ events: RecordEvent[] }>(`/recorder/session/stop?device_id=${deviceId}`)
       const normalized = data.events ?? []
       setWebEvents(normalized.map((event, index) => ({
+        ...(webEvents[index] || {}),
         ...event,
         screenshot_b64: webEvents[index]?.screenshot_b64,
         screenshot_captured_at_ms: webEvents[index]?.screenshot_captured_at_ms,
@@ -531,6 +532,9 @@ export default function Recorder() {
       const events = data.events ?? []
       setRealEvents(events.map((event, index) => ({
         ...event,
+        // Keep the UI observation/target annotation attached by the polling
+        // workbench; the stop response contains the server's raw event only.
+        ...(realEvents[index] || {}),
         screenshot_b64: realEvents[index]?.screenshot_b64,
         screenshot_captured_at_ms: realEvents[index]?.screenshot_captured_at_ms,
       })))
