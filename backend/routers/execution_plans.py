@@ -59,6 +59,35 @@ class ExecutionPlanOut(BaseModel):
     updated_at: str
 
 
+def _validate_lifecycle_actions(metadata: Dict[str, Any]) -> None:
+    for phase in ("pre_actions", "post_actions"):
+        actions = metadata.get(phase, [])
+        if not isinstance(actions, list):
+            raise HTTPException(status_code=422, detail=f"metadata.{phase} must be a list")
+        for index, item in enumerate(actions):
+            if not isinstance(item, dict):
+                raise HTTPException(status_code=422, detail=f"metadata.{phase}[{index}] must be an object")
+            if item.get("enabled", True) is False:
+                continue
+            action = str(item.get("action") or "").strip().lower()
+            args = item.get("args") if isinstance(item.get("args"), dict) else {}
+            if action not in {"stop_app", "start_app", "global_action", "press_key", "wait"}:
+                raise HTTPException(status_code=422, detail=f"metadata.{phase}[{index}] unsupported action: {action}")
+            if action in {"stop_app", "start_app"} and not str(args.get("package_name") or args.get("package") or "").strip():
+                raise HTTPException(status_code=422, detail=f"metadata.{phase}[{index}] requires args.package_name")
+            if action == "global_action" and str(args.get("action") or "").lower() not in {"back", "home", "recent", "notifications"}:
+                raise HTTPException(status_code=422, detail=f"metadata.{phase}[{index}] invalid global action")
+            if action == "press_key" and not str(args.get("key") or "").strip():
+                raise HTTPException(status_code=422, detail=f"metadata.{phase}[{index}] requires args.key")
+            if action == "wait":
+                try:
+                    duration = float(args.get("duration_ms", 1000))
+                except (TypeError, ValueError):
+                    duration = -1
+                if duration < 0 or duration > 60000:
+                    raise HTTPException(status_code=422, detail=f"metadata.{phase}[{index}] duration_ms must be 0..60000")
+
+
 def _out(plan: ExecutionPlan) -> ExecutionPlanOut:
     return ExecutionPlanOut(
         id=plan.id,
@@ -135,6 +164,7 @@ async def update_execution_plan(
         raise HTTPException(status_code=404, detail="Execution plan not found")
     if not body.steps:
         raise HTTPException(status_code=422, detail="steps must not be empty")
+    _validate_lifecycle_actions(body.metadata)
 
     for index, step in enumerate(body.steps):
         if not isinstance(step.get("sequence"), int) or step["sequence"] < 1:
@@ -244,6 +274,8 @@ async def run_execution_plan(
     ))).scalar_one_or_none()
     if not case:
         raise HTTPException(status_code=404, detail="Execution plan case not found")
+    metadata = json.loads(plan.metadata_json or "{}")
+    _validate_lifecycle_actions(metadata)
     steps = json.loads(plan.steps_json or "[]")
     if not steps:
         raise HTTPException(status_code=422, detail="执行计划没有步骤")
@@ -339,6 +371,7 @@ async def import_legacy_replay(
             "expected": case.expected or "",
             "source_format": suite.source_format or "",
             "legacy_path": case.path or "",
+            **(json.loads(case.lifecycle_actions_json or "{}") if case.lifecycle_actions_json else {}),
         }, ensure_ascii=False),
         steps_json=json.dumps(steps, ensure_ascii=False),
         warnings_json=json.dumps(warnings, ensure_ascii=False),
