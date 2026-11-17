@@ -976,6 +976,16 @@ export default function Recorder() {
                       ].filter(([, value]) => value).map(([label]) => <span key={String(label)} className="rounded bg-blue-50 px-2 py-1 text-blue-700">{String(label)}</span>)}
                     </div>}
                     {eventTarget?.tap_evidence && <div><span className="text-gray-400">点击证据：</span>{eventTarget.tap_evidence}</div>}
+                    {selectedEvent.target_analysis && (
+                      <div className="rounded-md border bg-white p-2 space-y-1">
+                        <div className="font-medium text-gray-700">{t('交互目标分析', 'Interaction target analysis')}</div>
+                        <div>{t('触摸节点', 'Touched node')}: {selectedEvent.target_analysis.touched_element?.text || selectedEvent.target_analysis.touched_element?.className || '—'}</div>
+                        <div>{t('实际目标', 'Resolved target')}: {selectedEvent.target_analysis.resolved_target?.text || selectedEvent.target_analysis.resolved_target?.className || '—'}</div>
+                        <div>{t('解析结果', 'Resolution')}: <span className="font-medium">{selectedEvent.target_analysis.resolution || '—'}</span></div>
+                        <div>{t('证据来源', 'Evidence')}: {selectedEvent.target_analysis.evidence || '—'}</div>
+                        <div className="text-gray-500">{t('状态', 'Status')}: {selectedEvent.target_analysis.status || '—'}</div>
+                      </div>
+                    )}
                     {!!eventTarget?.capabilities?.length && <div><span className="text-gray-400">Capabilities：</span>{eventTarget.capabilities.join(', ')}</div>}
                   </div>
                   {(selectedEvent.before || selectedEvent.after || selectedEvent.ui_observation || selectedEvent.session_start_snapshot) && <details className="rounded-lg border">
