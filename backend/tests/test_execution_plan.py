@@ -25,7 +25,8 @@ def test_import_preserves_semantic_locator_and_coordinates():
     assert step["locator"]["text"] == "搜索"
     assert step["fallback"]["coordinates"] == {"x": 120, "y": 240}
     assert step["fallback"]["coordinate_space"] == "device_px"
-    assert step["wait_condition"] == {"type": "delay", "duration_ms": 300}
+    assert step["wait_condition"] is None
+    assert step["timing"]["inter_action_gap_ms"] == 300
 
 
 def test_coordinate_only_tap_is_hybrid_and_warned():
