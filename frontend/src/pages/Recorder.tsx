@@ -483,6 +483,17 @@ export default function Recorder() {
 
   const saveRecording = async () => {
     if (!suiteName.trim() || !caseName.trim() || !expected.trim() || steps.length === 0) return
+    for (const [phase, actions] of [['执行前处理', preActions], ['执行后处理', postActions]] as const) {
+      const invalid = actions.find(action => action.enabled && (
+        (['stop_app', 'start_app'].includes(action.action) && !String(action.args.package_name || action.args.package || '').trim()) ||
+        (action.action === 'press_key' && !String(action.args.key || '').trim()) ||
+        (action.action === 'global_action' && !String(action.args.action || '').trim())
+      ))
+      if (invalid) {
+        setError(`${phase}中有已启用的操作尚未填写完整，请补充参数或禁用该操作。`)
+        return
+      }
+    }
     setLoading(true)
     setError('')
     try {
