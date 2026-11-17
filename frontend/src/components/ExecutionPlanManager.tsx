@@ -63,10 +63,6 @@ export default function ExecutionPlanManager({ suiteId, platform, device }: { su
     staleTime: 30000,
   })
   const testApps = installedApps.filter(app => app.is_test_app && app.installed)
-  const addStartAppStep = (pkg: string) => {
-    addDeviceAction('start_app', { package_name: pkg, package: pkg })
-  }
-
   const invalidate = async () => {
     await qc.invalidateQueries({ queryKey: ['execution-plans', activeCaseId] })
   }
