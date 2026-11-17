@@ -182,6 +182,12 @@ async def update_execution_plan(
     plan.steps_json = json.dumps(body.steps, ensure_ascii=False)
     plan.metadata_json = json.dumps(body.metadata, ensure_ascii=False)
     plan.warnings_json = json.dumps(body.warnings, ensure_ascii=False)
+    case = await db.get(TestCase, plan.test_case_id)
+    if case:
+        case.lifecycle_actions_json = json.dumps({
+            "pre_actions": body.metadata.get("pre_actions", []),
+            "post_actions": body.metadata.get("post_actions", []),
+        }, ensure_ascii=False)
     if body.platform is not None:
         plan.platform = body.platform
     plan.status = "draft"
@@ -232,6 +238,13 @@ async def create_plan_version(
             ExecutionPlan.account_id == account_id,
         )
     )
+    source_case = await db.get(TestCase, source.test_case_id)
+    if source_case:
+        source_case.lifecycle_actions_json = json.dumps({
+            "pre_actions": body.metadata.get("pre_actions", []),
+            "post_actions": body.metadata.get("post_actions", []),
+        }, ensure_ascii=False)
+
     plan = ExecutionPlan(
         test_case_id=source.test_case_id,
         suite_id=source.suite_id,
