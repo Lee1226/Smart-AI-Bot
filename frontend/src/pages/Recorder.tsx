@@ -125,7 +125,6 @@ export default function Recorder() {
   const pointerStart = useRef<{ x: number; y: number } | null>(null)
   const screenRef = useRef<HTMLDivElement>(null)
   const realEventsCursor = useRef(0)
-  const elementsRef = useRef<Element[]>([])
 
   // Poll captured events while real-recording is active.
   useEffect(() => {
