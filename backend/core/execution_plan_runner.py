@@ -60,7 +60,7 @@ def build_replay_step(step: Dict[str, Any]) -> Dict[str, Any]:
     if action == "tap":
         if coords:
             raw["x"], raw["y"] = coords.get("x"), coords.get("y")
-            raw["coordinate_space"] = fallback.get("coordinate_space") or "device_px"
+            if fallback.get("coordinate_space"):\n                raw["coordinate_space"] = fallback["coordinate_space"]
         elif args.get("x") is not None and args.get("y") is not None:
             raw["x"], raw["y"] = args["x"], args["y"]
             raw["coordinate_space"] = args.get("coordinate_space") or "device_px"
@@ -117,6 +117,11 @@ async def _execute_deterministic(device: WebSocketDevice, step: Dict[str, Any], 
         await asyncio.sleep(seconds)
         return f"waited {seconds:.2f}s"
     raw = build_replay_step(step)
+    if action == "start_app":
+        result = await device.start_app(raw.get("package", ""), raw.get("activity", ""))
+        if str(result).startswith("ERROR:"):
+            raise RuntimeError(result)
+        return result
     if action == "tap" and raw.get("x") is None and not any(raw.get(k) for k in ("resourceId", "text", "className")):
         raise ValueError("tap requires a locator or recorded coordinates")
     if action == "swipe" and not all(raw.get(k) is not None for k in ("x1", "y1", "x2", "y2")):
@@ -277,6 +282,8 @@ async def execute_execution_plan_run(
                         condition_result = await verify_plan_condition(device, step.get("verification"))
                         if condition_result is False:
                             raise RuntimeError("步骤验证条件未满足")
+                        if executor == "hybrid" and condition_result is None:
+                            raise RuntimeError("混合执行步骤尚未配置可判定的验证条件")
                     except Exception as deterministic_error:
                         if executor != "hybrid":
                             raise
