@@ -142,11 +142,20 @@ export const fetchAuthConfig = () => api.get<AuthConfig>('/auth/config').then(r 
 export const fetchDevices = () => api.get<Device[]>('/devices').then(r => r.data)
 
 export interface DeviceApp {
+  id: string
   package_name: string
   app_name: string
+  is_test_app: boolean
+  installed: boolean
+  first_seen_at?: string
+  last_seen_at?: string
 }
 export const fetchDeviceApps = (deviceId: string) =>
   api.get<{ device_id: string; apps: DeviceApp[] }>(`/devices/${deviceId}/apps`).then(r => r.data.apps)
+export const updateDeviceApp = (deviceId: string, packageName: string, data: { app_name: string; is_test_app: boolean }) =>
+  api.put<DeviceApp>(`/devices/${deviceId}/apps/${encodeURIComponent(packageName)}`, data).then(r => r.data)
+export const launchDeviceApp = (deviceId: string, packageName: string) =>
+  api.post<{ ok: boolean; result: string }>(`/devices/${deviceId}/apps/${encodeURIComponent(packageName)}/launch`).then(r => r.data)
 
 export const createDevice = (name: string, connection_type: Device['connection_type'] = 'portal') =>
   api.post<Device>('/devices', { name, connection_type }).then(r => r.data)
