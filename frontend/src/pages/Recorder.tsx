@@ -126,7 +126,6 @@ export default function Recorder() {
   const screenRef = useRef<HTMLDivElement>(null)
   const realEventsCursor = useRef(0)
   const elementsRef = useRef<Element[]>([])
-  const latestSnapshotRef = useRef<SnapshotData | null>(null)
 
   // Poll captured events while real-recording is active.
   useEffect(() => {
@@ -145,8 +144,6 @@ export default function Recorder() {
             const snapshot = await api.get<SnapshotData>(`/recorder/snapshot?device_id=${deviceId}`)
             nearbySnapshot = snapshot.data
             nearbyScreenshot = snapshot.data.screenshot_b64
-            latestSnapshotRef.current = snapshot.data
-            elementsRef.current = snapshot.data.elements
             setScreenshot(snapshot.data.screenshot_b64)
             setElements(snapshot.data.elements)
           } catch { /* event capture must continue if screenshot capture fails */ }
@@ -192,8 +189,6 @@ export default function Recorder() {
   const harmony = selectedDevice?.connection_type === 'hdc_bridge'
 
   const applySnapshot = (data: SnapshotData) => {
-    latestSnapshotRef.current = data
-    elementsRef.current = data.elements
     setScreenshot(data.screenshot_b64)
     setElements(data.elements)
     if ((data.screen_width ?? 0) > 0 && (data.screen_height ?? 0) > 0) setScreenSize({ width: data.screen_width!, height: data.screen_height! })
