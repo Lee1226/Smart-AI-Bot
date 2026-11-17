@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef, useMemo, type PointerEvent } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { useNavigate } from 'react-router-dom'
-import { api, fetchDevices, getToken } from '../lib/api'
+import { api, fetchDevices, fetchDeviceApps, getToken } from '../lib/api'
 import H264Canvas from '../components/H264Canvas'
 import { websocketH264Source } from '../lib/h264Stream'
 import { useT } from '../lib/i18n'
@@ -96,6 +96,7 @@ export default function Recorder() {
 
   const { data: allDevices = [] } = useQuery({ queryKey: ['devices'], queryFn: fetchDevices, refetchInterval: 5000 })
   const onlineDevices = allDevices.filter(d => d.status === 'online')
+  const { data: deviceApps = [] } = useQuery({ queryKey: ['device-apps', deviceId], queryFn: () => fetchDeviceApps(deviceId), enabled: !!deviceId })
 
   const [deviceId, setDeviceId] = useState('')
   const [recording, setRecording] = useState(false)
@@ -712,7 +713,7 @@ export default function Recorder() {
                 <div>
                   <div className="text-xs text-gray-400 mb-1.5 font-medium">{t('启动应用', 'Launch app')}</div>
                   <div className="flex gap-2">
-                    <input className="min-w-0 flex-1 border rounded px-2 py-1 text-sm font-mono" value={launchPackage} onChange={e => setLaunchPackage(e.target.value)} placeholder="com.example.app" />
+                    <div className="min-w-0 flex-1"><input list="recorder-device-apps" className="w-full border rounded px-2 py-1 text-sm font-mono" value={launchPackage} onChange={e => setLaunchPackage(e.target.value)} placeholder="选择应用或输入包名" /><datalist id="recorder-device-apps">{deviceApps.filter(app => app.installed).map(app => <option key={app.package_name} value={app.package_name}>{app.app_name}</option>)}</datalist></div>
                     <button className={BTN_GRAY} disabled={!launchPackage.trim() || loading} onClick={() => doAction('start_app', { package: launchPackage.trim() })}>{t('启动', 'Launch')}</button>
                   </div>
                 </div>
