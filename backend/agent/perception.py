@@ -115,12 +115,14 @@ def _format_node(
         capabilities.append("focus")
     tap_evidence = (
         "accessibility_clickable" if is_clickable
-        else "class_heuristic" if is_button_like
         else "ancestor_clickable" if ancestor_tap_target
+        else "class_heuristic" if is_button_like
         else "none"
     )
     current_tap_target = None
-    if is_clickable and isinstance(bounds_raw, dict):
+    if (is_clickable and node.get("isEnabled", True)
+            and node.get("isVisibleToUser", True) and isinstance(bounds_raw, dict)
+            and r > l and b > t):
         current_tap_target = {
             "text": text, "resourceId": resource_id, "className": short_class,
             "bounds": {"left": l, "top": t, "right": r, "bottom": b},
