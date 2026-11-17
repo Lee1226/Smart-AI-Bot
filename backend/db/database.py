@@ -104,6 +104,37 @@ async def init_db():
         await _ensure_columns("test_results", {"account_id": "VARCHAR"})
         await _ensure_columns("test_step_logs", {"account_id": "VARCHAR"})
 
+    # ── Migrate legacy per-device app metadata into shared catalog tables ──
+    # Safe to run on every startup; old rows remain available for rollback.
+    from db.models import DeviceApp, AppCatalog, DeviceAppInstallation
+    async with AsyncSessionLocal() as session:
+        legacy_apps = (await session.execute(_select(DeviceApp))).scalars().all()
+        for legacy in legacy_apps:
+            catalog = (await session.execute(_select(AppCatalog).where(
+                AppCatalog.account_id == legacy.account_id, AppCatalog.package_name == legacy.package_name
+            ))).scalar_one_or_none()
+            if not catalog:
+                catalog = AppCatalog(account_id=legacy.account_id, package_name=legacy.package_name,
+                    app_name=legacy.app_name or "", is_test_app=bool(legacy.is_test_app))
+                session.add(catalog)
+            else:
+                if not catalog.app_name and legacy.app_name:
+                    catalog.app_name = legacy.app_name
+                catalog.is_test_app = bool(catalog.is_test_app or legacy.is_test_app)
+            install = (await session.execute(_select(DeviceAppInstallation).where(
+                DeviceAppInstallation.account_id == legacy.account_id,
+                DeviceAppInstallation.device_id == legacy.device_id,
+                DeviceAppInstallation.package_name == legacy.package_name
+            ))).scalar_one_or_none()
+            if not install:
+                session.add(DeviceAppInstallation(account_id=legacy.account_id,
+                    device_id=legacy.device_id, package_name=legacy.package_name,
+                    installed=bool(legacy.installed), first_seen_at=legacy.first_seen_at,
+                    last_seen_at=legacy.last_seen_at))
+            else:
+                install.installed = bool(install.installed or legacy.installed)
+        await session.commit()
+
     # ── One-time migration: flat cases -> step-tree (idempotent per suite) ──
     from db.migrate_step_tree import migrate_suite_to_step_tree
     from db.models import TestSuite
