@@ -151,18 +151,6 @@ export default function ExecutionPlanManager({ suiteId, platform, device }: { su
   const removeStep = (index: number) => {
     setDraftSteps(current => current.filter((_, i) => i !== index).map((step, i) => ({ ...step, sequence: i + 1 })))
   }
-  const applyDeviceLocator = (locator: Record<string, unknown>) => {
-    if (!editing) { setEditError(t('请先点击“编辑步骤”，再绑定真机控件。', 'Enter step editing before binding a live element.')); return }
-    const index = Math.min(targetStepIndex, Math.max(0, draftSteps.length - 1))
-    if (!draftSteps[index]) { setEditError(t('请先新增或选择一个步骤。', 'Add or select a step first.')); return }
-    patchStep(index, { locator: { ...(draftSteps[index].locator || {}), ...locator } })
-    setEditError('')
-  }
-  const addDeviceAction = (action: string, args: Record<string, unknown>, locator?: Record<string, unknown>) => {
-    const base = editing ? draftSteps : (selectedPlan?.steps || [])
-    const step: ExecutionPlanStep = { step_id: 'device_' + Date.now(), sequence: base.length + 1, action, args, executor: 'deterministic', locator: locator || {}, fallback: null, precondition: null, wait_condition: null, verification: null, on_failure: 'fail', import_status: 'manual' }
-    setDraftSteps([...base, step]); setTargetStepIndex(base.length); setEditing(true); setEditError('')
-  }
   const executeDeviceStep = async (step: ExecutionPlanStep, index: number) => {
     if (!device || device.platform !== 'android' || device.connection_type !== 'adb_usb') {
       setExecutionLogs(current => [{ id: String(Date.now()), time: new Date().toLocaleTimeString(), step: index + 1, status: 'error', message: '仅支持已连接的 Android 本机 ADB 设备' }, ...current])
