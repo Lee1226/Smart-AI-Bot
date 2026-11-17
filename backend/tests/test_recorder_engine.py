@@ -46,6 +46,80 @@ class RecorderEngineTests(unittest.TestCase):
         self.assertTrue(event["target"]["clickable"])
         self.assertEqual(event["target"]["parentPath"], ["Launcher", "Workspace"])
 
+
+    def test_preserves_nested_target_when_root_fields_are_empty(self):
+        self.engine.start("device-a", source="web_action")
+        event = self.engine.append("device-a", {
+            "kind": "tap",
+            "x": 120,
+            "y": 240,
+            "target": {
+                "text": "搜索",
+                "resourceId": "app:id/search",
+                "className": "android.widget.Button",
+                "clickable": True,
+                "enabled": True,
+                "visible": True,
+                "bounds": {"left": 100, "top": 200, "right": 160, "bottom": 280},
+            },
+        })
+        self.assertEqual(event["target"]["text"], "搜索")
+        self.assertEqual(event["target"]["resource_id"], "app:id/search")
+        self.assertEqual(event["target_analysis"]["resolution"], "direct_clickable")
+        self.assertEqual(event["target_analysis"]["status"], "actionable")
+
+    def test_resolves_clickable_ancestor_from_event_time_snapshot(self):
+        self.engine.start("device-a", source="web_action")
+        event = self.engine.append("device-a", {
+            "kind": "tap",
+            "x": 150,
+            "y": 250,
+            "coordinates": {"x": 150, "y": 250, "space": "device_px"},
+            "before": {"elements": [
+                {
+                    "text": "搜索图标",
+                    "className": "ImageView",
+                    "clickable": False,
+                    "enabled": True,
+                    "visible": True,
+                    "bounds": {"left": 120, "top": 220, "right": 180, "bottom": 280},
+                    "tap_target": {
+                        "text": "搜索",
+                        "resourceId": "app:id/search_row",
+                        "className": "LinearLayout",
+                        "clickable": True,
+                        "enabled": True,
+                        "visible": True,
+                        "bounds": {"left": 80, "top": 200, "right": 300, "bottom": 320},
+                    },
+                },
+            ]},
+        })
+        analysis = event["target_analysis"]
+        self.assertEqual(analysis["resolution"], "clickable_ancestor")
+        self.assertEqual(analysis["resolved_target"]["text"], "搜索")
+        self.assertEqual(analysis["evidence"], "exact_before_snapshot")
+
+    def test_does_not_promote_approximate_observation_to_executable_target(self):
+        self.engine.start("device-a", source="portal_touch")
+        event = self.engine.append("device-a", {
+            "kind": "tap",
+            "x": 150,
+            "y": 250,
+            "ui_observation": {
+                "phase": "post_event_poll_approximate",
+                "elements": [{
+                    "text": "后来出现的按钮",
+                    "clickable": True,
+                    "enabled": True,
+                    "visible": True,
+                    "bounds": {"left": 100, "top": 200, "right": 200, "bottom": 300},
+                }],
+            },
+        })
+        self.assertEqual(event["target_analysis"]["resolution"], "unresolved")
+        self.assertIsNone(event["target_analysis"]["resolved_target"])
+
     def test_session_is_isolated_per_device(self):
         self.engine.start("device-a", source="web_action")
         self.engine.start("device-b", source="portal_touch")
