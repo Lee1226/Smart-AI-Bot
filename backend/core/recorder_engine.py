@@ -187,3 +187,23 @@ class RecorderEngine:
 
 
 recorder_engine = RecorderEngine()
+
+
+
+def sanitize_events_for_storage(events: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+    """Return JSON-safe event evidence without embedding large screenshot payloads."""
+    import copy
+    sanitized: List[Dict[str, Any]] = []
+    for source in events or []:
+        if not isinstance(source, dict):
+            continue
+        event = copy.deepcopy(source)
+        screenshot = event.pop("screenshot_b64", None)
+        if screenshot:
+            event["screenshot_evidence"] = {
+                "captured": True,
+                "captured_at_ms": event.get("screenshot_captured_at_ms"),
+                "storage": "workbench_only",
+            }
+        sanitized.append(event)
+    return sanitized
