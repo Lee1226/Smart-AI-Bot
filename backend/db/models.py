@@ -29,6 +29,23 @@ class Device(Base):
     adb_auto_connect: Mapped[bool] = mapped_column(Boolean, default=True)
 
 
+
+class DeviceApp(Base):
+    """A discovered launcher app and its account-scoped testing metadata."""
+    __tablename__ = "device_apps"
+    __table_args__ = (UniqueConstraint("account_id", "device_id", "package_name", name="uq_device_app_account_device_package"),)
+
+    id: Mapped[str] = mapped_column(String, primary_key=True, default=_uuid)
+    account_id: Mapped[str] = mapped_column(String, index=True)
+    device_id: Mapped[str] = mapped_column(ForeignKey("devices.id", ondelete="CASCADE"), index=True)
+    package_name: Mapped[str] = mapped_column(String)
+    app_name: Mapped[str] = mapped_column(String, default="")
+    is_test_app: Mapped[bool] = mapped_column(Boolean, default=False)
+    installed: Mapped[bool] = mapped_column(Boolean, default=True)
+    first_seen_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+    last_seen_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+
+
 class IosHost(Base):
     """Account-scoped Mac helper; never stores the helper's bearer token."""
     __tablename__ = "ios_hosts"
