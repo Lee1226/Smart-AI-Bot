@@ -131,7 +131,7 @@ async def create_plan_version(
     for index, step in enumerate(body.steps):
         if not isinstance(step.get("sequence"), int) or step["sequence"] < 1:
             raise HTTPException(status_code=422, detail=f"steps[{index}].sequence must be a positive integer")
-        if step.get("executor") not in {"deterministic", "ai", "hybrid"}:
+        if step.get("executor") not in {"deterministic", "ai", "hybrid", "system"}:
             raise HTTPException(status_code=422, detail=f"steps[{index}].executor is invalid")
 
     latest_version = await db.scalar(
