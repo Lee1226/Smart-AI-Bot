@@ -211,6 +211,7 @@ async def create_plan_version(
         raise HTTPException(status_code=404, detail="Execution plan not found")
     if not body.steps:
         raise HTTPException(status_code=422, detail="steps must not be empty")
+    _validate_lifecycle_actions(body.metadata)
 
     for index, step in enumerate(body.steps):
         if not isinstance(step.get("sequence"), int) or step["sequence"] < 1:
