@@ -64,16 +64,28 @@ def _to_replay_steps(
     """
     replay: List[dict] = []
     event_list = events or []
+    events_by_id = {
+        str(event.get("event_id")): event
+        for event in event_list
+        if isinstance(event, dict) and event.get("event_id")
+    }
+    initial_screen = next((
+        event.get("session_start_snapshot", {}).get("screen")
+        for event in event_list
+        if isinstance(event, dict)
+        and isinstance(event.get("session_start_snapshot"), dict)
+        and isinstance(event["session_start_snapshot"].get("screen"), dict)
+    ), None)
     for index, s in enumerate(steps):
         args = s.args or {}
-        event = event_list[index] if index < len(event_list) and isinstance(event_list[index], dict) else {}
+        event_id = args.get("event_id") or args.get("source_event_id")
+        event = events_by_id.get(str(event_id)) if event_id else None
+        if event is None:
+            event = event_list[index] if index < len(event_list) and isinstance(event_list[index], dict) else {}
+        # Only event-time target evidence may become an executable locator.
+        # observed_target is populated by a later polling snapshot and can point
+        # at a different screen after a modal has disappeared.
         target = event.get("target") if isinstance(event.get("target"), dict) else {}
-        target_identity = any(target.get(key) for key in (
-            "text", "resource_id", "resourceId", "content_description",
-            "contentDescription", "class_name", "className",
-        ))
-        if not target_identity and isinstance(event.get("observed_target"), dict):
-            target = event["observed_target"]
         step: dict = {"kind": s.action, "delay_ms": int(args.get("delay_ms", 0))}
         if target and any(target.get(key) for key in (
             "text", "resource_id", "resourceId", "content_description",
@@ -98,7 +110,12 @@ def _to_replay_steps(
         coordinates = event.get("coordinates") if isinstance(event.get("coordinates"), dict) else {}
         if coordinates.get("space"):
             step["coordinate_space"] = coordinates["space"]
-        screen = event.get("screen") or (event.get("before") or {}).get("screen") or (event.get("ui_observation") or {}).get("screen")
+        screen = (
+            event.get("screen")
+            or (event.get("before") or {}).get("screen")
+            or (event.get("ui_observation") or {}).get("screen")
+            or initial_screen
+        )
         if isinstance(screen, dict) and screen.get("width") and screen.get("height"):
             step["screen_size"] = {"width": screen["width"], "height": screen["height"]}
         if args.get("delay_ms"):
@@ -731,12 +748,16 @@ async def save_recording(req: SaveRequest, request: Request):
             order=0,
             account_id=account_id,
             replay_steps=_to_replay_steps(req.steps, req.events or []),
-            recorder_events=json.dumps(
-                sanitize_events_for_storage(req.events or []),
-                ensure_ascii=False,
-            ),
+            recorder_events="",
         )
         db.add(case)
+        await db.flush()
+        # Store screenshots outside the database; event JSON keeps only
+        # generated, case-scoped asset names and integrity metadata.
+        from pathlib import Path
+        asset_dir = Path(__file__).resolve().parents[1] / "data" / "recordings" / case.id
+        stored_events = sanitize_events_for_storage(req.events or [], str(asset_dir))
+        case.recorder_events = json.dumps(stored_events, ensure_ascii=False)
         await db.commit()
         await db.refresh(suite)
         await db.refresh(case)
@@ -761,6 +782,24 @@ async def get_recorded_case_events(case_id: str, request: Request):
     except json.JSONDecodeError:
         logger.exception("Invalid recorder_events JSON for case %s", case_id)
         raise HTTPException(status_code=500, detail="Stored recorder evidence is invalid")
+    # Materialize screenshots only when the event inspector requests evidence.
+    import base64
+    from pathlib import Path
+    asset_root = (Path(__file__).resolve().parents[1] / "data" / "recordings" / case.id).resolve()
+    for event in events:
+        evidence = event.get("screenshot_evidence") if isinstance(event, dict) else None
+        assets = evidence.get("assets", {}) if isinstance(evidence, dict) else {}
+        for label, filename in assets.items():
+            if not isinstance(filename, str) or Path(filename).name != filename:
+                continue
+            asset_path = (asset_root / filename).resolve()
+            if asset_path.parent != asset_root or not asset_path.is_file():
+                continue
+            encoded = base64.b64encode(asset_path.read_bytes()).decode("ascii")
+            if label == "post_action":
+                event["screenshot_b64_after"] = encoded
+            else:
+                event["screenshot_b64"] = encoded
     return {"case_id": case.id, "events": events}
 
 
