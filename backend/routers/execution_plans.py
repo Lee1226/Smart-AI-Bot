@@ -9,10 +9,10 @@ from pydantic import BaseModel, Field
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from auth.access import require_account_id
+from auth.access import require_account_id, require_device
 from core.execution_plan import SYSTEM_ACTIONS, legacy_replay_to_plan
 from db.database import AsyncSessionLocal
-from db.models import ExecutionPlan, TestCase, TestSuite
+from db.models import ExecutionPlan, TestCase, TestSuite, TestRun, TestResult
 
 router = APIRouter(prefix="/api/execution-plans", tags=["execution-plans"])
 
@@ -20,6 +20,13 @@ router = APIRouter(prefix="/api/execution-plans", tags=["execution-plans"])
 async def get_db():
     async with AsyncSessionLocal() as session:
         yield session
+
+
+class ExecutionPlanRunRequest(BaseModel):
+    device_id: str
+    provider: str = ""
+    model: str = ""
+    max_steps: int = 8
 
 
 class LegacyImportRequest(BaseModel):
@@ -165,6 +172,72 @@ async def create_plan_version(
     await db.commit()
     await db.refresh(plan)
     return _out(plan)
+
+
+
+@router.post("/{plan_id}/run", status_code=201)
+async def run_execution_plan(
+    plan_id: str,
+    body: ExecutionPlanRunRequest,
+    request: Request,
+    db: AsyncSession = Depends(get_db),
+):
+    """Run the selected immutable plan version through the shared device scheduler."""
+    account_id = require_account_id(request)
+    await require_device(request, db, body.device_id)
+    plan = (await db.execute(select(ExecutionPlan).where(
+        ExecutionPlan.id == plan_id,
+        ExecutionPlan.account_id == account_id,
+    ))).scalar_one_or_none()
+    if not plan:
+        raise HTTPException(status_code=404, detail="Execution plan not found")
+    case = (await db.execute(select(TestCase).where(
+        TestCase.id == plan.test_case_id,
+        TestCase.suite_id == plan.suite_id,
+    ))).scalar_one_or_none()
+    if not case:
+        raise HTTPException(status_code=404, detail="Execution plan case not found")
+    steps = json.loads(plan.steps_json or "[]")
+    if not steps:
+        raise HTTPException(status_code=422, detail="执行计划没有步骤")
+    for index, step in enumerate(steps):
+        executor = str(step.get("executor") or "").lower()
+        action = str(step.get("action") or "").lower()
+        if executor not in {"deterministic", "ai", "hybrid", "system"}:
+            raise HTTPException(status_code=422, detail=f"步骤 {index + 1} 执行方式无效")
+        if executor in {"ai", "hybrid"}:
+            intent = step.get("intent") if isinstance(step.get("intent"), dict) else {}
+            if intent.get("status") != "confirmed" or not str(intent.get("description") or "").strip() or not str(intent.get("expected_result") or "").strip():
+                raise HTTPException(status_code=422, detail=f"步骤 {index + 1} 的操作意图尚未确认")
+        if executor == "system" and action not in SYSTEM_ACTIONS:
+            raise HTTPException(status_code=422, detail=f"步骤 {index + 1} 不支持系统动作：{action}")
+    from agent.ws_device import WebSocketDevice
+    device = WebSocketDevice(body.device_id)
+    if not device.is_connected():
+        raise HTTPException(status_code=400, detail=f"Device {body.device_id} is not connected")
+    from core.settings_store import resolve_provider_model, load_settings
+    settings = await load_settings(account_id)
+    default_provider, default_model = resolve_provider_model(settings)
+    run = TestRun(
+        suite_id=plan.suite_id,
+        device_id=body.device_id,
+        provider=body.provider or default_provider,
+        model=body.model or default_model,
+        status="pending",
+        account_id=account_id,
+    )
+    db.add(run)
+    await db.flush()
+    db.add(TestResult(run_id=run.id, case_id=case.id, status="pending", account_id=account_id))
+    await db.commit()
+    await db.refresh(run)
+    from core.test_runner import start_execution_plan_run
+    try:
+        await start_execution_plan_run(run.id, plan.id, max_steps=max(1, min(body.max_steps, 20)))
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=f"无法启动执行计划：{exc}")
+    from routers.testruns import _run_out
+    return await _run_out(run, db)
 
 
 @router.post("/cases/{case_id}/import-legacy", response_model=ExecutionPlanOut, status_code=201)
