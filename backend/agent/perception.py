@@ -1,7 +1,7 @@
 """
 Perception layer — converts raw Portal state into LLM-ready text.
 
-  _prune_node     — remove disabled/invisible/empty-container nodes from the a11y tree
+  _prune_node     — remove empty structural containers while retaining state evidence
   _format_node    — recursively render a single node into an indexed text line
   format_ui_state — entry point: Portal state dict → (formatted_text, elements, w, h)
 """
@@ -18,7 +18,7 @@ logger = logging.getLogger(__name__)
 
 
 def _prune_node(node: Dict[str, Any]) -> Optional[Dict[str, Any]]:
-    """Remove disabled/invisible nodes and pure container nodes with no useful content."""
+    """Remove pure container nodes with no useful content; retain disabled/invisible state evidence."""
     pruned_children = []
     for child in node.get("children", []):
         pruned = _prune_node(child)
