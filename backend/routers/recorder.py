@@ -539,12 +539,21 @@ async def execute_recorder_gesture(req: ActionRequest, request: Request):
                 "target": target_element,
             })
         try:
-            _, after_elements = await device.get_ui_state()
+            after_ui_text, after_elements = await device.get_ui_state()
+            after_captured_at_ms = int(time.time() * 1000)
             event_payload["after"] = {
+                "ui_text": after_ui_text,
                 "elements": after_elements,
                 "screen": {"width": device.screen_width, "height": device.screen_height},
-                "captured_at_ms": int(time.time() * 1000),
+                "captured_at_ms": after_captured_at_ms,
             }
+        except Exception:
+            after_captured_at_ms = int(time.time() * 1000)
+        # Keep an exact post-action frame as well as the pre-action frame.
+        # The save endpoint moves both images to case-scoped assets.
+        try:
+            event_payload["screenshot_b64_after"] = base64.b64encode(await device.screenshot()).decode()
+            event_payload["screenshot_after_captured_at_ms"] = int(time.time() * 1000)
         except Exception:
             pass
         event = recorder_engine.append(req.device_id, event_payload)
