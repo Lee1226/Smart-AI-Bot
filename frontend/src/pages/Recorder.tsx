@@ -412,6 +412,9 @@ export default function Recorder() {
   const stopRecording = async () => {
     setRecording(false)
     try {
+      // Flush queued pointer gestures before closing the backend session so the
+      // final accepted action is not lost from the returned event list.
+      await gestureQueue.current
       const { data } = await api.post<{ events: RecordEvent[] }>(`/recorder/session/stop?device_id=${deviceId}`)
       const normalized = data.events ?? []
       setWebEvents(normalized.map((event, index) => ({
