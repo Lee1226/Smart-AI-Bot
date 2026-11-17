@@ -130,6 +130,8 @@ class TestCase(Base):
     replay_steps: Mapped[str] = mapped_column(Text, default="")
     # Versioned recorder evidence: event-level targets, UI snapshots and verification metadata.
     recorder_events: Mapped[str] = mapped_column(Text, default="")
+    # Optional actions executed before/after a saved execution plan.
+    lifecycle_actions_json: Mapped[str] = mapped_column(Text, default="{}")
 
     suite: Mapped["TestSuite"] = relationship(back_populates="cases")
 
