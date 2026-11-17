@@ -787,12 +787,20 @@ export interface SuiteCase {
   loop_task: boolean
 }
 
+export interface ExecutionPlanIntent {
+  description: string
+  expected_result: string
+  source: 'user_confirmed' | 'user_edited' | 'auto_generated' | 'ai_suggested' | 'legacy_import' | 'manual' | string
+  status: 'confirmed' | 'needs_confirmation' | 'draft' | string
+}
+
 export interface ExecutionPlanStep {
   step_id: string
   sequence: number
   action: string
   args: Record<string, unknown>
   executor: 'deterministic' | 'ai' | 'hybrid' | 'system'
+  intent?: ExecutionPlanIntent | null
   execution_channel?: 'system_api' | 'ui_automation' | 'ai_agent'
   locator?: Record<string, unknown> | null
   fallback?: Record<string, unknown> | null
