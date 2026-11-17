@@ -270,6 +270,8 @@ class SaveRequest(BaseModel):
     expected: str
     steps: List[RecordedStep]
     events: Optional[List[Dict[str, Any]]] = None
+    pre_actions: List[Dict[str, Any]] = Field(default_factory=list)
+    post_actions: List[Dict[str, Any]] = Field(default_factory=list)
 
 
 class SaveResponse(BaseModel):
@@ -798,6 +800,10 @@ async def save_recording(req: SaveRequest, request: Request):
             account_id=account_id,
             replay_steps=_to_replay_steps(req.steps, req.events or []),
             recorder_events="",
+            lifecycle_actions_json=json.dumps({
+                "pre_actions": req.pre_actions,
+                "post_actions": req.post_actions,
+            }, ensure_ascii=False),
         )
         db.add(case)
         await db.flush()
