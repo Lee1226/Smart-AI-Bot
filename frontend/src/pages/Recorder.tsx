@@ -47,7 +47,7 @@ interface RecordEvent {
   timestamp_ms?: number
   received_at_ms?: number
   coordinates?: { space?: string; x?: number; y?: number; x1?: number; y1?: number; x2?: number; y2?: number }
-  target?: { text?: string; content_description?: string; resource_id?: string; class_name?: string; css_selector?: string; test_id?: string; bounds?: { left: number; top: number; right: number; bottom: number }; clickable?: boolean; parentPath?: string[]; parent_path?: string[] }
+  target?: { text?: string; content_description?: string; contentDescription?: string; resource_id?: string; resourceId?: string; class_name?: string; className?: string; css_selector?: string; test_id?: string; bounds?: { left: number; top: number; right: number; bottom: number }; clickable?: boolean; enabled?: boolean; visible?: boolean; tap_candidate?: boolean; tap_evidence?: string; focusable?: boolean; checkable?: boolean; longClickable?: boolean; editable?: boolean; scrollable?: boolean; capabilities?: string[]; parentPath?: string[]; parent_path?: string[] }
   text?: string
   contentDescription?: string
   resourceId?: string
@@ -557,7 +557,9 @@ export default function Recorder() {
   const eventX2 = selectedCoordinates?.x2 ?? selectedEvent?.x2
   const eventY2 = selectedCoordinates?.y2 ?? selectedEvent?.y2
   const eventScreenshot = selectedEvent?.screenshot_b64 || ''
-  const eventTarget = selectedEvent?.target
+  const rawEventTarget = selectedEvent?.target
+  const rawTargetHasIdentity = !!(rawEventTarget?.text || rawEventTarget?.content_description || rawEventTarget?.contentDescription || rawEventTarget?.resource_id || rawEventTarget?.resourceId || rawEventTarget?.class_name || rawEventTarget?.className)
+  const eventTarget = rawTargetHasIdentity ? rawEventTarget : (selectedEvent?.observed_target as RecordEvent['target'] | undefined) || rawEventTarget
   const canOverlayCoordinates = coordinateSpace === 'device_px' || coordinateSpace === 'screenshot_px'
   const formatTime = (value?: number) => value ? new Date(value).toLocaleTimeString() : '—'
   const describeEvent = (event: RecordEvent) => event.description || eventToDescription(event)
@@ -873,12 +875,45 @@ export default function Recorder() {
                     <div><div className="text-gray-400">{t('事件序号', 'Sequence')}</div><div className="font-mono mt-1">{selectedEvent.sequence ?? selectedEvent.seq ?? selectedEventIndex}</div></div>
                     <div><div className="text-gray-400">{t('采集时间', 'Timestamp')}</div><div className="font-mono mt-1">{formatTime(selectedEvent.timestamp_ms ?? selectedEvent.received_at_ms)}</div></div>
                   </div>
-                  {eventTarget && <div className="text-xs space-y-2"><div className="text-gray-400">{t('目标控件', 'Target')}</div><div className="rounded bg-gray-50 p-2 break-all">{eventTarget.text || eventTarget.content_description || eventTarget.resource_id || eventTarget.css_selector || t('尚未识别语义控件', 'No semantic target detected')}</div>
-                    {eventTarget.resource_id && <div><span className="text-gray-400">Resource ID：</span><span className="font-mono">{eventTarget.resource_id}</span></div>}
-                    {eventTarget.class_name && <div><span className="text-gray-400">Class：</span><span className="font-mono">{eventTarget.class_name}</span></div>}
-                    {eventTarget.bounds && <div><span className="text-gray-400">Bounds：</span><span className="font-mono">{JSON.stringify(eventTarget.bounds)}</span></div>}
-                    {(eventTarget.parent_path || eventTarget.parentPath)?.length ? <div><span className="text-gray-400">Parent：</span>{(eventTarget.parent_path || eventTarget.parentPath)?.join(' / ')}</div> : null}
-                  </div>}
+                  <div className="text-xs space-y-2">
+                    <div className="text-gray-400">{t('目标控件与能力', 'Target & capabilities')}</div>
+                    <div className="rounded bg-gray-50 p-2 break-all">{eventTarget?.text || eventTarget?.content_description || eventTarget?.contentDescription || eventTarget?.resource_id || eventTarget?.resourceId || eventTarget?.css_selector || t('尚未识别语义控件，保留坐标与页面观察证据', 'No semantic target; coordinate and page observation evidence retained')}</div>
+                    {(eventTarget?.resource_id || eventTarget?.resourceId) && <div><span className="text-gray-400">Resource ID：</span><span className="font-mono">{eventTarget.resource_id || eventTarget.resourceId}</span></div>}
+                    {(eventTarget?.class_name || eventTarget?.className) && <div><span className="text-gray-400">Class：</span><span className="font-mono">{eventTarget.class_name || eventTarget.className}</span></div>}
+                    {eventTarget?.bounds && <div><span className="text-gray-400">Bounds：</span><span className="font-mono">{JSON.stringify(eventTarget.bounds)}</span></div>}
+                    {(eventTarget?.parent_path || eventTarget?.parentPath)?.length ? <div><span className="text-gray-400">Parent：</span>{(eventTarget.parent_path || eventTarget.parentPath)?.join(' / ')}</div> : null}
+                    {eventTarget && <div className="flex flex-wrap gap-1">
+                      {[
+                        ['系统可点击', eventTarget.clickable],
+                        ['候选可点击', eventTarget.tap_candidate],
+                        ['可输入', eventTarget.editable],
+                        ['可切换', eventTarget.checkable],
+                        ['可滚动', eventTarget.scrollable],
+                        ['可长按', eventTarget.longClickable],
+                        ['已禁用', eventTarget.enabled === false],
+                        ['不可见', eventTarget.visible === false],
+                      ].filter(([, value]) => value).map(([label]) => <span key={String(label)} className="rounded bg-blue-50 px-2 py-1 text-blue-700">{String(label)}</span>)}
+                    </div>}
+                    {eventTarget?.tap_evidence && <div><span className="text-gray-400">点击证据：</span>{eventTarget.tap_evidence}</div>}
+                    {!!eventTarget?.capabilities?.length && <div><span className="text-gray-400">Capabilities：</span>{eventTarget.capabilities.join(', ')}</div>}
+                  </div>
+                  {(selectedEvent.before || selectedEvent.after || selectedEvent.ui_observation) && <details className="rounded-lg border">
+                    <summary className="cursor-pointer px-3 py-2 text-xs font-medium text-gray-600">{t('查看操作前后 UI Tree', 'Inspect before/after UI trees')}</summary>
+                    <div className="space-y-2 border-t p-2 text-xs">
+                      {selectedEvent.before && <details>
+                        <summary className="cursor-pointer font-medium">{t('操作前', 'Before')} · {selectedEvent.before.elements?.length ?? 0} {t('个元素', 'elements')}</summary>
+                        <pre className="max-h-48 overflow-auto whitespace-pre-wrap break-all bg-slate-50 p-2">{JSON.stringify(selectedEvent.before, null, 2)}</pre>
+                      </details>}
+                      {selectedEvent.after && <details>
+                        <summary className="cursor-pointer font-medium">{t('操作后', 'After')} · {selectedEvent.after.elements?.length ?? 0} {t('个元素', 'elements')}</summary>
+                        <pre className="max-h-48 overflow-auto whitespace-pre-wrap break-all bg-slate-50 p-2">{JSON.stringify(selectedEvent.after, null, 2)}</pre>
+                      </details>}
+                      {selectedEvent.ui_observation && <details>
+                        <summary className="cursor-pointer font-medium">{t('真机事件附近页面观察（近似）', 'Nearby page observation (approximate)')} · {selectedEvent.ui_observation.elements?.length ?? 0} {t('个元素', 'elements')}</summary>
+                        <pre className="max-h-48 overflow-auto whitespace-pre-wrap break-all bg-slate-50 p-2">{JSON.stringify(selectedEvent.ui_observation, null, 2)}</pre>
+                      </details>}
+                    </div>
+                  </details>}
                   <details className="rounded-lg border">
                     <summary className="cursor-pointer px-3 py-2 text-xs font-medium text-gray-600">{t('查看原始事件 JSON', 'View raw event JSON')}</summary>
                     <pre className="max-h-64 overflow-auto border-t bg-slate-50 p-3 text-[11px] leading-relaxed whitespace-pre-wrap break-all">{JSON.stringify(selectedEvent, null, 2)}</pre>
