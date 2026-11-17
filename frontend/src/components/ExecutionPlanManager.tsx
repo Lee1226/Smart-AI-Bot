@@ -305,7 +305,7 @@ export default function ExecutionPlanManager({ suiteId, platform, device }: { su
                 <span className="text-xs text-gray-400">{selectedPlan.steps.length} {t('个步骤', 'steps')}</span>
                 {!editing && <div className="ml-auto flex items-center gap-2">
                   <button className="rounded-md bg-blue-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-blue-700 disabled:cursor-not-allowed disabled:opacity-50"
-                    disabled={!device || runMut.isPending || selectedPlan.steps.some(step => ['ai', 'hybrid'].includes(step.executor) && (step.intent?.status !== 'confirmed' || !step.intent.description.trim() || !step.intent.expected_result.trim()))}
+                    disabled={!device || runMut.isPending || selectedPlan.steps.some(step => ['ai', 'hybrid'].includes(step.executor) && (step.intent?.status !== 'confirmed' || !step.intent?.description?.trim() || !step.intent?.expected_result?.trim()))}
                     onClick={() => runMut.mutate()}>
                     {runMut.isPending ? t('启动中…', 'Starting…') : t('运行执行计划', 'Run plan')}
                   </button>
