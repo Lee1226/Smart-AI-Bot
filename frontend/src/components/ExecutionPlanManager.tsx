@@ -206,6 +206,7 @@ export default function ExecutionPlanManager({ suiteId, platform, device }: { su
         const pkg = String(args.package_name || args.package || '').trim()
         if (!pkg) throw new Error('启动应用步骤缺少 Package 名称。')
         const { data } = await api.post('/recorder/action', { device_id: device.id, action: 'start_app', args: { package: pkg, activity: args.activity || '' } })
+        if (String(data.result || '').startsWith('ERROR:')) throw new Error(String(data.result))
         addLog('success', data.description || data.result || `已发送启动请求：${pkg}`)
         return
       } else if (action === 'global_action' || action === 'press_key') {
@@ -368,6 +369,7 @@ export default function ExecutionPlanManager({ suiteId, platform, device }: { su
                       <span className="text-xs font-semibold text-gray-700">{ACTIONS.find(a => a.value === step.action)?.label || step.action}</span>
                     </div>
                     <div className="flex items-center gap-1">
+                      <button type="button" title="在真机上执行当前步骤" disabled={!device || executingStep !== null} onClick={() => void executeDeviceStep(step, index)} className="rounded border border-blue-200 bg-blue-50 px-2 py-1 text-[11px] text-blue-700 disabled:opacity-40">{executingStep === index ? '执行中…' : '单步执行'}</button>
                       <button title={t('上移', 'Move up')} disabled={index === 0} onClick={() => moveStep(index, -1)} className="rounded border px-2 py-1 text-xs disabled:opacity-30">↑</button>
                       <button title={t('下移', 'Move down')} disabled={index === draftSteps.length - 1} onClick={() => moveStep(index, 1)} className="rounded border px-2 py-1 text-xs disabled:opacity-30">↓</button>
                       <button title={t('删除步骤', 'Delete step')} onClick={() => removeStep(index)} className="rounded border border-red-200 px-2 py-1 text-xs text-red-600 hover:bg-red-50">×</button>
