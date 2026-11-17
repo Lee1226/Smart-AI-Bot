@@ -247,8 +247,22 @@ async def rpc(device_id: str, method: str, params: dict[str, Any] | None = None,
             await _shell(serial, "am", "force-stop", package)
             return f"Force-stopped {package}"
         if method == "packages":
-            output = await _shell(serial, "pm", "list", "packages", timeout=30)
-            return [{"packageName": line.split(":", 1)[-1]} for line in output.splitlines() if line.startswith("package:")]
+            # Return only packages with a launcher activity; system services and
+            # non-launchable providers should not appear as "open app" choices.
+            output = await _shell(
+                serial, "cmd", "package", "query-activities", "--brief",
+                "-a", "android.intent.action.MAIN",
+                "-c", "android.intent.category.LAUNCHER",
+                timeout=35,
+            )
+            packages: set[str] = set()
+            for line in output.splitlines():
+                match = re.search(r"(?:ComponentInfo\\{)?([A-Za-z0-9_.]+)/[A-Za-z0-9_.$]+", line.strip())
+                if match:
+                    packages.add(match.group(1))
+            if not packages:
+                raise RuntimeError("未能从设备读取可启动应用列表；请确认 Android 版本支持 package query-activities")
+            return [{"packageName": package} for package in sorted(packages)]
         if method == "install":
             raise RuntimeError("本地 ADB 模式暂不支持通过 URL 安装 APK；请使用 adb install 或 Portal App 配对方式")
         if method == "video/start" or method == "video/stop":
