@@ -160,16 +160,21 @@ export default function Recorder() {
             const observedAt = Date.now()
             const x = event.coordinates?.x ?? event.x
             const y = event.coordinates?.y ?? event.y
-            const hit = isLast && nearbySnapshot && typeof x === 'number' && typeof y === 'number'
+            // One polling snapshot may arrive after several physical events.
+            // Attach it to every event in the batch as approximate context,
+            // never as event-time target evidence or an executable locator.
+            const hit = nearbySnapshot && typeof x === 'number' && typeof y === 'number'
               ? [...nearbySnapshot.elements].reverse().find(el => !!el.bounds
                 && el.bounds.left <= x && el.bounds.right >= x
                 && el.bounds.top <= y && el.bounds.bottom >= y)
               : undefined
+            const eventTimestamp = event.timestamp_ms ?? event.received_at_ms
             return {
               ...event,
-              ...(isLast && nearbySnapshot ? {
+              ...(nearbySnapshot ? {
                 ui_observation: {
                   phase: 'post_event_poll_approximate',
+                  quality: 'approximate',
                   ui_text: nearbySnapshot.ui_text,
                   elements: nearbySnapshot.elements,
                   screen: {
@@ -177,12 +182,17 @@ export default function Recorder() {
                     height: nearbySnapshot.screen_height ?? 0,
                   },
                   captured_at_ms: observedAt,
+                  event_to_observation_delta_ms: typeof eventTimestamp === 'number'
+                    ? Math.max(0, observedAt - eventTimestamp)
+                    : null,
                 },
                 ...(hit ? {
                   observed_target: hit,
                   observed_target_evidence: 'post_event_poll_approximate',
                 } : {}),
               } : {}),
+              // Keep one copy of the shared batch screenshot to avoid storing
+              // duplicate image assets for every event in the same poll batch.
               ...(isLast && nearbyScreenshot
                 ? { screenshot_b64: nearbyScreenshot, screenshot_captured_at_ms: observedAt }
                 : {}),
