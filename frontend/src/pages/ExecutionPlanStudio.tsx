@@ -67,7 +67,7 @@ export default function ExecutionPlanStudio() {
         <div className="rounded-xl border border-amber-200 bg-amber-50/70 p-4 shadow-sm">
           <div className="text-xs text-amber-700">{t('当前阶段', 'Current stage')}</div>
           <div className="mt-1 text-lg font-semibold text-amber-900">{t('计划编辑与校验', 'Editing and validation')}</div>
-          <p className="mt-1 text-xs leading-5 text-amber-800">{t('真实设备单步执行和 Plan Runner 尚未接入。', 'Live device stepping and the Plan Runner are not connected yet.')}</p>
+          <p className="mt-1 text-xs leading-5 text-amber-800">{t('已支持真机 UI Tree 检查与单步调试；完整计划 Runner 仍在后续阶段。', 'Live UI inspection and single-step debugging are available; the full plan runner is a later phase.')}</p>
         </div>
       </div>
 
