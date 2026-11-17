@@ -470,7 +470,8 @@ export default function Recorder() {
         events: (() => {
           // Send captured image bytes to the API once; the backend writes
           // them as case-scoped files and stores only relative asset references.
-          const recordedEvents = (realEvents.length > 0 ? realEvents : webEvents)
+          const recordedEvents = [...realEvents, ...webEvents]
+            .sort((a, b) => (a.timestamp_ms ?? a.received_at_ms ?? 0) - (b.timestamp_ms ?? b.received_at_ms ?? 0))
             .map(event => ({ ...event }))
           if (recordedEvents.length > 0 && sessionStartSnapshot) {
             recordedEvents[0] = {
