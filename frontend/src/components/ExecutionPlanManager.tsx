@@ -1,4 +1,6 @@
 import { useState } from 'react'
+import type { Device } from '../lib/api'
+import ExecutionPlanDeviceInspector from './ExecutionPlanDeviceInspector'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import {
   createExecutionPlanVersion, ExecutionPlanStep,
@@ -30,7 +32,7 @@ function asNumber(value: unknown): string {
   return value === undefined || value === null ? '' : String(value)
 }
 
-export default function ExecutionPlanManager({ suiteId, platform }: { suiteId: string; platform: string }) {
+export default function ExecutionPlanManager({ suiteId, platform, device }: { suiteId: string; platform: string; device: Device | null }) {
   const t = useT()
   const qc = useQueryClient()
   const [caseId, setCaseId] = useState('')
@@ -38,6 +40,7 @@ export default function ExecutionPlanManager({ suiteId, platform }: { suiteId: s
   const [editing, setEditing] = useState(false)
   const [draftSteps, setDraftSteps] = useState<ExecutionPlanStep[]>([])
   const [editError, setEditError] = useState('')
+  const [targetStepIndex, setTargetStepIndex] = useState(0)
 
   const { data: cases = [], isLoading: casesLoading } = useQuery({
     queryKey: ['suite-cases', suiteId],
@@ -137,6 +140,18 @@ export default function ExecutionPlanManager({ suiteId, platform }: { suiteId: s
   const removeStep = (index: number) => {
     setDraftSteps(current => current.filter((_, i) => i !== index).map((step, i) => ({ ...step, sequence: i + 1 })))
   }
+  const applyDeviceLocator = (locator: Record<string, unknown>) => {
+    if (!editing) { setEditError(t('请先点击“编辑步骤”，再绑定真机控件。', 'Enter step editing before binding a live element.')); return }
+    const index = Math.min(targetStepIndex, Math.max(0, draftSteps.length - 1))
+    if (!draftSteps[index]) { setEditError(t('请先新增或选择一个步骤。', 'Add or select a step first.')); return }
+    patchStep(index, { locator: { ...(draftSteps[index].locator || {}), ...locator } })
+    setEditError('')
+  }
+  const addDeviceAction = (action: string, args: Record<string, unknown>, locator?: Record<string, unknown>) => {
+    const base = editing ? draftSteps : (selectedPlan?.steps || [])
+    const step: ExecutionPlanStep = { step_id: 'device_' + Date.now(), sequence: base.length + 1, action, args, executor: 'deterministic', locator: locator || {}, fallback: null, precondition: null, wait_condition: null, verification: null, on_failure: 'fail', import_status: 'manual' }
+    setDraftSteps([...base, step]); setTargetStepIndex(base.length); setEditing(true); setEditError('')
+  }
   const saveVersion = () => {
     if (draftSteps.length === 0) {
       setEditError(t('至少保留一个执行步骤。', 'Keep at least one execution step.'))
@@ -208,6 +223,8 @@ export default function ExecutionPlanManager({ suiteId, platform }: { suiteId: s
           </>
         )}
 
+        <ExecutionPlanDeviceInspector device={device} onApplyLocator={applyDeviceLocator} onAddAction={addDeviceAction} />
+
         {selectedPlan && !editing && (
           <div className="space-y-3">
             {selectedPlan.warnings.length > 0 && (
@@ -255,7 +272,7 @@ export default function ExecutionPlanManager({ suiteId, platform }: { suiteId: s
                 <div key={step.step_id || index} className="overflow-hidden rounded-lg border border-gray-200">
                   <div className="flex items-center justify-between gap-2 border-b bg-slate-50 px-3 py-2">
                     <div className="flex items-center gap-2">
-                      <span className="flex h-6 w-6 items-center justify-center rounded-full bg-blue-100 text-xs font-semibold text-blue-700">{index + 1}</span>
+                      <button type="button" onClick={() => setTargetStepIndex(index)} title="将真机控件绑定到此步骤" className={targetStepIndex === index ? "flex h-6 w-6 items-center justify-center rounded-full bg-blue-600 text-xs font-semibold text-white" : "flex h-6 w-6 items-center justify-center rounded-full bg-blue-100 text-xs font-semibold text-blue-700"}>{index + 1}</button>
                       <span className="text-xs font-semibold text-gray-700">{ACTIONS.find(a => a.value === step.action)?.label || step.action}</span>
                     </div>
                     <div className="flex items-center gap-1">
@@ -377,7 +394,7 @@ export default function ExecutionPlanManager({ suiteId, platform }: { suiteId: s
         )}
 
         <div className="rounded-lg border border-slate-200 bg-slate-50 px-3 py-2.5 text-xs leading-5 text-gray-500">
-          <strong className="text-gray-700">{t('说明：', 'Note: ')}</strong>{t('此处可以可视化维护执行步骤。当前版本仍是计划管理阶段，尚未接入计划执行引擎；保存的草稿不能直接运行，原有 AI 步骤树和 Replay 流程不受影响。', 'Execution steps can be maintained visually here. The plan runner is not connected yet, so drafts cannot run directly. Existing AI step-tree and Replay flows are unchanged.')}
+          <strong className="text-gray-700">{t('说明：', 'Note: ')}</strong>{t('真机画面、UI Tree 与步骤定位已接通，可单步调试设备操作；完整执行计划 Runner 尚未接入，保存的草稿暂不能一键运行。', 'Live device view, UI Tree and step locators are connected for interactive debugging. The full plan runner is not yet available.')}
         </div>
       </div>
     </section>
