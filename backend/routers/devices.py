@@ -327,6 +327,12 @@ async def launch_device_app(device_id: str, package_name: str, request: Request,
     ))).scalar_one_or_none()
     if not device:
         raise HTTPException(status_code=404, detail="设备不存在或无权访问")
+    app_row = (await db.execute(select(DeviceApp).where(
+        DeviceApp.account_id == account_id, DeviceApp.device_id == device_id,
+        DeviceApp.package_name == package_name, DeviceApp.installed.is_(True)
+    ))).scalar_one_or_none()
+    if not app_row:
+        raise HTTPException(status_code=404, detail="应用未在当前设备应用库中，或已卸载；请先刷新应用列表")
     if not local_adb.is_bound(device_id):
         raise HTTPException(status_code=409, detail="本地 ADB 设备未连接")
     from core.device_scheduler import locks
