@@ -29,6 +29,26 @@ def test_import_preserves_semantic_locator_and_coordinates():
     assert step["timing"]["inter_action_gap_ms"] == 300
 
 
+def test_start_app_is_imported_as_system_action_without_ui_locator():
+    steps, warnings = legacy_replay_to_plan(json.dumps([
+        {"kind": "start_app", "package": "com.example.demo"}
+    ]))
+    step = steps[0]
+    assert step["executor"] == "system"
+    assert step["execution_channel"] == "system_api"
+    assert step["args"]["package_name"] == "com.example.demo"
+    assert step["locator"] == {}
+    assert step["import_status"] == "ready"
+    assert warnings == []
+
+
+def test_start_app_without_package_is_not_marked_ready():
+    steps, warnings = legacy_replay_to_plan('[{"kind":"start_app"}]')
+    assert steps[0]["executor"] == "system"
+    assert steps[0]["import_status"] == "needs_package"
+    assert warnings
+
+
 def test_coordinate_only_tap_is_hybrid_and_warned():
     steps, warnings = legacy_replay_to_plan('[{"kind":"tap","x":10,"y":20}]')
 
