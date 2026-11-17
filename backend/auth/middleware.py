@@ -63,6 +63,8 @@ async def _owns_path_resource(path: str, account_id: str) -> bool:
     if path in {
         "/api/devices/local-adb/discover",
         "/api/devices/local-adb/attach",
+        # Account-scoped app catalog is a collection endpoint, not a device ID.
+        "/api/devices/apps/catalog",
     }:
         return True
 
