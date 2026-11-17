@@ -3,6 +3,7 @@ import { useQuery } from '@tanstack/react-query'
 import { useNavigate } from 'react-router-dom'
 import { api, fetchDevices, fetchDeviceApps, getToken } from '../lib/api'
 import H264Canvas from '../components/H264Canvas'
+import LifecycleActionEditor, { type LifecycleAction } from '../components/LifecycleActionEditor'
 import { websocketH264Source } from '../lib/h264Stream'
 import { useT } from '../lib/i18n'
 
@@ -126,6 +127,8 @@ export default function Recorder() {
   const [caseName, setCaseName] = useState('')
   const [expected, setExpected] = useState('')
   const [saved, setSaved] = useState<{ suiteId: string } | null>(null)
+  const [preActions, setPreActions] = useState<LifecycleAction[]>([])
+  const [postActions, setPostActions] = useState<LifecycleAction[]>([])
 
   // ── Real recording (user operates the phone, we capture taps/scrolls) ──────
   const [realRecording, setRealRecording] = useState(false)
@@ -474,6 +477,8 @@ export default function Recorder() {
     setCaseName('')
     setExpected('')
     setLaunchPackage('')
+    setPreActions([])
+    setPostActions([])
   }
 
   const saveRecording = async () => {
@@ -487,6 +492,8 @@ export default function Recorder() {
         case_name: caseName.trim(),
         expected: expected.trim(),
         steps,
+        pre_actions: preActions,
+        post_actions: postActions,
         events: (() => {
           // Send captured image bytes to the API once; the backend writes
           // them as case-scoped files and stores only relative asset references.
@@ -1095,6 +1102,20 @@ export default function Recorder() {
                 onChange={e => setExpected(e.target.value)}
               />
             </div>
+          </div>
+          <div className="grid grid-cols-1 gap-3 xl:grid-cols-2">
+            <LifecycleActionEditor
+              title={t('执行前处理（可选）', 'Pre-execution actions (optional)')}
+              description={t('在正常测试步骤开始前执行。留空或全部禁用时，不执行任何前置操作。', 'Runs before test steps. Leave empty or disable all actions to skip pre-processing.')}
+              actions={preActions}
+              onChange={setPreActions}
+            />
+            <LifecycleActionEditor
+              title={t('执行后处理（可选）', 'Post-execution actions (optional)')}
+              description={t('在测试步骤结束后执行。可用于清理应用，也可以配置其他设备操作。', 'Runs after test steps. Use it to clean up an app or perform other device actions.')}
+              actions={postActions}
+              onChange={setPostActions}
+            />
           </div>
           <div className="flex gap-3">
             <button
