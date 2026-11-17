@@ -190,20 +190,84 @@ recorder_engine = RecorderEngine()
 
 
 
-def sanitize_events_for_storage(events: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
-    """Return JSON-safe event evidence without embedding large screenshot payloads."""
+def sanitize_events_for_storage(
+    events: List[Dict[str, Any]],
+    asset_dir: Optional[str] = None,
+) -> List[Dict[str, Any]]:
+    """Persist screenshot evidence as files and keep only safe relative references in JSON.
+
+    Screenshot bytes are deliberately kept out of the database event JSON. File
+    names are generated server-side from event IDs; no client path is ever used.
+    """
+    import base64
     import copy
+    import hashlib
+    import os
+    from pathlib import Path
+
+    root = Path(asset_dir).resolve() if asset_dir else None
     sanitized: List[Dict[str, Any]] = []
     for source in events or []:
         if not isinstance(source, dict):
             continue
         event = copy.deepcopy(source)
-        screenshot = event.pop("screenshot_b64", None)
-        if screenshot:
-            event["screenshot_evidence"] = {
+        assets: Dict[str, str] = {}
+        for field_name, label in (("screenshot_b64", "event"), ("screenshot_b64_after", "post_action")):
+            encoded = event.pop(field_name, None)
+            if not encoded:
+                continue
+            if not isinstance(encoded, str):
+                continue
+            if "," in encoded and encoded.lstrip().startswith("data:"):
+                encoded = encoded.split(",", 1)[1]
+            try:
+                image_bytes = base64.b64decode(encoded, validate=True)
+            except (ValueError, TypeError):
+                continue
+            if not image_bytes or len(image_bytes) > 15 * 1024 * 1024:
+                continue
+            if image_bytes.startswith(b"\\x89PNG\\r\\n\\x1a\\n"):
+                extension = "png"
+            elif image_bytes.startswith(b"\\xff\\xd8\\xff"):
+                extension = "jpg"
+            elif image_bytes[:4] == b"RIFF" and image_bytes[8:12] == b"WEBP":
+                extension = "webp"
+            else:
+                continue
+            if root is None:
+                continue
+            root.mkdir(parents=True, exist_ok=True)
+            event_key = str(event.get("event_id") or uuid.uuid4()).replace("-", "")
+            filename = f"{event_key}_{label}.{extension}"
+            destination = (root / filename).resolve()
+            if destination.parent != root:
+                continue
+            temporary = destination.with_suffix(destination.suffix + ".tmp")
+            with open(temporary, "wb") as handle:
+                handle.write(image_bytes)
+                handle.flush()
+                os.fsync(handle.fileno())
+            os.replace(temporary, destination)
+            assets[label] = filename
+            event.setdefault("screenshot_evidence", {})[label] = {
                 "captured": True,
                 "captured_at_ms": event.get("screenshot_captured_at_ms"),
-                "storage": "not_persisted",
+                "storage": "local_file",
+                "asset": filename,
+                "sha256": hashlib.sha256(image_bytes).hexdigest(),
+                "bytes": len(image_bytes),
+            }
+        if assets:
+            event["screenshot_evidence"] = {
+                **(event.get("screenshot_evidence") if isinstance(event.get("screenshot_evidence"), dict) else {}),
+                "captured": True,
+                "storage": "local_file",
+                "assets": assets,
+            }
+        elif event.get("screenshot_evidence") is None:
+            event["screenshot_evidence"] = {
+                "captured": False,
+                "storage": "not_captured",
             }
         sanitized.append(event)
     return sanitized
