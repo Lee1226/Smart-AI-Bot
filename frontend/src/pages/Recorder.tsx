@@ -582,7 +582,7 @@ export default function Recorder() {
   }
 
   // ── Unified event inspector ─────────────────────────────────────────────────
-  const displayedEvents = realEvents.length > 0 ? realEvents : webEvents
+  const displayedEvents = [...realEvents, ...webEvents].sort((a, b) => (a.timestamp_ms ?? a.received_at_ms ?? 0) - (b.timestamp_ms ?? b.received_at_ms ?? 0))
   const selectedEvent = displayedEvents[selectedEventIndex]
   const selectedCoordinates = selectedEvent?.coordinates
   const coordinateSpace = selectedCoordinates?.space
@@ -869,11 +869,10 @@ export default function Recorder() {
                         </button>
                         <button type="button" className="shrink-0 text-xs text-red-600 hover:underline" title={t('删除这条事件', 'Delete event')} onClick={() => {
                           const eventId = event.event_id
-                          const nextEvents = displayedEvents.filter((_, eventIndex) => eventIndex !== index)
-                          if (realEvents.length > 0) setRealEvents(nextEvents)
-                          else setWebEvents(nextEvents)
+                          setRealEvents(prev => prev.filter(item => item.event_id !== eventId))
+                          setWebEvents(prev => prev.filter(item => item.event_id !== eventId))
                           if (eventId) setSteps(prev => prev.filter(step => step.args.event_id !== eventId))
-                          setSelectedEventIndex(Math.max(0, Math.min(selectedEventIndex, nextEvents.length - 1)))
+                          setSelectedEventIndex(Math.max(0, selectedEventIndex - (index <= selectedEventIndex ? 1 : 0)))
                         }}>{t('删除', 'Remove')}</button>
                       </div>
                     </div>
