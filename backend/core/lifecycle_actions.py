@@ -2,7 +2,7 @@
 from __future__ import annotations
 
 import asyncio
-from typing import Any, Awaitable, Callable
+from typing import Awaitable, Callable
 
 
 async def run_lifecycle_actions(device, actions: list, phase: str, emit: Callable[[str], Awaitable[None]]) -> None:
