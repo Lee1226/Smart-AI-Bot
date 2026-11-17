@@ -37,6 +37,79 @@ def _action_for(kind: str) -> str:
     return aliases.get((kind or "").lower(), (kind or "unknown").lower())
 
 
+def _valid_bounds(value: Any) -> Optional[Dict[str, float]]:
+    if not isinstance(value, dict):
+        return None
+    try:
+        bounds = {key: float(value[key]) for key in ("left", "top", "right", "bottom")}
+    except (KeyError, TypeError, ValueError):
+        return None
+    if bounds["right"] <= bounds["left"] or bounds["bottom"] <= bounds["top"]:
+        return None
+    return bounds
+
+
+def _analyze_event_target(raw: Dict[str, Any], target: Dict[str, Any]) -> Dict[str, Any]:
+    """Resolve the element under a recorded tap using only event-time evidence.
+
+    A later polling snapshot is intentionally ignored here: it is useful for
+    inspection, but must not silently become an executable locator.
+    """
+    coordinates = raw.get("coordinates") if isinstance(raw.get("coordinates"), dict) else {}
+    x = coordinates.get("x", raw.get("x"))
+    y = coordinates.get("y", raw.get("y"))
+    before = raw.get("before") if isinstance(raw.get("before"), dict) else {}
+    elements = before.get("elements") if isinstance(before.get("elements"), list) else []
+    evidence = "exact_before_snapshot" if elements else "event_payload"
+    touched = dict(target) if target else {}
+
+    if x is not None and y is not None and elements:
+        try:
+            px, py = float(x), float(y)
+        except (TypeError, ValueError):
+            px = py = -1
+        hits = []
+        for element in elements:
+            if not isinstance(element, dict):
+                continue
+            bounds = _valid_bounds(element.get("bounds"))
+            if not bounds:
+                continue
+            if bounds["left"] <= px <= bounds["right"] and bounds["top"] <= py <= bounds["bottom"]:
+                area = (bounds["right"] - bounds["left"]) * (bounds["bottom"] - bounds["top"])
+                depth = len(element.get("parentPath") or element.get("parent_path") or [])
+                hits.append((area, -depth, element))
+        if hits:
+            # Prefer the smallest/deepest node at the actual touch point.
+            touched = dict(min(hits, key=lambda item: (item[0], item[1]))[2])
+
+    tap_target = touched.get("tap_target") if isinstance(touched.get("tap_target"), dict) else None
+    directly_actionable = (
+        touched.get("clickable") is True
+        and touched.get("enabled", True) is not False
+        and touched.get("visible", True) is not False
+        and bool(_valid_bounds(touched.get("bounds")))
+    )
+    resolved = tap_target or (touched if directly_actionable else None)
+    if resolved:
+        resolution = "clickable_ancestor" if tap_target else "direct_clickable"
+        status = "actionable"
+    elif touched:
+        resolution = "candidate_only"
+        status = "not_confirmed_clickable"
+    else:
+        resolution = "unresolved"
+        status = "unknown"
+
+    return {
+        "status": status,
+        "resolution": resolution,
+        "evidence": evidence,
+        "touched_element": touched or None,
+        "resolved_target": dict(resolved) if resolved else None,
+    }
+
+
 @dataclass
 class RecordingSession:
     device_id: str
@@ -99,16 +172,28 @@ class RecorderEngine:
             except (TypeError, ValueError, OverflowError):
                 timestamp_ms = received_at_ms
 
-            target = {
-                **(raw.get("target") if isinstance(raw.get("target"), dict) else {}),
-                "text": raw.get("text") or "",
-                "content_description": raw.get("contentDescription") or raw.get("content_description") or "",
-                "resource_id": raw.get("resourceId") or raw.get("resource_id") or "",
-                "class_name": raw.get("className") or raw.get("class_name") or "",
-                "role": raw.get("role") or "",
-                "css_selector": raw.get("cssSelector") or raw.get("css_selector") or "",
-                "test_id": raw.get("testId") or raw.get("test_id") or "",
+            raw_target = raw.get("target") if isinstance(raw.get("target"), dict) else {}
+            # Preserve semantic values already nested in target. Portal and
+            # browser adapters do not always duplicate them at the event root.
+            target = dict(raw_target)
+            target_aliases = {
+                "text": ("text",),
+                "content_description": ("contentDescription", "content_description"),
+                "resource_id": ("resourceId", "resource_id"),
+                "class_name": ("className", "class_name"),
+                "role": ("role",),
+                "css_selector": ("cssSelector", "css_selector"),
+                "test_id": ("testId", "test_id"),
             }
+            for canonical, aliases in target_aliases.items():
+                value = next((raw.get(key) for key in aliases if raw.get(key) not in (None, "")), None)
+                if value in (None, ""):
+                    value = next((raw_target.get(key) for key in (canonical, *aliases)
+                                  if raw_target.get(key) not in (None, "")), None)
+                if value not in (None, ""):
+                    target[canonical] = value
+
+            target_analysis = _analyze_event_target(raw, target)
             coordinates = None
             if any(raw.get(k) is not None for k in ("x", "y", "x1", "y1", "x2", "y2")):
                 coordinates = {
@@ -144,6 +229,7 @@ class RecorderEngine:
                 "received_at_ms": received_at_ms,
                 "action": action,
                 "target": target,
+                "target_analysis": target_analysis,
                 "coordinates": coordinates,
             }
             session.events.append(event)
