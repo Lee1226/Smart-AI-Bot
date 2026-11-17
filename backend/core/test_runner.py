@@ -1288,3 +1288,14 @@ async def execute_run(
         if run_id not in jobs:
             await state.finish()
             active_runs.pop(run_id, None)
+
+
+async def start_execution_plan_run(run_id: str, plan_id: str, max_steps: int = 8) -> None:
+    """Queue a versioned plan on the same per-device scheduler as suite runs."""
+    state = RunState(run_id)
+    from core.device_scheduler import enqueue
+    await enqueue(
+        run_id,
+        state,
+        lambda: execute_execution_plan_run(run_id, plan_id, state, max_steps=max_steps),
+    )
