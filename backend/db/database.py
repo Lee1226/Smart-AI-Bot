@@ -67,6 +67,7 @@ async def init_db():
         await _ensure_columns("test_cases", {
             "replay_steps": "TEXT DEFAULT ''",
             "recorder_events": "TEXT DEFAULT ''",
+            "lifecycle_actions_json": "TEXT DEFAULT '{}'",
         })
 
         await _ensure_columns("step_nodes", {
