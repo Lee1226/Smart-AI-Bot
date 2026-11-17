@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef } from 'react'
-import { useParams, useNavigate } from 'react-router-dom'
+import { useParams, useNavigate, Link } from 'react-router-dom'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import {
   fetchSuite, fetchDevices, fetchSettings, fetchTrends, runTree, runNode, startRun,
@@ -287,7 +287,10 @@ export default function SuiteDetail() {
         {/* Left: test case list */}
         <div className="flex-1 min-w-0">
           <div className="flex justify-between items-center gap-3 mb-1">
-            <h1 className="text-2xl font-bold">{(suite?.name || '').replace(/\.xmind$/i, '')}</h1>
+            <div className="flex items-center gap-3">
+              <h1 className="text-2xl font-bold">{(suite?.name || '').replace(/\.xmind$/i, '')}</h1>
+              {suite?.source_format === 'recorded' && <Link to={`/execution-plans?suite=${suiteId}`} className="rounded-lg border border-primary/30 bg-primary-soft px-3 py-1.5 text-xs font-medium text-primary-deep hover:bg-primary/10">{t('执行计划调试', 'Plan studio')} ↗</Link>}
+            </div>
             <AISuiteImport suiteId={suiteId!} />
           </div>
           <div className="flex items-center gap-3 mb-3">
