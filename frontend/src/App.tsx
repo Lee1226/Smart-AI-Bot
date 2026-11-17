@@ -32,7 +32,7 @@ const NAV_GROUPS: { label: { zh: string; en: string }; items: NavigationItem[] }
     { to: '/devices', label: { zh: '设备管理', en: 'Devices' }, icon: '📱', paths: ['/devices'] },
     { to: '/debug', label: { zh: '调试控制台', en: 'Debug console' }, icon: '⌘', paths: ['/debug'] },
     { to: '/quick', label: { zh: '任务执行', en: 'Execution' }, icon: '⚡', paths: ['/quick', '/regressions'] },
-    { to: '/suites', label: { zh: '用例中心', en: 'Cases' }, icon: '🧪', paths: ['/suites', '/library', '/automation', '/recorder', '/knowledge'] },
+    { to: '/suites', label: { zh: '用例中心', en: 'Cases' }, icon: '🧪', paths: ['/suites', '/library', '/automation', '/recorder', '/knowledge', '/execution-plans', '/apps'] },
     { to: '/runs', label: { zh: '测试任务', en: 'Test tasks' }, icon: '▶', paths: ['/runs'] },
   ] },
   { label: { zh: '管理', en: 'Manage' }, items: [
