@@ -12,7 +12,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from db.database import AsyncSessionLocal
-from db.models import Device, DeviceApp
+from db.models import Device, DeviceApp, AppCatalog, DeviceAppInstallation
 from ws.portal_ws import connected_devices
 from agent.ws_device import WebSocketDevice
 from agent import local_adb
@@ -236,9 +236,39 @@ class DeviceAppUpdateRequest(BaseModel):
     is_test_app: bool = False
 
 
+@router.get("/apps/catalog")
+async def list_app_catalog(request: Request, device_id: str | None = None, db: AsyncSession = Depends(get_db)):
+    """Return account app catalog with optional per-device installation state."""
+    account_id = getattr(request.state, "account_id", None)
+    if not account_id:
+        raise HTTPException(status_code=401, detail="未登录")
+    if device_id:
+        device = (await db.execute(select(Device).where(
+            Device.id == device_id, Device.account_id == account_id, Device.connection_type == "adb_usb"
+        ))).scalar_one_or_none()
+        if not device:
+            raise HTTPException(status_code=404, detail="设备不存在或无权访问")
+    catalog = (await db.execute(select(AppCatalog).where(
+        AppCatalog.account_id == account_id
+    ).order_by(AppCatalog.is_test_app.desc(), AppCatalog.app_name, AppCatalog.package_name))).scalars().all()
+    installs = []
+    if device_id:
+        installs = (await db.execute(select(DeviceAppInstallation).where(
+            DeviceAppInstallation.account_id == account_id, DeviceAppInstallation.device_id == device_id
+        ))).scalars().all()
+    by_package = {x.package_name: x for x in installs}
+    return {"apps": [{
+        "id": row.id, "package_name": row.package_name, "app_name": row.app_name,
+        "is_test_app": row.is_test_app,
+        "installed": bool(by_package.get(row.package_name) and by_package[row.package_name].installed),
+        "first_seen_at": by_package[row.package_name].first_seen_at.isoformat() if row.package_name in by_package and by_package[row.package_name].first_seen_at else "",
+        "last_seen_at": by_package[row.package_name].last_seen_at.isoformat() if row.package_name in by_package and by_package[row.package_name].last_seen_at else "",
+    } for row in catalog]}
+
+
 @router.get("/{device_id}/apps")
 async def list_device_apps(device_id: str, request: Request, db: AsyncSession = Depends(get_db)):
-    """Discover launcher apps and reconcile them with the persisted app library."""
+    """Discover launcher apps and reconcile per-device installs with the shared catalog."""
     account_id = getattr(request.state, "account_id", None)
     if not account_id:
         raise HTTPException(status_code=401, detail="未登录")
@@ -260,35 +290,64 @@ async def list_device_apps(device_id: str, request: Request, db: AsyncSession = 
         raise HTTPException(status_code=502, detail=f"读取应用包名失败：{exc}") from exc
 
     now = datetime.utcnow()
-    rows = (await db.execute(select(DeviceApp).where(
+    current = {str(x.get("packageName", "")).strip() for x in (packages or []) if isinstance(x, dict)}
+    current.discard("")
+    legacy_rows = (await db.execute(select(DeviceApp).where(
         DeviceApp.account_id == account_id, DeviceApp.device_id == device_id
     ))).scalars().all()
-    by_package = {row.package_name: row for row in rows}
-    current_packages = {str(item.get("packageName", "")).strip() for item in packages}
-    current_packages.discard("")
-    for package_name in current_packages:
-        row = by_package.get(package_name)
-        if row:
-            row.installed = True
-            row.last_seen_at = now
+    legacy_by_pkg = {x.package_name: x for x in legacy_rows}
+    install_rows = (await db.execute(select(DeviceAppInstallation).where(
+        DeviceAppInstallation.account_id == account_id, DeviceAppInstallation.device_id == device_id
+    ))).scalars().all()
+    install_by_pkg = {x.package_name: x for x in install_rows}
+    for package_name in current:
+        legacy = legacy_by_pkg.get(package_name)
+        catalog = (await db.execute(select(AppCatalog).where(
+            AppCatalog.account_id == account_id, AppCatalog.package_name == package_name
+        ))).scalar_one_or_none()
+        if not catalog:
+            catalog = AppCatalog(account_id=account_id, package_name=package_name,
+                app_name=legacy.app_name if legacy else "", is_test_app=bool(legacy and legacy.is_test_app))
+            db.add(catalog)
+            await db.flush()
+        elif legacy:
+            if not catalog.app_name and legacy.app_name:
+                catalog.app_name = legacy.app_name
+            catalog.is_test_app = bool(catalog.is_test_app or legacy.is_test_app)
+        install = install_by_pkg.get(package_name)
+        if install:
+            install.installed, install.last_seen_at = True, now
+        else:
+            db.add(DeviceAppInstallation(account_id=account_id, device_id=device_id,
+                package_name=package_name, installed=True, first_seen_at=now, last_seen_at=now))
+        if legacy:
+            legacy.installed, legacy.last_seen_at = True, now
         else:
             db.add(DeviceApp(account_id=account_id, device_id=device_id, package_name=package_name,
-                             app_name="", is_test_app=False, installed=True,
-                             first_seen_at=now, last_seen_at=now))
-    for package_name, row in by_package.items():
-        if package_name not in current_packages:
-            row.installed = False
+                app_name=catalog.app_name, is_test_app=catalog.is_test_app,
+                installed=True, first_seen_at=now, last_seen_at=now))
+    for pkg, install in install_by_pkg.items():
+        if pkg not in current:
+            install.installed = False
+    for pkg, legacy in legacy_by_pkg.items():
+        if pkg not in current:
+            legacy.installed = False
     await db.commit()
-    rows = (await db.execute(select(DeviceApp).where(
-        DeviceApp.account_id == account_id, DeviceApp.device_id == device_id
-    ).order_by(DeviceApp.is_test_app.desc(), DeviceApp.app_name, DeviceApp.package_name))).scalars().all()
+
+    catalog_rows = (await db.execute(select(AppCatalog).where(
+        AppCatalog.account_id == account_id
+    ).order_by(AppCatalog.is_test_app.desc(), AppCatalog.app_name, AppCatalog.package_name))).scalars().all()
+    installs = (await db.execute(select(DeviceAppInstallation).where(
+        DeviceAppInstallation.account_id == account_id, DeviceAppInstallation.device_id == device_id
+    ))).scalars().all()
+    by_package = {x.package_name: x for x in installs}
     return {"device_id": device_id, "apps": [{
-        "id": row.id, "package_name": row.package_name,
-        "app_name": row.app_name, "is_test_app": row.is_test_app,
-        "installed": row.installed,
-        "first_seen_at": row.first_seen_at.isoformat() if row.first_seen_at else "",
-        "last_seen_at": row.last_seen_at.isoformat() if row.last_seen_at else "",
-    } for row in rows]}
+        "id": row.id, "package_name": row.package_name, "app_name": row.app_name,
+        "is_test_app": row.is_test_app,
+        "installed": bool(by_package.get(row.package_name) and by_package[row.package_name].installed),
+        "first_seen_at": by_package[row.package_name].first_seen_at.isoformat() if row.package_name in by_package and by_package[row.package_name].first_seen_at else "",
+        "last_seen_at": by_package[row.package_name].last_seen_at.isoformat() if row.package_name in by_package and by_package[row.package_name].last_seen_at else "",
+    } for row in catalog_rows if row.package_name in by_package]}
 
 
 @router.put("/{device_id}/apps/{package_name}")
@@ -299,18 +358,25 @@ async def update_device_app(device_id: str, package_name: str, req: DeviceAppUpd
         raise HTTPException(status_code=401, detail="未登录")
     if not re.fullmatch(r"[A-Za-z0-9_.]+", package_name):
         raise HTTPException(status_code=400, detail="Package 名称格式无效")
-    row = (await db.execute(select(DeviceApp).where(
-        DeviceApp.account_id == account_id, DeviceApp.device_id == device_id,
-        DeviceApp.package_name == package_name
+    device = (await db.execute(select(Device).where(
+        Device.id == device_id, Device.account_id == account_id, Device.connection_type == "adb_usb"
+    ))).scalar_one_or_none()
+    if not device:
+        raise HTTPException(status_code=404, detail="设备不存在或无权访问")
+    row = (await db.execute(select(AppCatalog).where(
+        AppCatalog.account_id == account_id, AppCatalog.package_name == package_name
     ))).scalar_one_or_none()
     if not row:
         raise HTTPException(status_code=404, detail="应用记录不存在，请先刷新设备应用列表")
-    row.app_name = req.app_name.strip()[:80]
-    row.is_test_app = bool(req.is_test_app)
+    row.app_name, row.is_test_app, row.updated_at = req.app_name.strip()[:80], bool(req.is_test_app), datetime.utcnow()
+    legacy_rows = (await db.execute(select(DeviceApp).where(
+        DeviceApp.account_id == account_id, DeviceApp.package_name == package_name
+    ))).scalars().all()
+    for legacy in legacy_rows:
+        legacy.app_name, legacy.is_test_app = row.app_name, row.is_test_app
     await db.commit()
     await db.refresh(row)
-    return {"id": row.id, "package_name": row.package_name, "app_name": row.app_name,
-            "is_test_app": row.is_test_app, "installed": row.installed}
+    return {"id": row.id, "package_name": row.package_name, "app_name": row.app_name, "is_test_app": row.is_test_app}
 
 
 @router.post("/{device_id}/apps/{package_name}/launch")
@@ -322,17 +388,20 @@ async def launch_device_app(device_id: str, package_name: str, request: Request,
     if not re.fullmatch(r"[A-Za-z0-9_.]+", package_name):
         raise HTTPException(status_code=400, detail="Package 名称格式无效")
     device = (await db.execute(select(Device).where(
-        Device.id == device_id, Device.account_id == account_id,
-        Device.connection_type == "adb_usb"
+        Device.id == device_id, Device.account_id == account_id, Device.connection_type == "adb_usb"
     ))).scalar_one_or_none()
     if not device:
         raise HTTPException(status_code=404, detail="设备不存在或无权访问")
-    app_row = (await db.execute(select(DeviceApp).where(
-        DeviceApp.account_id == account_id, DeviceApp.device_id == device_id,
-        DeviceApp.package_name == package_name, DeviceApp.installed.is_(True)
+    install = (await db.execute(select(DeviceAppInstallation).where(
+        DeviceAppInstallation.account_id == account_id, DeviceAppInstallation.device_id == device_id,
+        DeviceAppInstallation.package_name == package_name, DeviceAppInstallation.installed.is_(True)
     ))).scalar_one_or_none()
-    if not app_row:
-        raise HTTPException(status_code=404, detail="应用未在当前设备应用库中，或已卸载；请先刷新应用列表")
+    catalog = (await db.execute(select(AppCatalog).where(
+        AppCatalog.account_id == account_id, AppCatalog.package_name == package_name,
+        AppCatalog.is_test_app.is_(True)
+    ))).scalar_one_or_none()
+    if not install or not catalog:
+        raise HTTPException(status_code=404, detail="应用未在当前设备安装，或尚未加入测试应用")
     if not local_adb.is_bound(device_id):
         raise HTTPException(status_code=409, detail="本地 ADB 设备未连接")
     from core.device_scheduler import locks
