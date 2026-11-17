@@ -86,7 +86,28 @@ def _to_replay_steps(
         # observed_target is populated by a later polling snapshot and can point
         # at a different screen after a modal has disappeared.
         target = event.get("target") if isinstance(event.get("target"), dict) else {}
-        step: dict = {"kind": s.action, "delay_ms": int(args.get("delay_ms", 0))}
+        # Element indexes are tied to one UI-tree snapshot. When the
+        # recording contains a semantic target or center coordinate, compile
+        # tap_element into a stable tap action; retain index only as legacy
+        # evidence when no stronger target exists.
+        element_target = target.get("tap_target") if isinstance(target.get("tap_target"), dict) else target
+        has_element_identity = isinstance(element_target, dict) and any(
+            element_target.get(key) for key in (
+                "text", "resource_id", "resourceId", "content_description",
+                "contentDescription", "class_name", "className",
+            )
+        )
+        event_coordinates = event.get("coordinates") if isinstance(event.get("coordinates"), dict) else {}
+        has_element_point = (
+            isinstance(element_target, dict)
+            and element_target.get("cx") is not None
+            and element_target.get("cy") is not None
+        )
+        replay_action = (
+            "tap" if s.action == "tap_element" and (has_element_identity or has_element_point)
+            else s.action
+        )
+        step: dict = {"kind": replay_action, "delay_ms": int(args.get("delay_ms", 0))}
         if target and any(target.get(key) for key in (
             "text", "resource_id", "resourceId", "content_description",
             "contentDescription", "class_name", "className",
@@ -142,6 +163,27 @@ def _to_replay_steps(
                 step["coordinate_space"] = coordinate_space
         elif s.action == "tap_element":
             step["index"] = args.get("index")
+            # Copy stable semantic attributes to the legacy replay adapter's
+            # top-level fields, then preserve center coordinates as fallback.
+            if isinstance(element_target, dict):
+                for source_key, target_key in (
+                    ("resource_id", "resourceId"), ("resourceId", "resourceId"),
+                    ("text", "text"),
+                    ("content_description", "contentDescription"),
+                    ("contentDescription", "contentDescription"),
+                    ("class_name", "className"), ("className", "className"),
+                ):
+                    if element_target.get(source_key) and not step.get(target_key):
+                        step[target_key] = element_target[source_key]
+            tap_x = args.get("x", event_coordinates.get("x"))
+            tap_y = args.get("y", event_coordinates.get("y"))
+            if tap_x is None and has_element_point:
+                tap_x = element_target.get("cx")
+            if tap_y is None and has_element_point:
+                tap_y = element_target.get("cy")
+            if tap_x is not None and tap_y is not None and replay_action == "tap":
+                step["x"], step["y"] = tap_x, tap_y
+                step["coordinate_space"] = event_coordinates.get("space") or "device_px"
         elif s.action == "scroll":
             step["direction"] = args.get("direction")
         elif s.action == "swipe":
