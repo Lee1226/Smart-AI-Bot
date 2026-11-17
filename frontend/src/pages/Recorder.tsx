@@ -100,7 +100,6 @@ export default function Recorder() {
   const onlineDevices = allDevices.filter(d => d.status === 'online')
 
   const [deviceId, setDeviceId] = useState('')
-  const { data: deviceApps = [] } = useQuery({ queryKey: ['device-apps', deviceId], queryFn: () => fetchDeviceApps(deviceId), enabled: !!deviceId })
   const [recording, setRecording] = useState(false)
   const [screenshot, setScreenshot] = useState('')
   const [elements, setElements] = useState<Element[]>([])
@@ -113,6 +112,7 @@ export default function Recorder() {
   const [inputClear, setInputClear] = useState(false)
   const [launchPackage, setLaunchPackage] = useState('')
   const [pressKey, setPressKey] = useState('KEYCODE_BACK')
+  const { data: deviceApps = [] } = useQuery({ queryKey: ['device-apps', deviceId], queryFn: () => fetchDeviceApps(deviceId), enabled: !!deviceId })
 
   // Save form
   const [suiteName, setSuiteName] = useState('')
