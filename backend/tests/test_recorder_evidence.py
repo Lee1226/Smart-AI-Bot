@@ -3,6 +3,10 @@ import json
 
 from routers.recorder import RecordedStep, SaveRequest, _to_replay_steps
 from core.recorder_engine import sanitize_events_for_storage
+import pytest
+from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
+from db.database import Base
+from db.models import TestCase, TestSuite
 
 
 def test_save_request_keeps_legacy_clients_compatible():
@@ -80,3 +84,29 @@ def test_replay_uses_nearby_observed_target_and_keeps_gap_as_timing_metadata():
     assert replay[0]["source_event_id"] == "portal-event-7"
     assert replay[0]["screen_size"] == {"width": 720, "height": 1600}
     assert replay[0]["inter_action_gap_ms"] == 850
+
+
+
+@pytest.mark.asyncio
+async def test_test_case_persists_recorder_event_json():
+    engine = create_async_engine("sqlite+aiosqlite:///:memory:")
+    async with engine.begin() as conn:
+        await conn.run_sync(Base.metadata.create_all)
+    maker = async_sessionmaker(engine, expire_on_commit=False)
+    async with maker() as session:
+        suite = TestSuite(name="recorded", source_format="recorded", account_id="acct")
+        session.add(suite)
+        await session.flush()
+        case = TestCase(
+            suite_id=suite.id,
+            path="点击登录",
+            expected="进入首页",
+            account_id="acct",
+            replay_steps='[{"kind":"tap","x":1,"y":2}]',
+            recorder_events=json.dumps([{"event_id": "e1", "target": {"text": "登录"}}], ensure_ascii=False),
+        )
+        session.add(case)
+        await session.commit()
+        await session.refresh(case)
+        assert json.loads(case.recorder_events)[0]["target"]["text"] == "登录"
+    await engine.dispose()
