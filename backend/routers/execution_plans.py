@@ -116,6 +116,52 @@ async def get_execution_plan(plan_id: str, request: Request, db: AsyncSession = 
     return _out(plan)
 
 
+@router.put("/{plan_id}", response_model=ExecutionPlanOut)
+async def update_execution_plan(
+    plan_id: str,
+    body: PlanVersionRequest,
+    request: Request,
+    db: AsyncSession = Depends(get_db),
+):
+    """Update the current execution plan in place without creating a new version."""
+    account_id = require_account_id(request)
+    plan = (await db.execute(
+        select(ExecutionPlan).where(
+            ExecutionPlan.id == plan_id,
+            ExecutionPlan.account_id == account_id,
+        )
+    )).scalar_one_or_none()
+    if not plan:
+        raise HTTPException(status_code=404, detail="Execution plan not found")
+    if not body.steps:
+        raise HTTPException(status_code=422, detail="steps must not be empty")
+
+    for index, step in enumerate(body.steps):
+        if not isinstance(step.get("sequence"), int) or step["sequence"] < 1:
+            raise HTTPException(status_code=422, detail=f"steps[{index}].sequence must be a positive integer")
+        executor = step.get("executor")
+        action = str(step.get("action") or "").strip().lower()
+        args = step.get("args") if isinstance(step.get("args"), dict) else {}
+        if executor not in {"deterministic", "ai", "hybrid", "system"}:
+            raise HTTPException(status_code=422, detail=f"steps[{index}].executor is invalid")
+        if executor == "system" and action not in SYSTEM_ACTIONS:
+            raise HTTPException(status_code=422, detail=f"steps[{index}] system executor only supports {sorted(SYSTEM_ACTIONS)}")
+        if action == "start_app" and not str(args.get("package_name") or args.get("package") or "").strip():
+            raise HTTPException(status_code=422, detail=f"steps[{index}] start_app requires args.package_name")
+
+    plan.steps_json = json.dumps(body.steps, ensure_ascii=False)
+    plan.metadata_json = json.dumps(body.metadata, ensure_ascii=False)
+    plan.warnings_json = json.dumps(body.warnings, ensure_ascii=False)
+    if body.platform is not None:
+        plan.platform = body.platform
+    plan.status = "draft"
+    plan.validated_run_id = ""
+    plan.updated_at = datetime.utcnow()
+    await db.commit()
+    await db.refresh(plan)
+    return _out(plan)
+
+
 @router.post("/{plan_id}/versions", response_model=ExecutionPlanOut, status_code=201)
 async def create_plan_version(
     plan_id: str,
