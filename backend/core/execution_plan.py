@@ -44,6 +44,10 @@ def legacy_replay_to_plan(replay_steps: str) -> Tuple[List[Dict[str, Any]], List
                 "locator": {}, "fallback": None, "precondition": None,
                 "wait_condition": None, "verification": None,
                 "on_failure": "fail", "legacy_source": raw,
+                "intent": {
+                    "description": "", "expected_result": "",
+                    "source": "legacy_import", "status": "needs_confirmation",
+                },
                 "import_status": "unsupported",
             })
             continue
@@ -131,6 +135,12 @@ def legacy_replay_to_plan(replay_steps: str) -> Tuple[List[Dict[str, Any]], List
             "source_event_id": raw.get("source_event_id"),
             "verification": None,
             "on_failure": "ai_recovery" if executor == "hybrid" else "fail",
+            # Legacy replay captures actions and coordinates, not the user's
+            # business intent. Never pretend that the intent was inferred.
+            "intent": {
+                "description": "", "expected_result": "",
+                "source": "legacy_import", "status": "needs_confirmation",
+            },
             "legacy_source": raw,
             "import_status": import_status,
             "warnings": step_warnings,
