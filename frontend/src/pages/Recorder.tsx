@@ -62,6 +62,10 @@ interface RecordEvent {
   screenshot_b64?: string
   screenshot_captured_at_ms?: number
   description?: string
+  before?: { ui_text?: string; elements?: Element[]; screen?: { width: number; height: number }; captured_at_ms?: number }
+  after?: { ui_text?: string; elements?: Element[]; screen?: { width: number; height: number }; captured_at_ms?: number }
+  ui_observation?: { phase: string; ui_text: string; elements: Element[]; screen: { width: number; height: number }; captured_at_ms: number }
+  screenshot_evidence?: { captured?: boolean; captured_at_ms?: number; storage?: string }
   [key: string]: unknown
 }
 
@@ -76,6 +80,7 @@ interface SnapshotData {
 interface ActionData extends SnapshotData {
   result: string
   description: string
+  event?: RecordEvent | null
 }
 
 const BTN = 'px-3 py-1.5 text-xs rounded border font-medium disabled:opacity-40 disabled:cursor-not-allowed transition-colors'
@@ -120,6 +125,8 @@ export default function Recorder() {
   const pointerStart = useRef<{ x: number; y: number } | null>(null)
   const screenRef = useRef<HTMLDivElement>(null)
   const realEventsCursor = useRef(0)
+  const elementsRef = useRef<Element[]>([])
+  const latestSnapshotRef = useRef<SnapshotData | null>(null)
 
   // Poll captured events while real-recording is active.
   useEffect(() => {
@@ -136,15 +143,41 @@ export default function Recorder() {
           try {
             const snapshot = await api.get<SnapshotData>(`/recorder/snapshot?device_id=${deviceId}`)
             nearbyScreenshot = snapshot.data.screenshot_b64
+            latestSnapshotRef.current = snapshot.data
+            elementsRef.current = snapshot.data.elements
             setScreenshot(snapshot.data.screenshot_b64)
             setElements(snapshot.data.elements)
           } catch { /* event capture must continue if screenshot capture fails */ }
-          setRealEvents(prev => [...prev, ...events.map((event, index) => ({
-            ...event,
-            ...(index === events.length - 1 && nearbyScreenshot
-              ? { screenshot_b64: nearbyScreenshot, screenshot_captured_at_ms: Date.now() }
-              : {}),
-          }))])
+          setRealEvents(prev => [...prev, ...events.map((event, index) => {
+            const isLast = index === events.length - 1
+            const observedAt = Date.now()
+            const x = event.coordinates?.x ?? event.x
+            const y = event.coordinates?.y ?? event.y
+            const hit = isLast && typeof x === 'number' && typeof y === 'number'
+              ? [...elementsRef.current].reverse().find(el => !!el.bounds
+                && el.bounds.left <= x && el.bounds.right >= x
+                && el.bounds.top <= y && el.bounds.bottom >= y)
+              : undefined
+            return {
+              ...event,
+              ...(isLast && latestSnapshotRef.current ? {
+                ui_observation: {
+                  phase: 'post_event_poll_approximate',
+                  ui_text: latestSnapshotRef.current.ui_text,
+                  elements: latestSnapshotRef.current.elements,
+                  screen: {
+                    width: latestSnapshotRef.current.screen_width ?? 0,
+                    height: latestSnapshotRef.current.screen_height ?? 0,
+                  },
+                  captured_at_ms: observedAt,
+                },
+                ...(hit ? { observed_target: hit } : {}),
+              } : {}),
+              ...(isLast && nearbyScreenshot
+                ? { screenshot_b64: nearbyScreenshot, screenshot_captured_at_ms: observedAt }
+                : {}),
+            }
+          })])
         }
       } catch { /* transient — ignore */ }
     }, 800)
@@ -157,6 +190,8 @@ export default function Recorder() {
   const harmony = selectedDevice?.connection_type === 'hdc_bridge'
 
   const applySnapshot = (data: SnapshotData) => {
+    latestSnapshotRef.current = data
+    elementsRef.current = data.elements
     setScreenshot(data.screenshot_b64)
     setElements(data.elements)
     if ((data.screen_width ?? 0) > 0 && (data.screen_height ?? 0) > 0) setScreenSize({ width: data.screen_width!, height: data.screen_height! })
@@ -317,11 +352,12 @@ export default function Recorder() {
       const now = Date.now()
       const coords = ['x', 'y', 'x1', 'y1', 'x2', 'y2'].some(key => args[key] !== undefined)
       setWebEvents(prev => [...prev, {
+        ...(data.event || {}),
         kind: action,
         action,
         source: 'web_action',
-        sequence: prev.length,
-        timestamp_ms: now,
+        sequence: data.event?.sequence ?? prev.length,
+        timestamp_ms: data.event?.timestamp_ms ?? now,
         description: data.description,
         ...args,
         ...(coords ? {
@@ -337,13 +373,13 @@ export default function Recorder() {
         } : {}),
         screenshot_b64: data.screenshot_b64,
         screenshot_captured_at_ms: now,
-        ...(action === 'tap' || action === 'tap_element' ? (() => {
+        ...(!data.event?.target && (action === 'tap' || action === 'tap_element') ? (() => {
           const target = action === 'tap_element'
             ? elements.find(el => el.index === args.index)
             : [...elements].reverse().find(el => !!el.bounds && typeof args.x === 'number' && typeof args.y === 'number'
               && el.bounds.left <= (args.x as number) && el.bounds.right >= (args.x as number)
               && el.bounds.top <= (args.y as number) && el.bounds.bottom >= (args.y as number))
-          return target ? { target: { text: target.text, resource_id: target.resourceId, class_name: target.className, bounds: target.bounds ?? undefined, clickable: target.clickable, parent_path: target.parentPath } } : {}
+          return target ? { target: { ...target, resource_id: target.resourceId, class_name: target.className, parent_path: target.parentPath } } : {}
         })() : {}),
       }])
     } catch (e: unknown) {
@@ -417,6 +453,7 @@ export default function Recorder() {
         suite_name: suiteName.trim(),
         expected: expected.trim(),
         steps,
+        events: (realEvents.length > 0 ? realEvents : webEvents).map(({ screenshot_b64, ...event }) => event),
       })
       setSaved({ suiteId: data.suite_id })
     } catch (e: unknown) {
