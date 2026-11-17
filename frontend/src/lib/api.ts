@@ -773,7 +773,8 @@ export interface ExecutionPlanStep {
   sequence: number
   action: string
   args: Record<string, unknown>
-  executor: 'deterministic' | 'ai' | 'hybrid'
+  executor: 'deterministic' | 'ai' | 'hybrid' | 'system'
+  execution_channel?: 'system_api' | 'ui_automation' | 'ai_agent'
   locator?: Record<string, unknown> | null
   fallback?: Record<string, unknown> | null
   precondition?: Record<string, unknown> | null
