@@ -1,10 +1,10 @@
 import { useState } from 'react'
 import { api, type Device } from '../lib/api'
-import ExecutionPlanDeviceInspector from './ExecutionPlanDeviceInspector'
+
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import {
   createExecutionPlanVersion, ExecutionPlanStep,
-  fetchExecutionPlans, fetchSuiteCases, importLegacyExecutionPlan,
+  fetchDeviceApps, fetchExecutionPlans, fetchSuiteCases, importLegacyExecutionPlan,
 } from '../lib/api'
 import { useT } from '../lib/i18n'
 
@@ -43,6 +43,10 @@ export default function ExecutionPlanManager({ suiteId, platform, device }: { su
   const [targetStepIndex, setTargetStepIndex] = useState(0)
   const [executingStep, setExecutingStep] = useState<number | null>(null)
   const [executionLogs, setExecutionLogs] = useState<Array<{ id: string; time: string; step: number; status: 'success' | 'error'; message: string }>>([])
+  const [appSearch, setAppSearch] = useState('')
+  const [favoritePackages, setFavoritePackages] = useState<string[]>(() => {
+    try { return JSON.parse(localStorage.getItem('sab_favorite_android_apps') || '[]') as string[] } catch { return [] }
+  })
 
   const { data: cases = [], isLoading: casesLoading } = useQuery({
     queryKey: ['suite-cases', suiteId],
@@ -56,6 +60,26 @@ export default function ExecutionPlanManager({ suiteId, platform, device }: { su
     enabled: !!activeCaseId,
   })
   const selectedPlan = plans.find(p => p.id === planId) || plans[0]
+  const { data: installedApps = [], isLoading: appsLoading, isError: appsError, refetch: refreshApps } = useQuery({
+    queryKey: ['device-apps', device?.id],
+    queryFn: () => fetchDeviceApps(device!.id),
+    enabled: !!device && device.platform === 'android' && device.connection_type === 'adb_usb',
+    staleTime: 30000,
+  })
+  const visibleApps = installedApps.filter(app => {
+    const q = appSearch.trim().toLowerCase()
+    return !q || app.package_name.toLowerCase().includes(q) || app.app_name.toLowerCase().includes(q)
+  }).sort((a, b) => Number(favoritePackages.includes(b.package_name)) - Number(favoritePackages.includes(a.package_name)) || a.app_name.localeCompare(b.app_name))
+  const toggleFavoriteApp = (pkg: string) => {
+    setFavoritePackages(current => {
+      const next = current.includes(pkg) ? current.filter(x => x !== pkg) : [...current, pkg]
+      localStorage.setItem('sab_favorite_android_apps', JSON.stringify(next))
+      return next
+    })
+  }
+  const addStartAppStep = (pkg: string) => {
+    addDeviceAction('start_app', { package_name: pkg, package: pkg })
+  }
 
   const invalidate = async () => {
     await qc.invalidateQueries({ queryKey: ['execution-plans', activeCaseId] })
@@ -297,7 +321,25 @@ export default function ExecutionPlanManager({ suiteId, platform, device }: { su
           </>
         )}
 
-        <ExecutionPlanDeviceInspector device={device} onApplyLocator={applyDeviceLocator} onAddAction={addDeviceAction} />
+        <section className="rounded-lg border border-gray-200 bg-white p-3">
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <div><h3 className="text-sm font-semibold text-gray-800">已安装应用</h3><p className="mt-0.5 text-[11px] text-gray-500">从当前 Android ADB 设备读取包名；星标应用会保存在本浏览器中，可直接加入执行步骤。</p></div>
+            <button type="button" onClick={() => void refreshApps()} disabled={!device || appsLoading} className="rounded-md border border-gray-200 px-3 py-1.5 text-xs text-gray-700 disabled:opacity-40">{appsLoading ? '读取中…' : '刷新应用列表'}</button>
+          </div>
+          {!device || device.connection_type !== 'adb_usb' || device.platform !== 'android' ? <p className="mt-3 rounded-md bg-amber-50 px-3 py-2 text-xs text-amber-700">请选择已连接的 Android 本机 ADB 设备。</p> : appsError ? <p className="mt-3 text-xs text-red-600">读取应用列表失败，请确认设备在线后重试。</p> : (
+            <>
+              <input value={appSearch} onChange={e => setAppSearch(e.target.value)} className="mt-3 w-full rounded-md border border-gray-200 px-3 py-2 text-xs outline-none focus:border-blue-400" placeholder="搜索应用名称或包名，例如 com.android.settings" />
+              <div className="mt-2 flex items-center justify-between text-[11px] text-gray-500"><span>{visibleApps.length} 个应用 · {favoritePackages.length} 个已标记</span><span>☆ 标记常用</span></div>
+              <div className="mt-2 max-h-64 divide-y divide-gray-100 overflow-auto rounded-md border border-gray-100">
+                {appsLoading ? <p className="p-4 text-center text-xs text-gray-400">正在读取设备应用…</p> : visibleApps.length === 0 ? <p className="p-4 text-center text-xs text-gray-400">没有匹配的应用</p> : visibleApps.map(app => <div key={app.package_name} className="flex items-center gap-2 px-3 py-2 hover:bg-slate-50">
+                  <button type="button" onClick={() => toggleFavoriteApp(app.package_name)} title="标记常用应用" className={favoritePackages.includes(app.package_name) ? 'text-amber-500' : 'text-gray-300 hover:text-amber-500'}>{favoritePackages.includes(app.package_name) ? '★' : '☆'}</button>
+                  <div className="min-w-0 flex-1"><div className="truncate text-xs font-medium text-gray-800">{app.app_name}</div><div className="truncate font-mono text-[10px] text-gray-500">{app.package_name}</div></div>
+                  <button type="button" onClick={() => addStartAppStep(app.package_name)} className="shrink-0 rounded-md border border-blue-200 bg-blue-50 px-2.5 py-1.5 text-[11px] text-blue-700 hover:bg-blue-100">加入打开步骤</button>
+                </div>)}
+              </div>
+            </>
+          )}
+        </section>
         <section className="rounded-lg border border-gray-200 bg-white p-3">
           <div className="mb-2 flex items-center justify-between">
             <h3 className="text-xs font-semibold text-gray-700">单步执行日志</h3>
