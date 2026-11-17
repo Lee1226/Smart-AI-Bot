@@ -71,20 +71,27 @@ def _to_replay_steps(
         step: dict = {"kind": s.action, "delay_ms": int(args.get("delay_ms", 0))}
         if target:
             step["target"] = target
-            step["source_event_id"] = event.get("event_id")
-            locator = {
-                "resource_id": target.get("resource_id") or target.get("resourceId"),
-                "text": target.get("text"),
-                "content_description": target.get("content_description") or target.get("contentDescription"),
-                "class_name": target.get("class_name") or target.get("className"),
-            }
-            step["locator"] = {key: value for key, value in locator.items() if value}
+        if event.get("event_id"):
+            step["source_event_id"] = event["event_id"]
+        locator = {
+            "resource_id": target.get("resource_id") or target.get("resourceId"),
+            "text": target.get("text"),
+            "content_description": target.get("content_description") or target.get("contentDescription"),
+            "class_name": target.get("class_name") or target.get("className"),
+        }
+        locator = {key: value for key, value in locator.items() if value}
+        if locator:
+            step["locator"] = locator
         coordinates = event.get("coordinates") if isinstance(event.get("coordinates"), dict) else {}
         if coordinates.get("space"):
             step["coordinate_space"] = coordinates["space"]
-        screen = event.get("screen") or (event.get("before") or {}).get("screen")
+        screen = event.get("screen") or (event.get("before") or {}).get("screen") or (event.get("ui_observation") or {}).get("screen")
         if isinstance(screen, dict) and screen.get("width") and screen.get("height"):
             step["screen_size"] = {"width": screen["width"], "height": screen["height"]}
+        if args.get("delay_ms"):
+            # This is the elapsed time between recorded user actions, not a
+            # measured application-settle duration.
+            step["inter_action_gap_ms"] = max(0, int(args["delay_ms"]))
         if s.action == "tap":
             if args.get("x") is not None:
                 step["x"] = args.get("x")
