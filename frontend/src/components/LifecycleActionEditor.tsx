@@ -73,14 +73,14 @@ export default function LifecycleActionEditor({
       ) : (
         <div className="space-y-2">
           {actions.map((item, index) => (
-            <div key={item.id || index} className={`rounded-md border p-3 space-y-2 ${item.enabled ? 'border-gray-200 bg-white' : 'border-gray-100 bg-gray-50 opacity-60'}`}>
+            <div key={item.id || index} className={`rounded-md border p-3 space-y-2 ${item.enabled !== false ? 'border-gray-200 bg-white' : 'border-gray-100 bg-gray-50 opacity-60'}`}>
               <div className="flex items-center gap-2">
                 <span className="text-xs font-mono text-gray-400">{String(index + 1).padStart(2, '0')}</span>
                 <select className={inputClass + ' flex-1'} value={item.action} onChange={e => changeAction(index, e.target.value)}>
                   {ACTION_OPTIONS.map(option => <option key={option.value} value={option.value}>{option.label}</option>)}
                 </select>
                 <label className="flex items-center gap-1 text-xs text-gray-500 whitespace-nowrap">
-                  <input type="checkbox" checked={item.enabled} onChange={e => patch(index, { enabled: e.target.checked })} />
+                  <input type="checkbox" checked={item.enabled !== false} onChange={e => patch(index, { enabled: e.target.checked })} />
                   启用
                 </label>
                 <button type="button" title="上移" disabled={index === 0} onClick={() => move(index, -1)} className="rounded border px-2 py-1 text-xs disabled:opacity-30">↑</button>
