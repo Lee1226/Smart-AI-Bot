@@ -48,6 +48,13 @@ interface RecordEvent {
   received_at_ms?: number
   coordinates?: { space?: string; x?: number; y?: number; x1?: number; y1?: number; x2?: number; y2?: number }
   target?: { text?: string; content_description?: string; contentDescription?: string; resource_id?: string; resourceId?: string; class_name?: string; className?: string; css_selector?: string; test_id?: string; bounds?: { left: number; top: number; right: number; bottom: number } | null; clickable?: boolean; enabled?: boolean; visible?: boolean; tap_candidate?: boolean; tap_evidence?: string; focusable?: boolean; checkable?: boolean; longClickable?: boolean; editable?: boolean; scrollable?: boolean; capabilities?: string[]; parentPath?: string[]; parent_path?: string[] }
+  target_analysis?: {
+    status?: string
+    resolution?: string
+    evidence?: string
+    touched_element?: { text?: string; className?: string } | null
+    resolved_target?: { text?: string; className?: string } | null
+  }
   text?: string
   contentDescription?: string
   resourceId?: string
