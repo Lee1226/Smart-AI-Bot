@@ -19,9 +19,6 @@ logger = logging.getLogger(__name__)
 
 def _prune_node(node: Dict[str, Any]) -> Optional[Dict[str, Any]]:
     """Remove disabled/invisible nodes and pure container nodes with no useful content."""
-    if not node.get("isEnabled", True) or not node.get("isVisibleToUser", True):
-        return None
-
     pruned_children = []
     for child in node.get("children", []):
         pruned = _prune_node(child)
@@ -58,6 +55,7 @@ def _format_node(
     elements: List[Dict[str, Any]],
     level: int = 0,
     parent_path: Optional[List[str]] = None,
+    ancestor_tap_target: Optional[Dict[str, Any]] = None,
 ) -> str:
     """Recursively format an a11y tree node into one indented text line.
 
@@ -88,11 +86,46 @@ def _format_node(
         resource_id = resource_id.split(":", 1)[1].lstrip("/")
 
     # ── Interactive flags ─────────────────────────────────────────────────────
-    is_interactive = bool(
-        node.get("isClickable") or node.get("isFocusable")
-        or node.get("isCheckable") or node.get("isScrollable")
+    is_clickable = bool(node.get("isClickable"))
+    is_focusable = bool(node.get("isFocusable"))
+    is_checkable = bool(node.get("isCheckable"))
+    is_long_clickable = bool(node.get("isLongClickable"))
+    is_scrollable = bool(node.get("isScrollable"))
+    is_editable = bool(node.get("isEditable")) or any(
+        token in class_name for token in ("EditText", "TextInput")
     )
+    # Class-name heuristics are candidates only, never actual clickability.
     is_button_like = any(c in class_name for c in ("Button", "ImageView", "FloatingAction"))
+    is_interactive = bool(
+        is_clickable or is_focusable or is_checkable or is_scrollable
+        or is_long_clickable or is_editable or is_button_like
+    )
+    capabilities: List[str] = []
+    if is_clickable or is_button_like:
+        capabilities.append("tap")
+    if is_editable:
+        capabilities.append("input")
+    if is_checkable:
+        capabilities.append("toggle")
+    if is_scrollable:
+        capabilities.append("scroll")
+    if is_long_clickable:
+        capabilities.append("long_press")
+    if is_focusable:
+        capabilities.append("focus")
+    tap_evidence = (
+        "accessibility_clickable" if is_clickable
+        else "class_heuristic" if is_button_like
+        else "ancestor_clickable" if ancestor_tap_target
+        else "none"
+    )
+    current_tap_target = None
+    if is_clickable and isinstance(bounds_raw, dict):
+        current_tap_target = {
+            "text": text, "resourceId": resource_id, "className": short_class,
+            "bounds": {"left": l, "top": t, "right": r, "bottom": b},
+            "cx": cx, "cy": cy,
+        }
 
     # ── Index only for nodes the LLM can act on ───────────────────────────────
     if text or is_interactive or is_button_like:
@@ -107,10 +140,18 @@ def _format_node(
             "cx": cx,
             "cy": cy,
             "bounds": {"left": l, "top": t, "right": r, "bottom": b} if isinstance(bounds_raw, dict) else None,
-            "clickable": bool(node.get("isClickable") or is_button_like),
+            "clickable": is_clickable,
+            "tap_candidate": bool(is_clickable or is_button_like or ancestor_tap_target),
+            "tap_evidence": tap_evidence,
+            "focusable": is_focusable,
+            "checkable": is_checkable,
+            "longClickable": is_long_clickable,
+            "editable": is_editable,
+            "capabilities": capabilities,
+            "tap_target": None if is_clickable else ancestor_tap_target,
             "enabled": bool(node.get("isEnabled", True)),
             "visible": bool(node.get("isVisibleToUser", True)),
-            "scrollable": bool(node.get("isScrollable")),
+            "scrollable": is_scrollable,
             "selected": bool(node.get("isSelected")),
             "checked": bool(node.get("isChecked")),
             "parentPath": list(parent_path or []),
@@ -144,9 +185,11 @@ def _format_node(
         parts.append("[" + ",".join(attrs) + "]")
 
     line = indent + " ".join(parts)
+    next_ancestor_target = current_tap_target or ancestor_tap_target
     children_lines = [
         _format_node(child, index_counter, elements, level + 1,
-                     (parent_path or []) + [text or resource_id or short_class])
+                     (parent_path or []) + [text or resource_id or short_class],
+                     next_ancestor_target)
         for child in node.get("children", [])
     ]
     return "\n".join([line] + children_lines) if children_lines else line
