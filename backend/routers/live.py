@@ -383,20 +383,17 @@ async def _run_local_adb_hub(device_id: str, serial: str, hub: dict) -> None:
             )
             async with lock:
                 for recorder_id, recorder in list(hub.get("recorders", {}).items()):
-                    try:
-                        recorder["audio"].put_nowait({"error": str(exc)})
-                    except asyncio.QueueFull:
-                        recorder["failed"] = True
-                        for target in (recorder["video"], recorder["audio"]):
-                            while not target.empty():
-                                try:
-                                    target.get_nowait()
-                                except asyncio.QueueEmpty:
-                                    break
+                    recorder["failed"] = True
+                    for target in (recorder["video"], recorder["audio"]):
+                        while not target.empty():
                             try:
-                                target.put_nowait({"error": "audio queue overflow"})
-                            except asyncio.QueueFull:
-                                pass
+                                target.get_nowait()
+                            except asyncio.QueueEmpty:
+                                break
+                        try:
+                            target.put_nowait({"error": f"audio capture failed: {exc}"})
+                        except asyncio.QueueFull:
+                            pass
 
     try:
         await session.start()
