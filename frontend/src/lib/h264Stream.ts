@@ -26,7 +26,7 @@ export function websocketH264Source(url: string): H264StreamSource {
           handlers.fail('视频流超时，请检查手机录屏授权或连接')
           current.close()
         }
-      }, 20000)
+      }, 50000)
       current.onmessage = e => {
         if (stopped || ws !== current) return
         if (e.data instanceof ArrayBuffer) {
@@ -51,22 +51,30 @@ export function websocketH264Source(url: string): H264StreamSource {
         // Treat that short-lived lock as retryable instead of immediately
         // falling back to screenshots.
         const permanent = e.code === 4404 || e.code === 4401 || e.code === 4403 || e.code === 4410
-        // 1006 also covers a WebSocket handshake aborted by a transient proxy,
-        // backend restart, or an overlapping viewer lifecycle transition.
-        const maxRetries = e.code === 4409 ? 6 : 8
+        // 1006 (aborted handshake) and 1012 (backend restart / failed Scrcpy
+        // producer) are transient. Retry long enough for the backend to release
+        // the old session and start a fresh producer.
+        const maxRetries = e.code === 4409 ? 10 : 12
         if (permanent || ++retryCount > maxRetries) {
           handlers.fail(e.code === 4410 ? '视频预览已在其他连接中接管' : e.code === 4409 ? '视频设备正在被其他连接占用' : '视频流不可用')
           return
         }
         const delay = e.code === 4409
-          ? Math.min(500 * retryCount, 2500)
-          : Math.min(500 * (2 ** (retryCount - 1)), 4000)
+          ? Math.min(500 * retryCount, 3000)
+          : Math.min(500 * (2 ** (retryCount - 1)), 5000)
         console.warn('[H264] WebSocket closed; retrying', {
           code: e.code, reason: e.reason, retry: retryCount, delay,
         })
         retry = setTimeout(connect, delay)
       }
-      current.onerror = () => {}
+      current.onerror = () => {
+        // The browser usually follows this with close (often code 1006).
+        // Never log the token-bearing URL.
+        console.warn('[H264] WebSocket transport error', {
+          readyState: current.readyState,
+          retry: retryCount,
+        })
+      }
     }
     connect()
     return () => {
