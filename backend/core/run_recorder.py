@@ -172,10 +172,20 @@ class RunRecorder:
         try:
             if self._video_queue is None or self._audio_queue is None:
                 raise RuntimeError("Recorder queues are not initialized")
-            await asyncio.gather(
-                consume(self._video_queue, muxer.write_video, "video"),
-                consume(self._audio_queue, muxer.write_audio, "audio"),
+            consumers = {
+                asyncio.create_task(consume(self._video_queue, muxer.write_video, "video")),
+                asyncio.create_task(consume(self._audio_queue, muxer.write_audio, "audio")),
+            }
+            done, pending = await asyncio.wait(
+                consumers, return_when=asyncio.FIRST_EXCEPTION
             )
+            failure = next((task.exception() for task in done if task.exception()), None)
+            if failure is not None:
+                for task in pending:
+                    task.cancel()
+                await asyncio.gather(*pending, return_exceptions=True)
+                raise failure
+            await asyncio.gather(*pending)
             await asyncio.to_thread(muxer.close)
             os.replace(temp_path, final_path)
             logger.info("[rec:%s] saved audio/video recording: %s", self.run_id, final_path)
