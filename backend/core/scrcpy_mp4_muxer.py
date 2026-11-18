@@ -81,24 +81,32 @@ def build_avc_decoder_config(data: bytes) -> bytes:
 
 
 def parse_aac_audio_specific_config(data: bytes) -> tuple[int, str]:
-    """Read sample rate and channel layout from AAC AudioSpecificConfig."""
+    """Read AAC-LC sample rate and channel layout from AudioSpecificConfig."""
     if len(data) < 2:
         raise ValueError("AAC configuration packet is too short")
     bits = int.from_bytes(data, "big")
     total_bits = len(data) * 8
-    object_type = (bits >> (total_bits - 5)) & 0x1F
-    if object_type == 0:
-        raise ValueError("Invalid AAC audio object type")
-    frequency_index = (bits >> (total_bits - 9)) & 0x0F
+    position = 0
+
+    def read(count: int) -> int:
+        nonlocal position
+        if position + count > total_bits:
+            raise ValueError("AAC AudioSpecificConfig is truncated")
+        value = (bits >> (total_bits - position - count)) & ((1 << count) - 1)
+        position += count
+        return value
+
+    object_type = read(5)
+    if object_type != 2:
+        raise ValueError(f"Only AAC-LC is supported by the MP4 recorder (object_type={object_type})")
+    frequency_index = read(4)
     if frequency_index == 15:
-        if len(data) < 5:
-            raise ValueError("AAC explicit sample rate is truncated")
-        sample_rate = (bits >> (total_bits - 33)) & 0xFFFFFF
+        sample_rate = read(24)
     elif frequency_index < len(_AAC_SAMPLE_RATES):
         sample_rate = _AAC_SAMPLE_RATES[frequency_index]
     else:
         raise ValueError(f"Unsupported AAC sample-rate index: {frequency_index}")
-    channel_config = (bits >> (total_bits - 13)) & 0x0F
+    channel_config = read(4)
     layout = _AAC_LAYOUTS.get(channel_config)
     if not sample_rate or layout is None:
         raise ValueError(f"Unsupported AAC channel configuration: {channel_config}")
