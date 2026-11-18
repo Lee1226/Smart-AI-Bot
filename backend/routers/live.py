@@ -437,7 +437,7 @@ async def _run_local_adb_hub(device_id: str, serial: str, hub: dict) -> None:
                     except asyncio.QueueFull:
                         try:
                             target.get_nowait()
-                            target.put_nowait(None)
+                            target.put_nowait({"error": "Scrcpy media hub stopped before recording drained"})
                         except (asyncio.QueueEmpty, asyncio.QueueFull):
                             pass
         try:
