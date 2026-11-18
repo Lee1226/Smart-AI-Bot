@@ -1,17 +1,15 @@
 """Scrcpy 4.x audio/video transport for task recording.
 
-The existing ScrcpyVideoSession remains the preview-compatible raw H.264 path.
-This session opens the two media sockets of one Scrcpy server instance and
-preserves packet PTS for a recorder. It intentionally does not mux or persist
-media; the shared live hub owns fan-out and the recorder owns MP4 muxing.
+The shared local ADB hub uses this session for timestamped audio/video.
+If the audio-enabled server cannot start, it falls back to the established
+video-only Scrcpy session so browser preview remains available. The recorder
+never treats that fallback as a complete audio/video recording.
 """
 from __future__ import annotations
 
 import asyncio
 import logging
-import os
 import random
-import shutil
 import socket
 import subprocess
 import threading
@@ -31,6 +29,7 @@ from agent.scrcpy_video import (
     _ensure_server_on_device,
     _run_adb,
     _video_setting,
+    ScrcpyVideoSession,
     server_path,
 )
 
@@ -70,6 +69,7 @@ class ScrcpyMediaSession:
         self.video_socket: socket.socket | None = None
         self.audio_socket: socket.socket | None = None
         self.audio_error: str | None = None
+        self._video_only_fallback: ScrcpyVideoSession | None = None
         self.server_process: subprocess.Popen | None = None
         self.server_log_thread: threading.Thread | None = None
         self.server_logs: deque[str] = deque(maxlen=80)
@@ -256,11 +256,30 @@ class ScrcpyMediaSession:
         try:
             await asyncio.to_thread(self._start)
             await asyncio.to_thread(self._read_video_until_packet)
-        except Exception:
+        except Exception as exc:
             await self.stop()
-            raise
+            self.audio_error = f"Scrcpy audio/video startup failed: {exc}"
+            logger.warning(
+                "[SCRCPY MEDIA] falling back to video-only preview: serial=%s error=%s",
+                self.serial, exc,
+            )
+            fallback = ScrcpyVideoSession(
+                self.adb, self.serial,
+                max_size=self.max_size, bit_rate=self.bit_rate, max_fps=self.max_fps,
+            )
+            await fallback.start()
+            self._video_only_fallback = fallback
+            self.started = True
 
     async def read_video_packets(self) -> list[ScrcpyPacket] | None:
+        if self._video_only_fallback is not None:
+            chunk = await self._video_only_fallback.read(READ_SIZE)
+            if chunk is None:
+                return None
+            if not chunk:
+                raise ConnectionError("Fallback Scrcpy video stream ended")
+            # PTS is intentionally unavailable in raw preview fallback mode.
+            return [ScrcpyPacket("data", chunk, None, False)]
         if self._pending_video:
             return [self._pending_video.popleft()]
         return await asyncio.to_thread(
@@ -322,4 +341,11 @@ class ScrcpyMediaSession:
         self.started = False
 
     async def stop(self) -> None:
+        fallback = self._video_only_fallback
+        self._video_only_fallback = None
+        if fallback is not None:
+            try:
+                await fallback.stop()
+            except Exception:
+                logger.debug("Fallback Scrcpy stop failed: serial=%s", self.serial, exc_info=True)
         await asyncio.to_thread(self._stop)
