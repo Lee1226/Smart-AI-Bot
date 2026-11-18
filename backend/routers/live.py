@@ -181,6 +181,7 @@ async def subscribe_local_adb_recorder(device_id: str, serial: str):
                         "ready": asyncio.Event(),
                         "subscribers": {},
                         "websockets": {},
+                        "recorders": {},
                         "session": None,
                         "task": None,
                         "error": None,
@@ -208,10 +209,19 @@ async def subscribe_local_adb_recorder(device_id: str, serial: str):
         if not wait_for_stopping_hub.done():
             await asyncio.gather(wait_for_stopping_hub, return_exceptions=True)
 
+    video_queue = asyncio.Queue(maxsize=512)
+    audio_queue = asyncio.Queue(maxsize=512)
+    async with lock:
+        hub["recorders"][consumer_id] = {
+            "video": video_queue,
+            "audio": audio_queue,
+            "failed": False,
+        }
+
     try:
         await asyncio.wait_for(hub["ready"].wait(), timeout=20)
         if hub["error"]:
-            raise RuntimeError(f"Scrcpy video unavailable: {hub['error']}")
+            raise RuntimeError(f"Scrcpy media unavailable: {hub['error']}")
     except Exception:
         await release_local_adb_recorder(device_id, hub, consumer_id)
         raise
@@ -220,7 +230,7 @@ async def subscribe_local_adb_recorder(device_id: str, serial: str):
         await release_local_adb_recorder(device_id, hub, consumer_id)
 
     logger.info("[LIVE HUB] recorder subscribed: device_id=%s consumer=%s", device_id, consumer_id)
-    return queue, release
+    return video_queue, audio_queue, release
 
 
 async def release_local_adb_recorder(device_id: str, hub: dict, consumer_id: str) -> None:
@@ -230,7 +240,8 @@ async def release_local_adb_recorder(device_id: str, hub: dict, consumer_id: str
         hub["subscribers"].pop(consumer_id, None)
         hub.get("websockets", {}).pop(consumer_id, None)
         hub.get("bootstrap_sent", {}).pop(consumer_id, None)
-        if not hub["subscribers"] and _local_adb_hubs.get(device_id) is hub:
+        hub.get("recorders", {}).pop(consumer_id, None)
+        if not hub["subscribers"] and not hub.get("recorders") and _local_adb_hubs.get(device_id) is hub:
             hub["stopping"] = True
             task_to_stop = hub["task"]
     if task_to_stop and not task_to_stop.done():
@@ -239,9 +250,9 @@ async def release_local_adb_recorder(device_id: str, hub: dict, consumer_id: str
 
 
 async def _run_local_adb_hub(device_id: str, serial: str, hub: dict) -> None:
-    from agent.scrcpy_video import ScrcpyVideoSession
+    from agent.scrcpy_media import ScrcpyMediaSession
 
-    session = ScrcpyVideoSession(_adb_path(), serial)
+    session = ScrcpyMediaSession(_adb_path(), serial)
     hub["session"] = session
     stream = hub["stream"]
     lock = _local_adb_hub_lock(device_id)
@@ -325,28 +336,89 @@ async def _run_local_adb_hub(device_id: str, serial: str, hub: dict) -> None:
             except Exception:
                 pass
 
+    async def publish_recorder_packet(kind: str, packet) -> None:
+        async with lock:
+            for recorder_id, recorder in list(hub.get("recorders", {}).items()):
+                if recorder.get("failed"):
+                    continue
+                queue = recorder[kind]
+                try:
+                    queue.put_nowait(packet)
+                except asyncio.QueueFull:
+                    recorder["failed"] = True
+                    for target in (recorder["video"], recorder["audio"]):
+                        while not target.empty():
+                            try:
+                                target.get_nowait()
+                            except asyncio.QueueEmpty:
+                                break
+                        target.put_nowait(None)
+                    logger.warning(
+                        "[LIVE HUB] recorder dropped: queue full device_id=%s recorder=%s stream=%s",
+                        device_id, recorder_id, kind,
+                    )
+
+    async def read_video() -> None:
+        nonlocal total_bytes
+        while True:
+            packets = await session.read_video_packets()
+            if packets is None:
+                await publish(b"", idle_flush=True)
+                continue
+            if not packets:
+                continue
+            for packet in packets:
+                await publish_recorder_packet("video", packet)
+                total_bytes += len(packet.payload)
+                await publish(packet.payload)
+
+    async def read_audio() -> None:
+        while True:
+            packets = await session.read_audio_packets()
+            if packets is None:
+                continue
+            if not packets:
+                continue
+            for packet in packets:
+                await publish_recorder_packet("audio", packet)
+
     try:
         await session.start()
         hub["ready"].set()
-        logger.info("[LIVE HUB] producer ready: device_id=%s serial=%s", device_id, serial)
-        while True:
-            chunk = await session.read(64 * 1024)
-            if chunk is None:
-                # A socket idle timeout means the final Annex-B NAL can now be
-                # completed even when the phone screen remains unchanged.
-                await publish(b"", idle_flush=True)
-                continue
-            if not chunk:
-                raise RuntimeError("Scrcpy video stream ended")
-            total_bytes += len(chunk)
-            await publish(chunk)
+        logger.info(
+            "[LIVE HUB] A/V producer ready: device_id=%s serial=%s audio_codec=%s",
+            device_id, serial, session.audio_codec_id,
+        )
+        video_task = asyncio.create_task(read_video(), name=f"scrcpy-video-{device_id}")
+        audio_task = asyncio.create_task(read_audio(), name=f"scrcpy-audio-{device_id}")
+        done, pending = await asyncio.wait(
+            {video_task, audio_task}, return_when=asyncio.FIRST_EXCEPTION
+        )
+        for task in done:
+            exception = task.exception()
+            if exception:
+                raise exception
+        for task in pending:
+            task.cancel()
+        await asyncio.gather(*pending, return_exceptions=True)
     except asyncio.CancelledError:
         raise
     except Exception as exc:
         hub["error"] = str(exc)
-        logger.warning("Local ADB video producer stopped: device_id=%s error=%s", device_id, exc)
+        logger.warning("Local ADB audio/video producer stopped: device_id=%s error=%s", device_id, exc)
     finally:
         hub["ready"].set()
+        async with lock:
+            for recorder in hub.get("recorders", {}).values():
+                for target in (recorder["video"], recorder["audio"]):
+                    try:
+                        target.put_nowait(None)
+                    except asyncio.QueueFull:
+                        try:
+                            target.get_nowait()
+                            target.put_nowait(None)
+                        except (asyncio.QueueEmpty, asyncio.QueueFull):
+                            pass
         try:
             await session.stop()
         except Exception:
@@ -357,6 +429,7 @@ async def _run_local_adb_hub(device_id: str, serial: str, hub: dict) -> None:
             viewers = list(hub["websockets"].values())
             hub["subscribers"].clear()
             hub["websockets"].clear()
+            hub.get("recorders", {}).clear()
             hub["bootstrap_sent"].clear()
         for ws in viewers:
             try:
@@ -380,6 +453,7 @@ async def _subscribe_local_adb_stream(websocket: WebSocket, device_id: str, seri
                         "ready": asyncio.Event(),
                         "subscribers": {},
                         "websockets": {},
+                        "recorders": {},
                         "session": None,
                         "task": None,
                         "error": None,
@@ -437,7 +511,7 @@ async def _subscribe_local_adb_stream(websocket: WebSocket, device_id: str, seri
             hub["subscribers"].pop(viewer_id, None)
             hub["websockets"].pop(viewer_id, None)
             hub.get("bootstrap_sent", {}).pop(viewer_id, None)
-            if not hub["subscribers"] and _local_adb_hubs.get(device_id) is hub:
+            if not hub["subscribers"] and not hub.get("recorders") and _local_adb_hubs.get(device_id) is hub:
                 hub["stopping"] = True
                 task_to_stop = hub["task"]
         if task_to_stop and not task_to_stop.done():
