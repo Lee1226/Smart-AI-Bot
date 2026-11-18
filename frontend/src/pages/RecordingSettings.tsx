@@ -81,6 +81,24 @@ export default function RecordingSettings() {
       </label>
 
       <div>
+        <label htmlFor="recording-storage-dir" className="mb-1 block text-sm font-medium text-ink">
+          {t('录像保存目录', 'Recording storage directory')}
+        </label>
+        <input
+          id="recording-storage-dir"
+          type="text"
+          value={form.recording_storage_dir ?? ''}
+          onChange={e => setForm(prev => ({ ...prev, recording_storage_dir: e.target.value }))}
+          placeholder={t('例如：E:\\AI-Test\\recordings', 'For example: E:\\AI-Test\\recordings')}
+          spellCheck={false}
+          className="w-full rounded-lg border border-hairline bg-white px-3 py-2 text-sm font-mono text-ink outline-none focus:border-primary"
+        />
+        <p className="mt-1 text-xs text-ink-mute">
+          {t('填写后端运行电脑上的绝对路径。修改目录时，已有录像会迁移到新目录；请确保后端进程对该目录有读写权限。', 'Use an absolute path on the backend host. Existing recordings are moved when the directory changes; the backend process must have read/write access.')}
+        </p>
+      </div>
+
+      <div>
         <label className="mb-1 block text-sm font-medium text-ink">{t('录像保留时间', 'Retention period')}</label>
         <select value={String(form.recording_retention_days ?? 30)}
           onChange={e => setForm(prev => ({ ...prev, recording_retention_days: Number(e.target.value) }))}
@@ -90,7 +108,7 @@ export default function RecordingSettings() {
       </div>
 
       <div className="flex items-center justify-end gap-3 border-t border-hairline pt-4">
-        {saveMut.isError && <span className="text-xs text-red-600">{t('保存失败，请检查设置。', 'Save failed. Please check the settings.')}</span>}
+        {saveMut.isError && <span className="text-xs text-red-600">{t('保存失败，请检查目录是否有效以及后端是否有权限。', 'Save failed. Check that the directory is valid and writable by the backend.')}</span>}
         {saved && <span className="text-xs text-green-700">{t('已保存', 'Saved')}</span>}
         <button disabled={saveMut.isPending} onClick={() => saveMut.mutate()}
           className="rounded-lg bg-primary px-4 py-2 text-sm font-medium text-white hover:bg-primary-deep disabled:opacity-50">
