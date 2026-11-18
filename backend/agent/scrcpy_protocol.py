@@ -94,18 +94,19 @@ class ScrcpyMediaStreamParser:
                 raise ValueError(f"Scrcpy packet too large: {size}")
             is_session = bool(pts_flags & PACKET_FLAG_SESSION)
             if is_session and self.stream_type == "video":
-                # Session metadata is a 16-byte structure:
-                # 8-byte session flag followed by uint32 width and height.
-                if len(self.buffer) < 16:
+                # Scrcpy 4.0 session packet is 12 bytes: the 8-byte flags/width
+                # field followed by uint32 height. Width occupies the low 32
+                # bits of pts_flags; height occupies the packet-size word.
+                if len(self.buffer) < 12:
                     break
-                width, height = struct.unpack_from(">II", self.buffer, 8)
+                width, height = struct.unpack_from(">II", self.buffer, 4)
                 self.metadata = ScrcpyStreamMetadata(
                     codec_id=self.metadata.codec_id,
                     device_name=self.metadata.device_name,
                     width=width,
                     height=height,
                 )
-                del self.buffer[:16]
+                del self.buffer[:12]
                 self._session_seen = True
                 continue
 
