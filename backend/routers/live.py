@@ -160,11 +160,11 @@ def _local_adb_hub_lock(device_id: str) -> asyncio.Lock:
 
 
 async def subscribe_local_adb_recorder(device_id: str, serial: str):
-    """Subscribe a task-owned recorder to the shared Scrcpy stream.
+    """Subscribe a task-owned recorder to timestamped audio/video packets.
 
-    The returned queue receives the same H.264 chunks as browser previews.
-    Releasing this subscription never closes a preview; the Scrcpy producer
-    stops only after the final preview/recorder consumer leaves.
+    Recorder subscriptions are independent of browser H.264 queues. Releasing
+    this subscription never closes a preview; the producer stops only after
+    the final preview and recorder consumer leaves.
     """
     consumer_id = "rec-" + uuid.uuid4().hex
     lock = _local_adb_hub_lock(device_id)
@@ -192,18 +192,8 @@ async def subscribe_local_adb_recorder(device_id: str, serial: str):
                     _local_adb_hubs[device_id] = hub
                     hub["task"] = asyncio.create_task(_run_local_adb_hub(device_id, serial, hub))
 
-                queue = asyncio.Queue(maxsize=128)
-                bootstrap = hub["stream"].bootstrap
-                if bootstrap:
-                    queue.put_nowait(_H264_BOOTSTRAP_START)
-                    queue.put_nowait(bootstrap + b"\x00\x00\x00\x01")
-                    queue.put_nowait(None)
-                    queue.put_nowait(_H264_BOOTSTRAP_END)
-                hub["bootstrap_sent"][consumer_id] = bool(bootstrap)
-                hub["subscribers"][consumer_id] = queue
-                # None marks a non-WebSocket consumer. It still participates
-                # in the exact same producer lifetime and fan-out path.
-                hub["websockets"][consumer_id] = None
+                # Recorder queues are separate from browser viewer queues;
+                # they receive framed packets with device PTS below.
         if wait_for_stopping_hub is None:
             break
         if not wait_for_stopping_hub.done():
@@ -397,6 +387,16 @@ async def _run_local_adb_hub(device_id: str, serial: str, hub: dict) -> None:
                         recorder["audio"].put_nowait({"error": str(exc)})
                     except asyncio.QueueFull:
                         recorder["failed"] = True
+                        for target in (recorder["video"], recorder["audio"]):
+                            while not target.empty():
+                                try:
+                                    target.get_nowait()
+                                except asyncio.QueueEmpty:
+                                    break
+                            try:
+                                target.put_nowait({"error": "audio queue overflow"})
+                            except asyncio.QueueFull:
+                                pass
 
     try:
         await session.start()
