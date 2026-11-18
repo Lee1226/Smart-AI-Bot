@@ -33,8 +33,17 @@ export default function RunDetail() {
     queryKey: ['run', runId],
     queryFn: () => fetchRun(runId!),
     refetchInterval: (query) => {
-      const status = query.state.data?.status
-      return TERMINAL.has(status ?? '') ? false : 3000
+      const current = query.state.data
+      const status = current?.status
+      if (!TERMINAL.has(status ?? '')) return 3000
+      // The runner marks the TestRun terminal just before its recorder drains
+      // queued A/V packets and atomically publishes the final MP4. Keep polling
+      // briefly so has_recording can turn true after muxing completes.
+      if (current && !current.has_recording) {
+        const terminalAt = current.finished_at ? Date.parse(current.finished_at) : Date.now()
+        if (Number.isFinite(terminalAt) && Date.now() - terminalAt < 30000) return 1500
+      }
+      return false
     },
   })
 
