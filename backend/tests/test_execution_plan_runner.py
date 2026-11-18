@@ -131,3 +131,68 @@ async def test_replay_step_uses_text_after_ambiguous_resource_id():
     assert result == "Tapped 千问"
     assert device.calls == [("id", "tab_item"), ("text", "千问")]
     assert any("Resource ID 定位未采用" in line for line in logs)
+
+
+
+def test_build_replay_step_preserves_force_coordinate_flag():
+    replay = build_replay_step({
+        "action": "tap",
+        "force_coordinate": True,
+        "locator": {"resource_id": "com.demo:id/button"},
+        "fallback": {"coordinates": {"x": 30, "y": 60}, "coordinate_space": "device_px"},
+    })
+    assert replay["force_coordinate"] is True
+    assert replay["x"] == 30 and replay["y"] == 60
+
+
+@pytest.mark.asyncio
+async def test_replay_step_force_coordinate_skips_semantic_locator():
+    from core.test_runner import _replay_step
+
+    class Device:
+        def __init__(self):
+            self.tapped = None
+
+        async def tap(self, x, y):
+            self.tapped = ("image", x, y)
+
+        async def tap_absolute(self, x, y):
+            self.tapped = ("device", x, y)
+
+        async def tap_element_by_id(self, resource_id):
+            raise AssertionError("semantic lookup must be skipped")
+
+        async def tap_element_by_text(self, text):
+            raise AssertionError("semantic lookup must be skipped")
+
+    logs = []
+    async def emit(message):
+        logs.append(message)
+
+    device = Device()
+    result = await _replay_step(device, {
+        "kind": "tap", "force_coordinate": True,
+        "resourceId": "com.demo:id/button", "text": "继续",
+        "x": 30, "y": 60, "coordinate_space": "device_px",
+    }, emit)
+    assert device.tapped == ("device", 30, 60)
+    assert result == "tap coordinate (30,60)"
+    assert any("强制坐标点击" in line for line in logs)
+
+
+@pytest.mark.asyncio
+async def test_replay_step_force_coordinate_requires_coordinates():
+    from core.test_runner import _replay_step
+
+    class Device:
+        async def tap_element_by_id(self, resource_id):
+            raise AssertionError("must not fall back to UI lookup")
+
+    async def emit(_message):
+        pass
+
+    with pytest.raises(ValueError, match="强制坐标点击"):
+        await _replay_step(Device(), {
+            "kind": "tap", "force_coordinate": True,
+            "resourceId": "com.demo:id/button",
+        }, emit)
