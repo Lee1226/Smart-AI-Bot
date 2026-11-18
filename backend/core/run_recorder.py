@@ -154,6 +154,7 @@ class RunRecorder:
         temp_path.unlink(missing_ok=True)
         muxer = ScrcpyMp4Muxer(temp_path, width, height)
         mux_lock = asyncio.Lock()
+        consumers: set[asyncio.Task] = set()
 
         async def consume(queue: asyncio.Queue, write_packet, stream_name: str) -> None:
             stop_quiet_since: float | None = None
@@ -197,6 +198,10 @@ class RunRecorder:
             os.replace(temp_path, final_path)
             logger.info("[rec:%s] saved audio/video recording: %s", self.run_id, final_path)
         except asyncio.CancelledError:
+            for task in consumers:
+                task.cancel()
+            if consumers:
+                await asyncio.gather(*consumers, return_exceptions=True)
             await asyncio.to_thread(muxer.abort)
             raise
         except Exception as exc:
