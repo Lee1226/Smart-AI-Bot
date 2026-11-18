@@ -220,7 +220,7 @@ async def subscribe_local_adb_recorder(device_id: str, serial: str):
         await release_local_adb_recorder(device_id, hub, consumer_id)
 
     logger.info("[LIVE HUB] recorder subscribed: device_id=%s consumer=%s", device_id, consumer_id)
-    return video_queue, audio_queue, release
+    return video_queue, audio_queue, hub.get("media_metadata", {}), release
 
 
 async def release_local_adb_recorder(device_id: str, hub: dict, consumer_id: str) -> None:
@@ -400,10 +400,15 @@ async def _run_local_adb_hub(device_id: str, serial: str, hub: dict) -> None:
 
     try:
         await session.start()
+        hub["media_metadata"] = {
+            "video": session.video_metadata,
+            "audio_codec_id": session.audio_codec_id,
+            "audio_error": session.audio_error,
+        }
         hub["ready"].set()
         logger.info(
-            "[LIVE HUB] A/V producer ready: device_id=%s serial=%s audio_codec=%s",
-            device_id, serial, session.audio_codec_id,
+            "[LIVE HUB] A/V producer ready: device_id=%s serial=%s video=%s audio_codec=%s audio_error=%s",
+            device_id, serial, session.video_metadata, session.audio_codec_id, session.audio_error,
         )
         video_task = asyncio.create_task(read_video(), name=f"scrcpy-video-{device_id}")
         audio_task = asyncio.create_task(read_audio(), name=f"scrcpy-audio-{device_id}")
