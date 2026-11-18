@@ -15,7 +15,6 @@ import subprocess
 import threading
 import time
 from collections import deque
-from pathlib import Path
 
 from agent.scrcpy_protocol import (
     SCRCPY_AUDIO_AAC,
