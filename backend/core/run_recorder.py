@@ -109,6 +109,13 @@ class RunRecorder:
                 return False
             self.serial = device.adb_serial
 
+            try:
+                import av
+                if not hasattr(av.container.OutputContainer, "add_mux_stream"):
+                    raise RuntimeError("PyAV 17 or newer is required")
+            except Exception as exc:
+                raise RuntimeError(f"MP4 audio/video muxer dependency unavailable: {exc}") from exc
+
             from routers.live import subscribe_local_adb_recorder
             video_queue, audio_queue, metadata, release = await subscribe_local_adb_recorder(
                 device_id, self.serial
