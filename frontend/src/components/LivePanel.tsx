@@ -207,7 +207,7 @@ export default function LivePanel({ device, defaultMode = 'off', storageKey = 'l
   const videoUnavailable = mode === 'on' && (screenshotsOnly || !(usingUsb || usingLocalAdb || usingRemote))
   const videoSource = useMemo(() => device
     ? localUsb ? browserUsbH264Source(device.id) : websocketH264Source(h264WsUrl(device.id))
-    : undefined, [device?.id, localUsb, remoteVideo, mode, reloadKey])
+    : undefined, [device?.id, localUsb, mode, reloadKey])
   const videoFailed = (message: string) => { setStreamError(message); setAdbFailed(true) }
   const webglFailed = (message: string) => { setStreamError(message); setRenderer('canvas'); localStorage.setItem('h264-renderer', 'canvas') }
   const chooseRenderer = (value: 'canvas' | 'webgl') => { setRenderer(value); localStorage.setItem('h264-renderer', value); setReloadKey(k => k + 1) }
