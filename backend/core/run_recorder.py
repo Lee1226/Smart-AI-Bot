@@ -30,13 +30,15 @@ def recording_directory(settings: Optional[dict] = None) -> Path:
     return path
 
 
-def cleanup_expired_recordings(directory: Path, retention_days: int) -> int:
+def cleanup_expired_recordings(directory: Path, retention_days: int, owned_run_ids=None) -> int:
     cutoff = datetime.now().timestamp() - max(1, int(retention_days)) * 86400
     removed = 0
     if not directory.exists():
         return 0
     for path in directory.glob("*.mp4"):
         try:
+            if owned_run_ids is not None and path.stem not in owned_run_ids:
+                continue
             if path.is_file() and path.stat().st_mtime < cutoff:
                 path.unlink()
                 removed += 1
@@ -100,10 +102,12 @@ class RunRecorder:
         # Recording is controlled by the account that owns this run.
         try:
             from db.database import AsyncSessionLocal
+            from sqlalchemy import select
             from db.models import TestRun
             from core.settings_store import load_settings
             async with AsyncSessionLocal() as db:
                 run = await db.get(TestRun, self.run_id)
+                owned_run_ids = set((await db.execute(select(TestRun.id).where(TestRun.account_id == (run.account_id if run else "")))).scalars().all())
             if run is not None:
                 settings = await load_settings(run.account_id or "")
                 if not settings.get("recording_auto_enabled", True):
@@ -111,7 +115,7 @@ class RunRecorder:
                     return False
                 self.rec_dir = recording_directory(settings)
                 self.rec_dir.mkdir(parents=True, exist_ok=True)
-                cleanup_expired_recordings(self.rec_dir, settings.get("recording_retention_days", 30))
+                cleanup_expired_recordings(self.rec_dir, settings.get("recording_retention_days", 30), owned_run_ids)
         except Exception as exc:
             logger.warning("[rec:%s] could not read recording settings; using default enabled: %s", self.run_id, exc)
         if device_id:
