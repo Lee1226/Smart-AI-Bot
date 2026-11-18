@@ -110,9 +110,16 @@ def parse_aac_audio_specific_config(data: bytes) -> tuple[int, str, int]:
     layout = _AAC_LAYOUTS.get(channel_config)
     if not sample_rate or layout is None:
         raise ValueError(f"Unsupported AAC channel configuration: {channel_config}")
-    # AAC-LC GASpecificConfig: frameLengthFlag=0 => 1024 samples,
-    # frameLengthFlag=1 => 960 samples per access unit.
+    # AAC-LC GASpecificConfig. The current MP4 path supports the standard
+    # 1024-sample AAC-LC profile only; reject uncommon variants explicitly.
     frame_size = 960 if read(1) else 1024
+    depends_on_core_coder = read(1)
+    if depends_on_core_coder:
+        read(14)  # coreCoderDelay
+        raise ValueError("AAC core-coder dependency is not supported")
+    extension_flag = read(1)
+    if extension_flag:
+        raise ValueError("AAC-LC extension flags are not supported")
     return sample_rate, layout, frame_size
 
 
