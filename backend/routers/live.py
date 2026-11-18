@@ -432,14 +432,15 @@ async def _run_local_adb_hub(device_id: str, serial: str, hub: dict) -> None:
         async with lock:
             for recorder in hub.get("recorders", {}).values():
                 for target in (recorder["video"], recorder["audio"]):
-                    try:
-                        target.put_nowait(None)
-                    except asyncio.QueueFull:
+                    while not target.empty():
                         try:
                             target.get_nowait()
-                            target.put_nowait({"error": "Scrcpy media hub stopped before recording drained"})
-                        except (asyncio.QueueEmpty, asyncio.QueueFull):
-                            pass
+                        except asyncio.QueueEmpty:
+                            break
+                    try:
+                        target.put_nowait({"error": "Scrcpy media hub stopped before recording drained"})
+                    except asyncio.QueueFull:
+                        pass
         try:
             await session.stop()
         except Exception:
