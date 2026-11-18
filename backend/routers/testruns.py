@@ -21,6 +21,7 @@ from core.step_tree import NodeRow, chain_to_node
 from db.models import (
     QUICK_SUITE_FORMAT,
     QUICK_SUITE_PREFIX,
+    Device,
     LessonLearned,
     StepNode,
     TestCase,
@@ -164,7 +165,7 @@ async def _run_out(run: TestRun, db: AsyncSession) -> RunOut:
     run_settings = await load_settings(run.account_id or "")
     run_recording_dir = recording_directory(run_settings)
     recording_exists = has_recording(run.id, run_recording_dir)
-    run_device = await db.get(__import__("db.models", fromlist=["Device"]).Device, run.device_id)
+    run_device = await db.get(Device, run.device_id)
     if recording_exists:
         recording_status = "saved"
         recording_message = "录像文件已生成，可以在任务详情中播放或下载。"
