@@ -27,7 +27,11 @@ class ScrcpyMediaStreamParserTests(unittest.TestCase):
 
         self.assertEqual(parser.feed(prefix[:20]), [])
         self.assertEqual(parser.feed(prefix[20:] + session[:7]), [])
-        packets = parser.feed(session[7:] + config + frame[:5])
+        # Session metadata is 16 bytes; 15 bytes must not be consumed as a
+        # complete packet or shift the parser into the H.264 payload.
+        self.assertEqual(parser.feed(session[7:15]), [])
+        self.assertIsNone(parser.metadata.width)
+        packets = parser.feed(session[15:] + config + frame[:5])
         self.assertEqual([p.kind for p in packets], ["configuration"])
         self.assertEqual(parser.metadata.codec_id, SCRCPY_VIDEO_H264)
         self.assertEqual(parser.metadata.device_name, "Test Phone")
