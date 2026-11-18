@@ -26,7 +26,7 @@ export function websocketH264Source(url: string): H264StreamSource {
           handlers.fail('视频流超时，请检查手机录屏授权或连接')
           current.close()
         }
-      }, 50000)
+      }, 75000)
       current.onmessage = e => {
         if (stopped || ws !== current) return
         if (e.data instanceof ArrayBuffer) {
