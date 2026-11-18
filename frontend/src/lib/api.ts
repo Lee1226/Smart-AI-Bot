@@ -128,6 +128,7 @@ export interface Settings {
   webhook_url: string
   webhook_type: string
   language: string
+  recording_auto_enabled: boolean
   configured_secrets: string[]
 }
 
