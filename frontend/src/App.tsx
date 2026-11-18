@@ -13,6 +13,7 @@ import Recordings from './pages/Recordings'
 import Regressions from './pages/Regressions'
 import RunDetail from './pages/RunDetail'
 import Settings from './pages/Settings'
+import RecordingSettings from './pages/RecordingSettings'
 import QuickRun from './pages/QuickRun'
 import Recorder from './pages/Recorder'
 import RunCompare from './pages/RunCompare'
@@ -62,6 +63,7 @@ const PAGE_TABS = {
   ],
   settings: [
     { to: '/settings', zh: '平台设置', en: 'Settings' },
+    { to: '/settings/recording', zh: '录制与存储', en: 'Recording & storage' },
     { to: '/account', zh: '账号与权限', en: 'Account & access' },
   ],
 }
@@ -233,6 +235,7 @@ function AppLayout() {
             <Route path="/runs/:runId" element={<PageTabs section="results"><RunDetail /></PageTabs>} />
             <Route path="/account" element={<PageTabs section="settings"><Account /></PageTabs>} />
             <Route path="/settings" element={<PageTabs section="settings"><Settings /></PageTabs>} />
+            <Route path="/settings/recording" element={<PageTabs section="settings"><RecordingSettings /></PageTabs>} />
           </Routes>
         </div>
       </main>
