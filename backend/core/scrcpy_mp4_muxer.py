@@ -122,6 +122,8 @@ class ScrcpyMp4Muxer:
         self.closed = False
         self._last_video_pts: int | None = None
         self._last_audio_pts: int | None = None
+        self._video_packets = 0
+        self._audio_packets = 0
         self._av: Any = None
 
     def _ensure_container(self) -> None:
@@ -168,6 +170,7 @@ class ScrcpyMp4Muxer:
         av_packet.is_keyframe = bool(packet.keyframe)
         self.container.mux(av_packet)
         self._last_video_pts = packet.pts_us
+        self._video_packets += 1
 
     def write_audio(self, packet: ScrcpyPacket) -> None:
         if packet.kind == "configuration":
@@ -194,6 +197,7 @@ class ScrcpyMp4Muxer:
         av_packet.time_base = TIME_BASE
         self.container.mux(av_packet)
         self._last_audio_pts = packet.pts_us
+        self._audio_packets += 1
 
     def _start_if_ready(self) -> None:
         if self.container is not None and self.video_configured and self.audio_configured and not self.started:
@@ -210,6 +214,9 @@ class ScrcpyMp4Muxer:
         if not self.started:
             self.output_path.unlink(missing_ok=True)
             raise RuntimeError("Recording did not receive both H.264 and AAC codec configuration")
+        if not self._video_packets or not self._audio_packets:
+            self.output_path.unlink(missing_ok=True)
+            raise RuntimeError("Recording did not contain both video frames and audio packets")
         if not self.output_path.exists() or self.output_path.stat().st_size <= 0:
             raise RuntimeError("MP4 muxing produced an empty recording")
         try:
@@ -219,3 +226,16 @@ class ScrcpyMp4Muxer:
         except Exception:
             self.output_path.unlink(missing_ok=True)
             raise
+
+    def abort(self) -> None:
+        """Close the muxer and discard a partial file after any capture error."""
+        if self.closed:
+            self.output_path.unlink(missing_ok=True)
+            return
+        self.closed = True
+        try:
+            if self.container is not None:
+                self.container.close()
+        finally:
+            self.container = None
+            self.output_path.unlink(missing_ok=True)
