@@ -455,3 +455,8 @@ async def execute_execution_plan_run(
                     except Exception:
                         logger.exception("Could not persist post-action failure: %s", run_id)
         await recorder.stop()
+        if not recorder.saved:
+            try:
+                await emit(f"录像未生成：{recorder.status_message}")
+            except Exception:
+                logger.debug("[plan:%s] could not emit recording status", run_id, exc_info=True)
