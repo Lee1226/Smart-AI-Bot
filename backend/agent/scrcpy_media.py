@@ -19,6 +19,7 @@ from pathlib import Path
 
 from agent.scrcpy_protocol import (
     SCRCPY_AUDIO_AAC,
+    SCRCPY_VIDEO_H264,
     ScrcpyMediaStreamParser,
     ScrcpyPacket,
 )
@@ -234,11 +235,16 @@ class ScrcpyMediaSession:
         if not chunk:
             raise ConnectionError("Scrcpy media socket reached EOF")
         packets = parser.feed(chunk)
-        if parser.stream_type == "audio" and parser.metadata is not None:
-            if parser.metadata.codec_id != SCRCPY_AUDIO_AAC:
+        if parser.metadata is not None:
+            if parser.stream_type == "audio" and parser.metadata.codec_id != SCRCPY_AUDIO_AAC:
                 raise RuntimeError(
                     "Scrcpy audio capture unavailable or unsupported: "
                     f"codec_id=0x{parser.metadata.codec_id:08x} (AAC required)"
+                )
+            if parser.stream_type == "video" and parser.metadata.codec_id != SCRCPY_VIDEO_H264:
+                raise RuntimeError(
+                    "Scrcpy video codec is unsupported: "
+                    f"codec_id=0x{parser.metadata.codec_id:08x} (H.264 required)"
                 )
         return packets
 
