@@ -72,6 +72,20 @@ class RunRecorder:
         self._device_files: List[str] = []
 
     async def start(self, device_id: Optional[str] = None) -> bool:
+        # Recording is controlled by the account that owns this run.
+        try:
+            from db.database import AsyncSessionLocal
+            from db.models import TestRun
+            from core.settings_store import load_settings
+            async with AsyncSessionLocal() as db:
+                run = await db.get(TestRun, self.run_id)
+            if run is not None:
+                settings = await load_settings(run.account_id or "")
+                if not settings.get("recording_auto_enabled", True):
+                    logger.info("[rec:%s] automatic recording disabled by account settings", self.run_id)
+                    return False
+        except Exception as exc:
+            logger.warning("[rec:%s] could not read recording settings; using default enabled: %s", self.run_id, exc)
         if device_id:
             from db.database import AsyncSessionLocal
             from db.models import Device
