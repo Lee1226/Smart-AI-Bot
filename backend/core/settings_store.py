@@ -49,6 +49,7 @@ DEFAULT_SETTINGS = {
     "webhook_url": "",
     "webhook_type": "",
     "language": "zh",
+    "recording_auto_enabled": True,
     "ark_api_key": "",
     "ark_base_url": "https://ark.cn-beijing.volces.com/api/v3",
 }
