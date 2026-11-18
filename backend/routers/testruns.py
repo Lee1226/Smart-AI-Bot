@@ -13,7 +13,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from auth.access import require_device, require_node, require_run, require_suite
 from core.report import generate_html_report
-from core.run_recorder import has_recording, recording_path
+from core.run_recorder import has_recording, recording_path, recording_directory
 from core.settings_store import load_settings, resolve_provider_model
 from core.test_runner import active_runs, cancel_run, run_log_stream, start_run, start_batch_run
 from db.database import AsyncSessionLocal
@@ -159,6 +159,8 @@ async def _run_out(run: TestRun, db: AsyncSession) -> RunOut:
         counts[r.status] = counts.get(r.status, 0) + 1
         total_tokens += r.total_tokens or 0
     suite = await db.get(TestSuite, run.suite_id)
+    run_settings = await load_settings(run.account_id or "")
+    run_recording_dir = recording_directory(run_settings)
     return RunOut(
         id=run.id,
         suite_id=run.suite_id,
@@ -177,7 +179,7 @@ async def _run_out(run: TestRun, db: AsyncSession) -> RunOut:
         skipped=counts.get("skip", 0),
         total=len(results),
         total_tokens=total_tokens,
-        has_recording=has_recording(run.id),
+        has_recording=has_recording(run.id, run_recording_dir),
     )
 
 
@@ -518,7 +520,6 @@ async def compare_runs(
 @router.get("/recordings")
 async def list_recordings(request: Request, db: AsyncSession = Depends(get_db)):
     """List completed local recordings belonging to the current account."""
-    from core.run_recorder import REC_DIR
     from db.models import Device
 
     q = select(TestRun).order_by(TestRun.created_at.desc())
@@ -528,7 +529,9 @@ async def list_recordings(request: Request, db: AsyncSession = Depends(get_db)):
     items = []
     total_bytes = 0
     for run in runs:
-        path = recording_path(run.id)
+        run_settings = await load_settings(run.account_id or "")
+        run_dir = recording_directory(run_settings)
+        path = recording_path(run.id, run_dir)
         if not path.is_file() or path.stat().st_size <= 0:
             continue
         stat = path.stat()
@@ -547,7 +550,7 @@ async def list_recordings(request: Request, db: AsyncSession = Depends(get_db)):
             "size_bytes": stat.st_size,
             "download_url": f"/api/runs/{run.id}/recording.mp4",
         })
-    return {"items": items, "total": len(items), "total_bytes": total_bytes, "storage_dir": str(REC_DIR)}
+    return {"items": items, "total": len(items), "total_bytes": total_bytes}
 
 
 @router.delete("/recordings/{run_id}", status_code=204)
@@ -556,7 +559,8 @@ async def delete_recording(run_id: str, request: Request, db: AsyncSession = Dep
     run = await require_run(request, db, run_id)
     if run.status in ("queued", "preparing", "pending", "running"):
         raise HTTPException(status_code=409, detail="任务仍在执行，暂不能删除录像")
-    path = recording_path(run_id)
+    run_settings = await load_settings(run.account_id or "")
+    path = recording_path(run_id, recording_directory(run_settings))
     if not path.is_file():
         raise HTTPException(status_code=404, detail="录像文件不存在")
     path.unlink()
@@ -670,10 +674,12 @@ async def stream_logs(run_id: str):
 @router.get("/{run_id}/recording.mp4")
 async def get_recording(run_id: str, request: Request, db: AsyncSession = Depends(get_db)):
     """Serve an account-owned ADB screen recording."""
-    await require_run(request, db, run_id)
-    if not has_recording(run_id):
+    run = await require_run(request, db, run_id)
+    run_settings = await load_settings(run.account_id or "")
+    run_dir = recording_directory(run_settings)
+    if not has_recording(run_id, run_dir):
         raise HTTPException(status_code=404, detail="No recording for this run")
-    return FileResponse(str(recording_path(run_id)), media_type="video/mp4", filename=f"run_{run_id[:8]}.mp4")
+    return FileResponse(str(recording_path(run_id, run_dir)), media_type="video/mp4", filename=f"run_{run_id[:8]}.mp4")
 
 
 @router.get("/{run_id}/report", response_class=HTMLResponse)
