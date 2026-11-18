@@ -97,15 +97,6 @@ class RunRecorder:
         self._proc: Optional[asyncio.subprocess.Process] = None
         self._stop = asyncio.Event()
         self._device_files: List[str] = []
-        # adb_usb uses the already-running shared Scrcpy stream. The legacy
-        # on-device screenrecord path remains unchanged for other local modes.
-        self._shared_queue = None
-        self._shared_release = None
-        self._shared_task: Optional[asyncio.Task] = None
-        self._shared_proc: Optional[asyncio.subprocess.Process] = None
-        self._shared_stop = asyncio.Event()
-        self._shared_stderr_task: Optional[asyncio.Task] = None
-        self._shared_error_lines: List[str] = []
 
     async def start(self, device_id: Optional[str] = None) -> bool:
         # Recording is controlled by the account that owns this run.
@@ -136,8 +127,6 @@ class RunRecorder:
                 # USB belongs to a browser/bridge on another host. Never record
                 # an unrelated server-side phone for that registered device.
                 return False
-            if device.connection_type == "adb_usb":
-                return await self._start_shared_scrcpy(device_id)
         self.serial = _single_adb_serial()
         if not self.serial:
             return False
@@ -145,174 +134,6 @@ class RunRecorder:
         self._task = asyncio.create_task(self._loop())
         logger.info("[rec:%s] recording via adb %s", self.run_id, self.serial)
         return True
-
-    async def _start_shared_scrcpy(self, device_id: str) -> bool:
-        """Record the existing adb_usb Scrcpy producer without starting another one."""
-        from agent import local_adb
-
-        serial = local_adb.serial_for(device_id)
-        if not serial:
-            logger.warning("[rec:%s] adb_usb device has no active serial binding; recording skipped", self.run_id)
-            return False
-
-        ffmpeg = shutil.which("ffmpeg")
-        if not ffmpeg:
-            logger.warning("[rec:%s] FFmpeg not found on PATH; shared-stream recording skipped", self.run_id)
-            return False
-
-        try:
-            from routers.live import subscribe_local_adb_recorder
-            queue, release = await subscribe_local_adb_recorder(device_id, serial)
-            self._shared_queue = queue
-            self._shared_release = release
-            self.serial = serial
-
-            partial = self.rec_dir / f"{self.run_id}.partial.mp4"
-            partial.unlink(missing_ok=True)
-            self._shared_proc = await asyncio.create_subprocess_exec(
-                ffmpeg, "-hide_banner", "-loglevel", "warning", "-y",
-                "-fflags", "+genpts",
-                "-f", "h264", "-r", "30", "-i", "pipe:0",
-                "-an", "-c:v", "copy", "-movflags", "+faststart",
-                str(partial),
-                stdin=asyncio.subprocess.PIPE,
-                stdout=asyncio.subprocess.DEVNULL,
-                stderr=asyncio.subprocess.PIPE,
-            )
-            if self._shared_proc.stdin is None:
-                raise RuntimeError("FFmpeg stdin pipe was not created")
-
-            self._shared_stop.clear()
-            self._shared_error_lines = []
-            self._shared_stderr_task = asyncio.create_task(self._drain_shared_ffmpeg_stderr())
-            self._shared_task = asyncio.create_task(self._shared_record_loop(partial))
-            logger.info(
-                "[rec:%s] shared Scrcpy recording started: device=%s serial=%s",
-                self.run_id, device_id, serial,
-            )
-            return True
-        except Exception as exc:
-            logger.warning("[rec:%s] could not start shared Scrcpy recording: %s", self.run_id, exc)
-            if self._shared_release:
-                try:
-                    await self._shared_release()
-                except Exception:
-                    pass
-            self._shared_queue = None
-            self._shared_release = None
-            proc = self._shared_proc
-            self._shared_proc = None
-            if proc and proc.returncode is None:
-                proc.kill()
-                await proc.wait()
-            return False
-
-    async def _drain_shared_ffmpeg_stderr(self) -> None:
-        proc = self._shared_proc
-        if proc is None or proc.stderr is None:
-            return
-        try:
-            while True:
-                line = await proc.stderr.readline()
-                if not line:
-                    break
-                message = line.decode("utf-8", errors="replace").strip()
-                if message:
-                    self._shared_error_lines.append(message)
-                    if len(self._shared_error_lines) > 30:
-                        self._shared_error_lines.pop(0)
-        except (asyncio.CancelledError, OSError):
-            pass
-
-    async def _shared_record_loop(self, partial: Path) -> None:
-        proc = self._shared_proc
-        queue = self._shared_queue
-        try:
-            if proc is None or proc.stdin is None or queue is None:
-                raise RuntimeError("Shared recorder was not initialized")
-
-            while not self._shared_stop.is_set():
-                try:
-                    item = await asyncio.wait_for(queue.get(), timeout=0.5)
-                except asyncio.TimeoutError:
-                    if proc.returncode is not None:
-                        raise RuntimeError(f"FFmpeg exited unexpectedly ({proc.returncode})")
-                    continue
-                # The shared hub uses private object markers for GOP bootstrap
-                # boundaries and None for Annex-B flush points. FFmpeg only
-                # needs the actual elementary-stream bytes.
-                if isinstance(item, bytes) and item:
-                    proc.stdin.write(item)
-                    await proc.stdin.drain()
-
-            # Stop accepting new stream data, then drain what was already queued.
-            while not queue.empty():
-                try:
-                    item = queue.get_nowait()
-                except asyncio.QueueEmpty:
-                    break
-                if isinstance(item, bytes) and item:
-                    proc.stdin.write(item)
-                    await proc.stdin.drain()
-
-            proc.stdin.close()
-            try:
-                await proc.stdin.wait_closed()
-            except (AttributeError, BrokenPipeError, ConnectionResetError):
-                pass
-            await asyncio.wait_for(proc.wait(), timeout=20)
-            if proc.returncode != 0:
-                details = " | ".join(self._shared_error_lines[-8:])
-                raise RuntimeError(f"FFmpeg exited with code {proc.returncode}: {details}")
-
-            final_path = recording_path(self.run_id, self.rec_dir)
-            if not partial.exists() or partial.stat().st_size <= 0:
-                raise RuntimeError("FFmpeg finished but produced an empty MP4")
-            partial.replace(final_path)
-            logger.info(
-                "[rec:%s] shared Scrcpy MP4 saved: %s (%d bytes)",
-                self.run_id, final_path.name, final_path.stat().st_size,
-            )
-        except asyncio.CancelledError:
-            raise
-        except Exception as exc:
-            logger.warning("[rec:%s] shared Scrcpy recording failed: %s", self.run_id, exc)
-            if partial.exists():
-                try:
-                    partial.unlink()
-                except OSError:
-                    pass
-        finally:
-            if proc and proc.returncode is None:
-                proc.kill()
-                try:
-                    await proc.wait()
-                except Exception:
-                    pass
-            if self._shared_release:
-                try:
-                    await self._shared_release()
-                except Exception:
-                    logger.debug("[rec:%s] shared stream release failed", self.run_id, exc_info=True)
-            if self._shared_stderr_task:
-                try:
-                    await asyncio.wait_for(self._shared_stderr_task, timeout=2)
-                except Exception:
-                    self._shared_stderr_task.cancel()
-            self._shared_queue = None
-            self._shared_release = None
-            self._shared_proc = None
-            self._shared_task = None
-
-    async def _stop_shared_scrcpy(self) -> None:
-        self._shared_stop.set()
-        task = self._shared_task
-        if task:
-            try:
-                await asyncio.wait_for(task, timeout=25)
-            except asyncio.TimeoutError:
-                task.cancel()
-                await asyncio.gather(task, return_exceptions=True)
 
     async def _loop(self) -> None:
         adb = _adb_path()
@@ -328,9 +149,6 @@ class RunRecorder:
             n += 1
 
     async def stop(self) -> None:
-        if self._shared_task is not None:
-            await self._stop_shared_scrcpy()
-            return
         if self._task is None:
             return
         self._stop.set()
