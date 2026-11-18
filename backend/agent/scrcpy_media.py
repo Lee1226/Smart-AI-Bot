@@ -176,11 +176,12 @@ class ScrcpyMediaSession:
             f"max_size={self.max_size}",
             f"max_fps={self.max_fps}",
             "tunnel_forward=true",
-            # Keep Scrcpy frame PTS and codec metadata for audio/video muxing.
+            # Scrcpy 4.0 renamed send_codec_meta to send_stream_meta.
+            # Keep codec/session metadata and per-packet PTS for A/V muxing.
             # DesktopConnection accepts video first, then audio, on this port.
             "send_dummy_byte=true",
             "send_device_meta=true",
-            "send_codec_meta=true",
+            "send_stream_meta=true",
             "send_frame_meta=true",
         ]
         self.server_process = subprocess.Popen(
