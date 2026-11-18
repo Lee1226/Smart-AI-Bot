@@ -69,6 +69,7 @@ class ScrcpyMediaSession:
         self.port = self._free_port()
         self.video_socket: socket.socket | None = None
         self.audio_socket: socket.socket | None = None
+        self.audio_error: str | None = None
         self.server_process: subprocess.Popen | None = None
         self.server_log_thread: threading.Thread | None = None
         self.server_logs: deque[str] = deque(maxlen=80)
@@ -186,7 +187,16 @@ class ScrcpyMediaSession:
             # Connect both before waiting for media; otherwise the server can
             # remain blocked in accept(audio) while the client waits for video.
             self.video_socket = self._connect_socket("video")
-            self.audio_socket = self._connect_socket("audio")
+            try:
+                self.audio_socket = self._connect_socket("audio")
+            except Exception as exc:
+                # Audio capture is best-effort: a device/app may reject playback
+                # capture, but that must never take down the existing preview.
+                self.audio_error = str(exc)
+                logger.warning(
+                    "[SCRCPY MEDIA] audio channel unavailable; keep video alive: serial=%s error=%s",
+                    self.serial, exc,
+                )
             self.started = True
         except Exception:
             self._stop()
@@ -258,6 +268,10 @@ class ScrcpyMediaSession:
         )
 
     async def read_audio_packets(self) -> list[ScrcpyPacket] | None:
+        if self.audio_error:
+            raise RuntimeError(self.audio_error)
+        if self.audio_socket is None:
+            raise RuntimeError("Scrcpy audio socket is unavailable")
         return await asyncio.to_thread(
             self._recv_packets, self.audio_socket, self.audio_parser
         )
