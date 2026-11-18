@@ -89,13 +89,13 @@ export default function H264Canvas({ source, onFail, onVideoSize }: { source: H2
     stopSource = source({
       reset,
       flush: () => { if (!stopped && !failed) parser.flushAccessUnit() },
-      bootstrapStart: () => { liveStartTimestamp = Number.POSITIVE_INFINITY },
+      // The cached GOP is the latest decodable picture. Render it immediately
+      // instead of decoding it invisibly and waiting for the live boundary.
+      bootstrapStart: () => { liveStartTimestamp = null },
       bootstrapEnd: () => {
         if (stopped || failed) return
         parser.flushAccessUnit()
-        // Decode the cached GOP to establish reference frames, but display only
-        // decoded frames at or after the live-stream boundary.
-        liveStartTimestamp = timestamp
+        // Keep rendering cached GOP frames while the decoder catches up to live packets.
       },
       data: chunk => {
         if (stopped || failed) return
