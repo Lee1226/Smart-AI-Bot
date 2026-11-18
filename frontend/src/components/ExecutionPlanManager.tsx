@@ -205,6 +205,21 @@ export default function ExecutionPlanManager({ suiteId, platform, device }: { su
         addLog('success', `等待 ${ms} ms 完成`)
         return
       }
+      if ((action === 'tap' || action === 'tap_element') && step.force_coordinate) {
+        const coordinates = (step.fallback?.coordinates || {}) as Record<string, unknown>
+        const x = coordinates.x ?? args.x
+        const y = coordinates.y ?? args.y
+        if (x === undefined || y === undefined || x === null || y === null || x === '' || y === '') {
+          throw new Error('已启用强制坐标点击，但该步骤没有有效的 X/Y 坐标。')
+        }
+        const coordinateSpace = String(step.fallback?.coordinate_space || args.coordinate_space || 'device_px')
+        const { data } = await api.post('/recorder/gesture', {
+          device_id: device.id, action: 'tap',
+          args: { x: Number(x), y: Number(y), coordinate_space: coordinateSpace },
+        })
+        addLog('success', data.description || `已直接点击坐标 (${x}, ${y})`)
+        return
+      }
       if (action === 'tap' || action === 'tap_element' || action === 'input_text') {
         const { data: tree } = await api.get<{ elements: Array<Record<string, any>> }>(`/recorder/elements?device_id=${encodeURIComponent(device.id)}`)
         const keys = [
