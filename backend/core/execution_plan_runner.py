@@ -60,7 +60,7 @@ def build_replay_step(step: Dict[str, Any]) -> Dict[str, Any]:
     if action == "start_app":
         raw["package"] = args.get("package_name") or args.get("package") or ""
         raw["activity"] = args.get("activity") or ""
-    if action == "tap":
+    if action in {"tap", "tap_element"}:
         if coords:
             raw["x"], raw["y"] = coords.get("x"), coords.get("y")
             if fallback.get("coordinate_space"):
@@ -68,6 +68,9 @@ def build_replay_step(step: Dict[str, Any]) -> Dict[str, Any]:
         elif args.get("x") is not None and args.get("y") is not None:
             raw["x"], raw["y"] = args["x"], args["y"]
             raw["coordinate_space"] = args.get("coordinate_space") or "device_px"
+        if action == "tap_element" and step.get("force_coordinate"):
+            # Legacy element taps can opt into the same direct-coordinate path.
+            raw["kind"] = "tap"
     if action == "swipe":
         for key in ("x1", "y1", "x2", "y2", "duration_ms"):
             if key in coords and key not in raw:
@@ -123,7 +126,7 @@ async def _execute_deterministic(device: WebSocketDevice, step: Dict[str, Any], 
         if str(result).startswith("ERROR:"):
             raise RuntimeError(result)
         return result
-    if action == "tap" and raw.get("contentDescription"):
+    if action == "tap" and raw.get("contentDescription") and not raw.get("force_coordinate"):
         _, elements = await device.get_ui_state()
         expected = str(raw["contentDescription"])
         match = next((el for el in elements if expected in str(el.get("contentDescription") or el.get("content_description") or "")), None)
@@ -135,7 +138,7 @@ async def _execute_deterministic(device: WebSocketDevice, step: Dict[str, Any], 
         raise ValueError("tap requires a locator or recorded coordinates")
     if action == "swipe" and not all(raw.get(k) is not None for k in ("x1", "y1", "x2", "y2")):
         raise ValueError("swipe requires x1/y1/x2/y2 coordinates")
-    if action in {"tap_element", "input_text"}:
+    if action in {"tap_element", "input_text"} and not (action == "tap_element" and raw.get("force_coordinate")):
         # Refresh the accessibility cache and keyboard focus state before using
         # an index or attempting text input.
         await device.get_ui_state()
