@@ -392,8 +392,9 @@ async def _run_local_adb_hub(device_id: str, serial: str, hub: dict) -> None:
             # Audio failure is reported to the recorder only. The video
             # producer and browser preview must remain operational.
             logger.warning(
-                "[LIVE HUB] audio unavailable; video preview continues: device_id=%s error=%s",
-                device_id, exc,
+                "[LIVE HUB] audio unavailable; video preview continues: "
+                "device_id=%s serial=%s error=%s",
+                device_id, serial, exc, exc_info=True,
             )
             async with lock:
                 for recorder_id, recorder in list(hub.get("recorders", {}).items()):
