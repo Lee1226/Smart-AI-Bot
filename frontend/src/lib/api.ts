@@ -71,6 +71,8 @@ export interface Run {
   total: number
   total_tokens: number
   has_recording: boolean
+  recording_status: 'pending' | 'saved' | 'disabled' | 'unsupported_device' | 'failed'
+  recording_message: string
 }
 
 export interface TestResult {
