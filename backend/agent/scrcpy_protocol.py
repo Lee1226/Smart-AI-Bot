@@ -82,7 +82,7 @@ class ScrcpyMediaStreamParser:
             device_name = None
             if self.send_device_meta:
                 raw_name = bytes(self.buffer[offset:offset + 64])
-                device_name = raw_name.split(b"\\x00", 1)[0].decode("utf-8", errors="replace")
+                device_name = raw_name.split(b"\x00", 1)[0].decode("utf-8", errors="replace")
                 offset += 64
             codec_id = struct.unpack_from(">I", self.buffer, offset)[0] if self.send_codec_meta else 0
             del self.buffer[:prefix_size]
