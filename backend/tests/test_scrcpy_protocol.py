@@ -19,7 +19,8 @@ class ScrcpyMediaStreamParserTests(unittest.TestCase):
         )
         device_name = b"Test Phone".ljust(64, bytes([0]))
         prefix = bytes([0]) + device_name + struct.pack(">I", SCRCPY_VIDEO_H264)
-        session = struct.pack(">QII", PACKET_FLAG_SESSION, 1080, 2400)
+        # Scrcpy 4.0 session packet: 8-byte flags/width + 4-byte height.
+        session = struct.pack(">QI", PACKET_FLAG_SESSION | 1080, 2400)
         config_payload = bytes.fromhex("00000001675350530000000168505053")
         config = struct.pack(">QI", PACKET_FLAG_CONFIG, len(config_payload)) + config_payload
         frame_payload = bytes.fromhex("0000000165494452")
@@ -27,11 +28,10 @@ class ScrcpyMediaStreamParserTests(unittest.TestCase):
 
         self.assertEqual(parser.feed(prefix[:20]), [])
         self.assertEqual(parser.feed(prefix[20:] + session[:7]), [])
-        # Session metadata is 16 bytes; 15 bytes must not be consumed as a
-        # complete packet or shift the parser into the H.264 payload.
-        self.assertEqual(parser.feed(session[7:15]), [])
+        # The 12-byte Scrcpy 4.0 session packet must not be consumed early.
+        self.assertEqual(parser.feed(session[7:11]), [])
         self.assertIsNone(parser.metadata.width)
-        packets = parser.feed(session[15:] + config + frame[:5])
+        packets = parser.feed(session[11:] + config + frame[:5])
         self.assertEqual([p.kind for p in packets], ["configuration"])
         self.assertEqual(parser.metadata.codec_id, SCRCPY_VIDEO_H264)
         self.assertEqual(parser.metadata.device_name, "Test Phone")
