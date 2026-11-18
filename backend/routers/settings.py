@@ -43,6 +43,7 @@ class Settings(BaseModel):
     webhook_type: Optional[str] = ""  # feishu / dingtalk / slack / custom
     # Main language for AI output (thoughts/reasons/verdicts/plans) + report: zh / en
     language: Optional[str] = "zh"
+    recording_auto_enabled: bool = True
     configured_secrets: list[str] = Field(default_factory=list)
 
 
