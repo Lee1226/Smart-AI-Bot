@@ -285,6 +285,10 @@ class ScrcpyMp4Muxer:
             with self._av.open(str(self.output_path), mode="r") as check:
                 if not check.streams.video or not check.streams.audio:
                     raise RuntimeError("Final MP4 is missing its video or audio stream")
+                if not check.streams.video[0].codec_context.extradata:
+                    raise RuntimeError("Final MP4 is missing H.264 decoder configuration")
+                if not check.streams.audio[0].codec_context.extradata:
+                    raise RuntimeError("Final MP4 is missing AAC decoder configuration")
         except Exception:
             self.output_path.unlink(missing_ok=True)
             raise
