@@ -550,7 +550,9 @@ async def list_recordings(request: Request, db: AsyncSession = Depends(get_db)):
             "size_bytes": stat.st_size,
             "download_url": f"/api/runs/{run.id}/recording.mp4",
         })
-    return {"items": items, "total": len(items), "total_bytes": total_bytes}
+    account_settings = await load_settings(request.state.account_id or "")
+    account_recording_dir = recording_directory(account_settings)
+    return {"items": items, "total": len(items), "total_bytes": total_bytes, "storage_dir": str(account_recording_dir)}
 
 
 @router.delete("/recordings/{run_id}", status_code=204)
