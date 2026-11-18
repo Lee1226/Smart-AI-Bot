@@ -242,6 +242,7 @@ class ScrcpyMp4Muxer:
         av_packet.stream = self.video_stream
         av_packet.pts = packet.pts_us
         av_packet.dts = packet.pts_us
+        av_packet.duration = max(1, round(1_000_000 / self.fps))
         av_packet.time_base = TIME_BASE
         av_packet.is_keyframe = bool(packet.keyframe)
         self.container.mux(av_packet)
@@ -256,6 +257,7 @@ class ScrcpyMp4Muxer:
         av_packet.stream = self.audio_stream
         av_packet.pts = packet.pts_us
         av_packet.dts = packet.pts_us
+        av_packet.duration = max(1, round(1_024_000_000 / self._audio_rate))
         av_packet.time_base = TIME_BASE
         self.container.mux(av_packet)
         self._last_audio_pts = packet.pts_us
