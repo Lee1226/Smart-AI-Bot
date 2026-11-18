@@ -5,6 +5,7 @@ the operator).  Reading/writing requires owner/admin of that account.
 """
 from pathlib import Path
 from typing import Optional
+import shutil
 
 from fastapi import APIRouter, Depends, HTTPException, Request
 from pydantic import BaseModel, Field
@@ -12,6 +13,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from auth.access import require_account_id, require_role
 from core.settings_store import load_settings, save_settings
+from core.run_recorder import recording_directory, cleanup_expired_recordings
 from db.database import AsyncSessionLocal
 
 router = APIRouter(prefix="/api/settings", tags=["settings"])
@@ -98,7 +100,37 @@ async def update_settings(new_settings: SettingsUpdate, request: Request):
         if not incoming.get(key):
             incoming.pop(key, None)
     current.update(incoming)
+    if "recording_storage_dir" in incoming:
+        try:
+            storage_dir = recording_directory(current)
+            storage_dir.mkdir(parents=True, exist_ok=True)
+            current["recording_storage_dir"] = str(storage_dir)
+        except (OSError, ValueError) as exc:
+            raise HTTPException(status_code=422, detail=f"录像保存目录无效：{exc}")
     for key in new_settings.clear_secrets:
         current[key] = ""
     await save_settings(account_id, current)
     return _masked(current)
+
+
+
+@router.get("/recording-storage")
+async def get_recording_storage(request: Request):
+    """Return real disk usage and recording inventory for the current account."""
+    require_role(request, "owner", "admin")
+    settings = await load_settings(require_account_id(request))
+    directory = recording_directory(settings)
+    directory.mkdir(parents=True, exist_ok=True)
+    cleanup_expired_recordings(directory, settings.get("recording_retention_days", 30))
+    usage = shutil.disk_usage(directory)
+    files = [p for p in directory.glob("*.mp4") if p.is_file()]
+    total_bytes = sum(p.stat().st_size for p in files)
+    return {
+        "directory": str(directory),
+        "retention_days": int(settings.get("recording_retention_days", 30)),
+        "recording_count": len(files),
+        "recording_bytes": total_bytes,
+        "disk_total_bytes": usage.total,
+        "disk_used_bytes": usage.used,
+        "disk_free_bytes": usage.free,
+    }
