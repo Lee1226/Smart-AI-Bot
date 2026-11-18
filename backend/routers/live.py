@@ -168,6 +168,8 @@ async def subscribe_local_adb_recorder(device_id: str, serial: str):
     """
     consumer_id = "rec-" + uuid.uuid4().hex
     lock = _local_adb_hub_lock(device_id)
+    video_queue = asyncio.Queue(maxsize=512)
+    audio_queue = asyncio.Queue(maxsize=512)
 
     while True:
         wait_for_stopping_hub = None
@@ -192,21 +194,17 @@ async def subscribe_local_adb_recorder(device_id: str, serial: str):
                     _local_adb_hubs[device_id] = hub
                     hub["task"] = asyncio.create_task(_run_local_adb_hub(device_id, serial, hub))
 
-                # Recorder queues are separate from browser viewer queues;
-                # they receive framed packets with device PTS below.
+                # Register atomically with hub lookup/creation so a concurrent
+                # final-viewer disconnect cannot stop the producer in between.
+                hub["recorders"][consumer_id] = {
+                    "video": video_queue,
+                    "audio": audio_queue,
+                    "failed": False,
+                }
         if wait_for_stopping_hub is None:
             break
         if not wait_for_stopping_hub.done():
             await asyncio.gather(wait_for_stopping_hub, return_exceptions=True)
-
-    video_queue = asyncio.Queue(maxsize=512)
-    audio_queue = asyncio.Queue(maxsize=512)
-    async with lock:
-        hub["recorders"][consumer_id] = {
-            "video": video_queue,
-            "audio": audio_queue,
-            "failed": False,
-        }
 
     try:
         await asyncio.wait_for(hub["ready"].wait(), timeout=20)
