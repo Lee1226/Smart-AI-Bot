@@ -281,14 +281,23 @@ class ScrcpyMediaSession:
             await self.stop()
             self.audio_error = f"Scrcpy audio/video startup failed: {exc}"
             logger.warning(
-                "[SCRCPY MEDIA] falling back to video-only preview: serial=%s error=%s",
-                self.serial, exc,
+                "[SCRCPY MEDIA] A/V startup failed; attempting video-only fallback: "
+                "serial=%s scid=%s error=%s recent_server_logs=%s",
+                self.serial, self.scid, exc, list(self.server_logs)[-20:],
+                exc_info=True,
             )
             fallback = ScrcpyVideoSession(
                 self.adb, self.serial,
                 max_size=self.max_size, bit_rate=self.bit_rate, max_fps=self.max_fps,
             )
-            await fallback.start()
+            try:
+                await fallback.start()
+            except Exception:
+                logger.exception(
+                    "[SCRCPY MEDIA] video-only fallback also failed: serial=%s scid=%s",
+                    self.serial, self.scid,
+                )
+                raise
             self._video_only_fallback = fallback
             self.started = True
 
