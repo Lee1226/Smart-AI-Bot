@@ -145,11 +145,12 @@ export default function H264WebGLPlayer({
       stopSource = source({
         reset,
         flush: () => { if (!stopped && !failed) parser.flushAccessUnit() },
-        bootstrapStart: () => { liveStartTimestamp = Number.POSITIVE_INFINITY },
+        // Render cached GOP frames immediately instead of hiding them.
+        bootstrapStart: () => { liveStartTimestamp = null },
         bootstrapEnd: () => {
           if (stopped || failed) return
           parser.flushAccessUnit()
-          liveStartTimestamp = timestamp
+          // Keep rendering cached GOP frames while the decoder catches up to live packets.
         },
         data: chunk => {
           if (stopped || failed) return
