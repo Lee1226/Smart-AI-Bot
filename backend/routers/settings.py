@@ -44,6 +44,8 @@ class Settings(BaseModel):
     # Main language for AI output (thoughts/reasons/verdicts/plans) + report: zh / en
     language: Optional[str] = "zh"
     recording_auto_enabled: bool = True
+    recording_storage_dir: Optional[str] = None
+    recording_retention_days: int = Field(default=30, ge=1, le=3650)
     configured_secrets: list[str] = Field(default_factory=list)
 
 
