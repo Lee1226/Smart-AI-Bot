@@ -97,7 +97,8 @@ class ScrcpyMediaSession:
 
     @property
     def video_metadata(self):
-        return self.video_parser.metadata
+        # A raw video-only fallback has no device PTS and is preview-only.
+        return None if self._video_only_fallback is not None else self.video_parser.metadata
 
     @property
     def audio_codec_id(self) -> int | None:
