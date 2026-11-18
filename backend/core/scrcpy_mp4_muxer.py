@@ -247,7 +247,8 @@ class ScrcpyMp4Muxer:
                 self._mux_audio(buffered_packet)
 
     def _mux_video(self, packet: ScrcpyPacket) -> None:
-        if self._last_video_pts is not None and packet.pts_us <= self._last_video_pts:
+        pts_us = packet.pts_us - (self._pts_origin_us or 0)
+        if self._last_video_pts is not None and pts_us <= self._last_video_pts:
             logger.debug("Dropping non-monotonic video packet PTS=%d", packet.pts_us)
             return
         if not self._video_config_injected:
@@ -259,7 +260,6 @@ class ScrcpyMp4Muxer:
             payload = packet.payload
         av_packet = self._av.Packet(payload)
         av_packet.stream = self.video_stream
-        pts_us = packet.pts_us - (self._pts_origin_us or 0)
         av_packet.pts = pts_us
         av_packet.dts = pts_us
         av_packet.duration = max(1, round(1_000_000 / self.fps))
@@ -270,12 +270,12 @@ class ScrcpyMp4Muxer:
         self._video_packets += 1
 
     def _mux_audio(self, packet: ScrcpyPacket) -> None:
-        if self._last_audio_pts is not None and packet.pts_us <= self._last_audio_pts:
+        pts_us = packet.pts_us - (self._pts_origin_us or 0)
+        if self._last_audio_pts is not None and pts_us <= self._last_audio_pts:
             logger.debug("Dropping non-monotonic audio packet PTS=%d", packet.pts_us)
             return
         av_packet = self._av.Packet(packet.payload)
         av_packet.stream = self.audio_stream
-        pts_us = packet.pts_us - (self._pts_origin_us or 0)
         av_packet.pts = pts_us
         av_packet.dts = pts_us
         av_packet.duration = max(1, round(self._audio_frame_size * 1_000_000 / self._audio_rate))
