@@ -3,6 +3,7 @@
 Each account owns its own settings blob (isolated from other tenants and from
 the operator).  Reading/writing requires owner/admin of that account.
 """
+from pathlib import Path
 from typing import Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Request
@@ -44,7 +45,7 @@ class Settings(BaseModel):
     # Main language for AI output (thoughts/reasons/verdicts/plans) + report: zh / en
     language: Optional[str] = "zh"
     recording_auto_enabled: bool = True
-    recording_storage_dir: Optional[str] = None
+    recording_storage_dir: str = str(Path(__file__).resolve().parent.parent / "data" / "recordings")
     recording_retention_days: int = Field(default=30, ge=1, le=3650)
     configured_secrets: list[str] = Field(default_factory=list)
 
