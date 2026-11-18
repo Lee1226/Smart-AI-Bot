@@ -194,6 +194,8 @@ class ScrcpyMp4Muxer:
         if packet.kind == "configuration":
             self._ensure_container()
             self._audio_rate, self._audio_layout, self._audio_frame_size = parse_aac_audio_specific_config(packet.payload)
+            if self._audio_frame_size != 1024:
+                raise ValueError("AAC 960-sample access units are not supported by the current MP4 muxer")
             self.audio_configured = True
             self._start_if_ready()
             return
