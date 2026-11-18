@@ -156,7 +156,7 @@ class ScrcpyMp4Muxer:
             raise RuntimeError("PyAV 17 or newer is required for encoded-packet muxing")
         self._av = av
         self.output_path.parent.mkdir(parents=True, exist_ok=True)
-        self.container = av.open(str(self.output_path), mode="w", format="mp4")
+        self.container = av.open(str(self.output_path), mode="w", format="mp4", options={"movflags": "+faststart"})
         self.video_stream = self.container.add_mux_stream(
             "h264",
             rate=self.fps,
