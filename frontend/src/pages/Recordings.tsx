@@ -1,0 +1,103 @@
+import { useMemo, useState } from 'react'
+import { Link } from 'react-router-dom'
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
+import { deleteRecording, fetchRecordings, getToken, RecordingItem } from '../lib/api'
+
+function formatBytes(value: number) {
+  if (value < 1024) return `${value} B`
+  if (value < 1024 * 1024) return `${(value / 1024).toFixed(1)} KB`
+  if (value < 1024 * 1024 * 1024) return `${(value / 1024 / 1024).toFixed(1)} MB`
+  return `${(value / 1024 / 1024 / 1024).toFixed(2)} GB`
+}
+
+function formatDate(value: string | null) {
+  if (!value) return '—'
+  const date = new Date(value)
+  return Number.isNaN(date.getTime()) ? value : date.toLocaleString()
+}
+
+function RecordingCard({ item, onDeleted }: { item: RecordingItem; onDeleted: () => void }) {
+  const [expanded, setExpanded] = useState(false)
+  const queryClient = useQueryClient()
+  const remove = useMutation({
+    mutationFn: () => deleteRecording(item.run_id),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['recordings'] })
+      queryClient.invalidateQueries({ queryKey: ['runs'] })
+      onDeleted()
+    },
+  })
+  const token = getToken()
+  const videoUrl = `${item.download_url}${token ? `?token=${encodeURIComponent(token)}` : ''}`
+
+  return <article className="rounded-xl border border-hairline bg-white p-4 shadow-sm">
+    <div className="flex flex-wrap items-start justify-between gap-3">
+      <div className="min-w-0 flex-1">
+        <div className="truncate text-sm font-semibold text-ink">{item.task_name}</div>
+        <div className="mt-1 flex flex-wrap gap-x-3 gap-y-1 text-xs text-ink-mute">
+          <span>设备：{item.device_name}</span>
+          <span>录制开始：{formatDate(item.created_at)}</span>
+          <span>文件：{item.file_name}</span>
+          <span>{formatBytes(item.size_bytes)}</span>
+        </div>
+      </div>
+      <div className="flex shrink-0 items-center gap-2">
+        <Link to={`/runs/${item.run_id}`} className="rounded-lg border border-hairline px-3 py-2 text-xs text-ink hover:bg-canvas-cool">任务详情</Link>
+        <a href={videoUrl} download={item.file_name} className="rounded-lg border border-primary/30 px-3 py-2 text-xs font-medium text-primary hover:bg-primary-soft">下载</a>
+        <button disabled={remove.isPending} onClick={() => { if (confirm('只删除这段录像文件，不会删除任务和测试结果。确定继续吗？')) remove.mutate() }} className="rounded-lg border border-rose-200 px-3 py-2 text-xs text-rose-700 hover:bg-rose-50 disabled:opacity-50">{remove.isPending ? '删除中…' : '删除录像'}</button>
+      </div>
+    </div>
+    {remove.isError && <p role="alert" className="mt-2 text-xs text-rose-600">删除失败，请刷新后重试。</p>}
+    <button onClick={() => setExpanded(v => !v)} className="mt-3 text-xs font-medium text-primary hover:underline">{expanded ? '收起预览' : '展开视频预览'}</button>
+    {expanded && <div className="mt-3 overflow-hidden rounded-lg bg-black">
+      <video key={videoUrl} src={videoUrl} controls playsInline preload="metadata" className="mx-auto max-h-[560px] w-full object-contain" />
+    </div>}
+  </article>
+}
+
+export default function Recordings() {
+  const [keyword, setKeyword] = useState('')
+  const { data, isLoading, isError, refetch } = useQuery({
+    queryKey: ['recordings'],
+    queryFn: fetchRecordings,
+  })
+  const items = data?.items ?? []
+  const filtered = useMemo(() => {
+    const q = keyword.trim().toLowerCase()
+    if (!q) return items
+    return items.filter(item => [item.task_name, item.device_name, item.device_id, item.run_id, item.file_name].some(value => value.toLowerCase().includes(q)))
+  }, [items, keyword])
+
+  return <div className="space-y-6">
+    <header className="flex flex-wrap items-end justify-between gap-3">
+      <div>
+        <div className="text-xs font-semibold uppercase tracking-[0.18em] text-primary">RECORDING LIBRARY</div>
+        <h1 className="mt-2 text-2xl font-semibold tracking-tight text-ink">录像文件</h1>
+        <p className="mt-1 text-sm text-ink-mute">查看、预览和下载测试任务自动生成的屏幕录像。</p>
+      </div>
+      <button onClick={() => void refetch()} className="rounded-lg border border-hairline bg-white px-3 py-2 text-sm text-ink hover:bg-canvas-cool">↻ 刷新列表</button>
+    </header>
+
+    <section className="grid gap-3 sm:grid-cols-3">
+      <div className="rounded-xl border border-hairline bg-white p-4"><div className="text-xs text-ink-mute">录像数量</div><div className="mt-2 text-2xl font-semibold tabular-nums text-ink">{data?.total ?? 0}</div></div>
+      <div className="rounded-xl border border-hairline bg-white p-4"><div className="text-xs text-ink-mute">占用空间</div><div className="mt-2 text-2xl font-semibold tabular-nums text-ink">{formatBytes(data?.total_bytes ?? 0)}</div></div>
+      <div className="rounded-xl border border-hairline bg-white p-4"><div className="text-xs text-ink-mute">存储目录</div><div className="mt-2 break-all text-xs font-mono text-ink">{data?.storage_dir ?? '加载中…'}</div></div>
+    </section>
+
+    <section className="flex flex-wrap items-center gap-3 rounded-xl border border-hairline bg-white p-4">
+      <input value={keyword} onChange={e => setKeyword(e.target.value)} placeholder="搜索任务名称、设备或运行 ID" className="min-w-0 flex-1 rounded-lg border border-hairline px-3 py-2 text-sm outline-none focus:border-primary" />
+      <span className="text-xs text-ink-mute">显示 {filtered.length} / {items.length} 条</span>
+    </section>
+
+    {isLoading && <div className="rounded-xl border border-hairline bg-white p-10 text-center text-sm text-ink-mute">正在读取录像文件…</div>}
+    {isError && <div role="alert" className="rounded-xl border border-rose-200 bg-rose-50 p-4 text-sm text-rose-700">录像列表读取失败，请检查后端连接。</div>}
+    {!isLoading && !isError && filtered.length === 0 && <div className="rounded-xl border border-dashed border-hairline bg-white p-12 text-center">
+      <div className="text-3xl text-ink-faint">▣</div>
+      <h2 className="mt-3 text-sm font-semibold text-ink">{items.length ? '没有匹配的录像' : '暂无录像文件'}</h2>
+      <p className="mt-1 text-xs text-ink-mute">{items.length ? '请调整搜索关键词。' : '完成支持本机 ADB 录制的测试任务后，录像会显示在这里。'}</p>
+      <Link to="/runs" className="mt-4 inline-block text-xs font-medium text-primary hover:underline">查看测试任务</Link>
+    </div>}
+    <section className="space-y-3">{filtered.map(item => <RecordingCard key={item.run_id} item={item} onDeleted={() => undefined} />)}</section>
+    <p className="text-xs text-ink-mute">当前版本只列出后端本地 ADB 录制成功生成的 MP4 文件；未生成录像的任务不会显示。删除录像不会删除任务结果。</p>
+  </div>
+}
