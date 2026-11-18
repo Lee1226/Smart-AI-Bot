@@ -34,7 +34,7 @@ class ScrcpyMp4MuxerHelpersTests(unittest.TestCase):
         self.assertIn(pps, avcc)
 
     def test_parse_aac_lc_44100_stereo_config(self):
-        self.assertEqual(parse_aac_audio_specific_config(bytes.fromhex("1210")), (44100, "stereo"))
+        self.assertEqual(parse_aac_audio_specific_config(bytes.fromhex("1210")), (44100, "stereo", 1024))
 
 
 if __name__ == "__main__":
