@@ -803,6 +803,8 @@ export interface ExecutionPlanStep {
   intent?: ExecutionPlanIntent | null
   execution_channel?: 'system_api' | 'ui_automation' | 'ai_agent'
   locator?: Record<string, unknown> | null
+  /** Skip semantic UI lookup and tap the recorded coordinate directly. */
+  force_coordinate?: boolean
   fallback?: Record<string, unknown> | null
   precondition?: Record<string, unknown> | null
   wait_condition?: Record<string, unknown> | null
