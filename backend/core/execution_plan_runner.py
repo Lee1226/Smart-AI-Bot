@@ -268,7 +268,7 @@ async def execute_execution_plan_run(
 
         await emit(f"执行计划 v{plan.version}：{len(steps)} 步 · 设备={device_id}")
         if await recorder.start(device_id):
-            await emit("屏幕录制已启动")
+            await emit("音视频录制已启动 (Scrcpy)")
 
         await run_lifecycle_actions(device, lifecycle_pre_actions, "执行前处理", emit)
 
