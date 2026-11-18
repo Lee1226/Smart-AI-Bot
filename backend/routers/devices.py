@@ -396,12 +396,11 @@ async def launch_device_app(device_id: str, package_name: str, request: Request,
         DeviceAppInstallation.account_id == account_id, DeviceAppInstallation.device_id == device_id,
         DeviceAppInstallation.package_name == package_name, DeviceAppInstallation.installed.is_(True)
     ))).scalar_one_or_none()
-    catalog = (await db.execute(select(AppCatalog).where(
-        AppCatalog.account_id == account_id, AppCatalog.package_name == package_name,
-        AppCatalog.is_test_app.is_(True)
-    ))).scalar_one_or_none()
-    if not install or not catalog:
-        raise HTTPException(status_code=404, detail="应用未在当前设备安装，或尚未加入测试应用")
+    # Launching an installed app from the device app library must not depend
+    # on whether the user has marked it as a test app. is_test_app only controls
+    # test-case/app selection; installation state is the launch prerequisite.
+    if not install:
+        raise HTTPException(status_code=404, detail="应用未在当前设备安装")
     if not local_adb.is_bound(device_id):
         raise HTTPException(status_code=409, detail="本地 ADB 设备未连接")
     from core.device_scheduler import locks
