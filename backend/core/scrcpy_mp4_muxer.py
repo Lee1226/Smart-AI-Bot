@@ -1,8 +1,8 @@
-"""Low-overhead MP4 muxing for timestamped Scrcpy H.264/AAC packets.
+"""Timestamp-preserving MP4 muxing for Scrcpy H.264/AAC packets.
 
-Encoded media is not decoded or re-encoded. Scrcpy's Annex-B H.264 access
-units are converted to MP4 length-prefixed NAL units; device PTS is preserved
-in a microsecond time base.
+The video stream uses PyAV's codec-context-free mux stream, so no H.264
+encoder is opened. Audio stream parameters are initialized from Scrcpy's AAC
+AudioSpecificConfig. Encoded packets are muxed directly with device PTS.
 """
 from __future__ import annotations
 
@@ -108,6 +108,8 @@ def parse_aac_audio_specific_config(data: bytes) -> tuple[int, str]:
 class ScrcpyMp4Muxer:
     """Mux Scrcpy H.264/AAC packets into one MP4 without re-encoding."""
 
+    MAX_PENDING_PACKETS = 256
+
     def __init__(self, output_path: Path, width: int, height: int, fps: int = 30):
         self.output_path = Path(output_path)
         self.width = int(width)
@@ -120,6 +122,12 @@ class ScrcpyMp4Muxer:
         self.audio_configured = False
         self.started = False
         self.closed = False
+        self._video_config: bytes | None = None
+        self._video_config_injected = False
+        self._audio_rate: int | None = None
+        self._audio_layout: str | None = None
+        self._pending_video: list[ScrcpyPacket] = []
+        self._pending_audio: list[ScrcpyPacket] = []
         self._last_video_pts: int | None = None
         self._last_audio_pts: int | None = None
         self._video_packets = 0
@@ -136,20 +144,26 @@ class ScrcpyMp4Muxer:
                 "PyAV is required for timestamp-preserving audio/video recording; "
                 "install the backend dependency 'av'"
             ) from exc
+        if not hasattr(av.container.OutputContainer, "add_mux_stream"):
+            raise RuntimeError("PyAV 17 or newer is required for encoded-packet muxing")
         self._av = av
         self.output_path.parent.mkdir(parents=True, exist_ok=True)
         self.container = av.open(str(self.output_path), mode="w", format="mp4")
-        self.video_stream = self.container.add_stream("h264", rate=self.fps)
-        self.video_stream.width = self.width
-        self.video_stream.height = self.height
-        self.video_stream.time_base = TIME_BASE
-        self.audio_stream = self.container.add_stream("aac")
-        self.audio_stream.time_base = TIME_BASE
+        self.video_stream = self.container.add_mux_stream(
+            "h264",
+            rate=self.fps,
+            width=self.width,
+            height=self.height,
+            time_base=TIME_BASE,
+        )
 
     def write_video(self, packet: ScrcpyPacket) -> None:
         if packet.kind == "configuration":
             self._ensure_container()
-            self.video_stream.codec_context.extradata = build_avc_decoder_config(packet.payload)
+            self._video_config = packet.payload
+            # Validate SPS/PPS now; the first keyframe will carry them in-band
+            # so FFmpeg can populate MP4's AVC decoder configuration record.
+            build_avc_decoder_config(packet.payload)
             self.video_configured = True
             self._start_if_ready()
             return
@@ -157,12 +171,66 @@ class ScrcpyMp4Muxer:
             raise ValueError("Scrcpy video packet has no presentation timestamp")
         if not self.video_configured:
             raise RuntimeError("Received H.264 frame before codec configuration")
+        if not self.started:
+            self._pending_video.append(packet)
+            if len(self._pending_video) > self.MAX_PENDING_PACKETS:
+                raise RuntimeError("AAC configuration did not arrive; video startup buffer is full")
+            return
+        self._mux_video(packet)
+
+    def write_audio(self, packet: ScrcpyPacket) -> None:
+        if packet.kind == "configuration":
+            self._ensure_container()
+            self._audio_rate, self._audio_layout = parse_aac_audio_specific_config(packet.payload)
+            self.audio_configured = True
+            self._start_if_ready()
+            return
+        if packet.pts_us is None:
+            raise ValueError("Scrcpy audio packet has no presentation timestamp")
+        if not self.audio_configured:
+            raise RuntimeError("Received AAC frame before codec configuration")
+        if not self.started:
+            self._pending_audio.append(packet)
+            if len(self._pending_audio) > self.MAX_PENDING_PACKETS:
+                raise RuntimeError("H.264 configuration did not arrive; audio startup buffer is full")
+            return
+        self._mux_audio(packet)
+
+    def _start_if_ready(self) -> None:
+        if self.started or not (self.video_configured and self.audio_configured):
+            return
+        self.audio_stream = self.container.add_stream("aac", rate=self._audio_rate)
+        self.audio_stream.codec_context.layout = self._audio_layout
+        self.audio_stream.time_base = TIME_BASE
+        self.started = True
+
+        # Preserve timestamp order across the short startup buffer. PyAV's
+        # muxer then interleaves subsequent packets using the same device clock.
+        pending = [
+            (packet.pts_us, "video", packet) for packet in self._pending_video
+        ] + [
+            (packet.pts_us, "audio", packet) for packet in self._pending_audio
+        ]
+        self._pending_video.clear()
+        self._pending_audio.clear()
+        for _, kind, buffered_packet in sorted(pending, key=lambda item: item[0]):
+            if kind == "video":
+                self._mux_video(buffered_packet)
+            else:
+                self._mux_audio(buffered_packet)
+
+    def _mux_video(self, packet: ScrcpyPacket) -> None:
         if self._last_video_pts is not None and packet.pts_us <= self._last_video_pts:
             logger.debug("Dropping non-monotonic video packet PTS=%d", packet.pts_us)
             return
-        self._ensure_container()
-        encoded = annexb_to_avcc(packet.payload)
-        av_packet = self._av.Packet(encoded)
+        if not self._video_config_injected:
+            if not packet.keyframe:
+                return
+            payload = (self._video_config or b"") + packet.payload
+            self._video_config_injected = True
+        else:
+            payload = packet.payload
+        av_packet = self._av.Packet(payload)
         av_packet.stream = self.video_stream
         av_packet.pts = packet.pts_us
         av_packet.dts = packet.pts_us
@@ -172,24 +240,10 @@ class ScrcpyMp4Muxer:
         self._last_video_pts = packet.pts_us
         self._video_packets += 1
 
-    def write_audio(self, packet: ScrcpyPacket) -> None:
-        if packet.kind == "configuration":
-            self._ensure_container()
-            sample_rate, layout = parse_aac_audio_specific_config(packet.payload)
-            self.audio_stream.codec_context.sample_rate = sample_rate
-            self.audio_stream.codec_context.layout = layout
-            self.audio_stream.codec_context.extradata = packet.payload
-            self.audio_configured = True
-            self._start_if_ready()
-            return
-        if packet.pts_us is None:
-            raise ValueError("Scrcpy audio packet has no presentation timestamp")
-        if not self.audio_configured:
-            raise RuntimeError("Received AAC frame before codec configuration")
+    def _mux_audio(self, packet: ScrcpyPacket) -> None:
         if self._last_audio_pts is not None and packet.pts_us <= self._last_audio_pts:
             logger.debug("Dropping non-monotonic audio packet PTS=%d", packet.pts_us)
             return
-        self._ensure_container()
         av_packet = self._av.Packet(packet.payload)
         av_packet.stream = self.audio_stream
         av_packet.pts = packet.pts_us
@@ -198,11 +252,6 @@ class ScrcpyMp4Muxer:
         self.container.mux(av_packet)
         self._last_audio_pts = packet.pts_us
         self._audio_packets += 1
-
-    def _start_if_ready(self) -> None:
-        if self.container is not None and self.video_configured and self.audio_configured and not self.started:
-            self.container.start_encoding()
-            self.started = True
 
     def close(self) -> None:
         if self.closed:
@@ -217,6 +266,9 @@ class ScrcpyMp4Muxer:
         if not self._video_packets or not self._audio_packets:
             self.output_path.unlink(missing_ok=True)
             raise RuntimeError("Recording did not contain both video frames and audio packets")
+        if not self._video_config_injected:
+            self.output_path.unlink(missing_ok=True)
+            raise RuntimeError("Recording did not receive an H.264 keyframe")
         if not self.output_path.exists() or self.output_path.stat().st_size <= 0:
             raise RuntimeError("MP4 muxing produced an empty recording")
         try:
