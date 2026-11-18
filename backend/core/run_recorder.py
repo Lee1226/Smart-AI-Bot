@@ -210,6 +210,16 @@ class RunRecorder:
     async def stop(self) -> None:
         if not self._started and self._release is None:
             return
+
+        # Detach first so the shared hub stops enqueueing packets for this
+        # recorder. Existing queued packets remain available for a clean drain.
+        if self._release is not None:
+            try:
+                await self._release()
+            except Exception:
+                logger.warning("[rec:%s] failed to release shared Scrcpy subscription", self.run_id, exc_info=True)
+            self._release = None
+
         self._stop.set()
         if self._task is not None:
             try:
@@ -221,13 +231,6 @@ class RunRecorder:
             except Exception:
                 logger.warning("[rec:%s] recorder task stopped with error", self.run_id, exc_info=True)
             self._task = None
-
-        if self._release is not None:
-            try:
-                await self._release()
-            except Exception:
-                logger.warning("[rec:%s] failed to release shared Scrcpy subscription", self.run_id, exc_info=True)
-            self._release = None
 
         self._video_queue = None
         self._audio_queue = None
