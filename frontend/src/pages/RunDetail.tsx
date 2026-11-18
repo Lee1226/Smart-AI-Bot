@@ -351,7 +351,7 @@ export default function RunDetail() {
               steps={steps}
               finalShot={selected?.screenshot_b64}
               hasSelection={!!selected}
-              videoUrl={run?.has_recording ? `/api/runs/${run.id}/recording.mp4` : undefined}
+              videoUrl={run?.has_recording ? `/api/runs/${run.id}/recording.mp4?token=${encodeURIComponent(getToken() || '')}` : undefined}
             />
           )}
         </aside>
