@@ -66,8 +66,12 @@ class RunRecorder:
         self._release = None
         self._recording_error: str | None = None
         self._started = False
+        self.saved = False
+        self.status_message = "录像尚未启动"
 
     async def start(self, device_id: Optional[str] = None) -> bool:
+        self.saved = False
+        self.status_message = "录像启动失败：没有关联测试设备"
         if not device_id:
             return False
         try:
@@ -79,6 +83,7 @@ class RunRecorder:
             async with AsyncSessionLocal() as db:
                 run = await db.get(TestRun, self.run_id)
                 if run is None:
+                    self.status_message = "录像未启动：测试运行记录不存在"
                     logger.warning("[rec:%s] run record not found; recording skipped", self.run_id)
                     return False
                 device = await db.get(Device, device_id)
@@ -90,6 +95,7 @@ class RunRecorder:
 
             settings = await load_settings(run.account_id or "")
             if not settings.get("recording_auto_enabled", True):
+                self.status_message = "录像未启动：设置中已关闭自动录像"
                 logger.info("[rec:%s] automatic recording disabled by account settings", self.run_id)
                 return False
             self.rec_dir = recording_directory(settings)
@@ -104,9 +110,15 @@ class RunRecorder:
             # Only server-attached ADB USB devices are eligible for this
             # Scrcpy transport. Never fall back to an arbitrary attached phone.
             if device is None or device.connection_type != "adb_usb" or not device.adb_serial:
-                logger.info(
-                    "[rec:%s] device is not a bound local ADB USB device; recording skipped",
-                    self.run_id,
+                connection_type = getattr(device, "connection_type", "unknown") if device else "missing"
+                self.status_message = (
+                    "录像未启动：当前设备不是已绑定的本机 ADB USB 设备"
+                    f"（connection_type={connection_type}）。当前录像链路仅支持 adb_usb。"
+                )
+                logger.warning(
+                    "[rec:%s] device is not a bound local ADB USB device; recording skipped "
+                    "(connection_type=%s, adb_serial=%s)",
+                    self.run_id, connection_type, bool(getattr(device, "adb_serial", None)),
                 )
                 return False
             self.serial = device.adb_serial
@@ -139,14 +151,16 @@ class RunRecorder:
                 name=f"run-recorder-{self.run_id}",
             )
             self._started = True
+            self.status_message = "录像已启动，正在采集音视频"
             logger.info(
                 "[rec:%s] subscribed to shared Scrcpy A/V: serial=%s size=%sx%s",
                 self.run_id, self.serial, width, height,
             )
             return True
         except Exception as exc:
-            logger.warning("[rec:%s] could not start A/V recording: %s", self.run_id, exc)
+            logger.warning("[rec:%s] could not start A/V recording: %s", self.run_id, exc, exc_info=True)
             self._recording_error = str(exc)
+            self.status_message = f"录像启动失败：{exc}"
             if self._release is not None:
                 try:
                     await self._release()
@@ -205,6 +219,8 @@ class RunRecorder:
             await asyncio.gather(*pending)
             await asyncio.to_thread(muxer.close)
             os.replace(temp_path, final_path)
+            self.saved = True
+            self.status_message = f"录像已保存：{final_path.name}"
             logger.info("[rec:%s] saved audio/video recording: %s", self.run_id, final_path)
         except asyncio.CancelledError:
             for task in consumers:
@@ -215,7 +231,8 @@ class RunRecorder:
             raise
         except Exception as exc:
             self._recording_error = str(exc)
-            logger.warning("[rec:%s] audio/video recording incomplete: %s", self.run_id, exc)
+            self.status_message = f"录像未保存：{exc}"
+            logger.warning("[rec:%s] audio/video recording incomplete: %s", self.run_id, exc, exc_info=True)
             try:
                 await asyncio.to_thread(muxer.abort)
             except Exception:
@@ -242,8 +259,12 @@ class RunRecorder:
             except asyncio.TimeoutError:
                 self._task.cancel()
                 await asyncio.gather(self._task, return_exceptions=True)
+                self.status_message = "录像未保存：停止录制后等待数据写入超时"
+                self._recording_error = self.status_message
                 logger.warning("[rec:%s] recorder drain timed out", self.run_id)
-            except Exception:
+            except Exception as exc:
+                self._recording_error = str(exc)
+                self.status_message = f"录像未保存：收尾失败：{exc}"
                 logger.warning("[rec:%s] recorder task stopped with error", self.run_id, exc_info=True)
             self._task = None
 
