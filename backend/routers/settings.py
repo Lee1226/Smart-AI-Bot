@@ -88,12 +88,13 @@ async def get_settings(request: Request):
 
 
 @router.put("", response_model=Settings)
-async def update_settings(new_settings: SettingsUpdate, request: Request):
+async def update_settings(new_settings: SettingsUpdate, request: Request, db: AsyncSession = Depends(get_db)):
     require_role(request, "owner", "admin")
     account_id = require_account_id(request)
     if set(new_settings.clear_secrets) - SECRET_FIELDS:
         raise HTTPException(status_code=422, detail="Unknown secret field to clear")
     current = await load_settings(account_id)
+    old_recording_dir = recording_directory(current)
     incoming = new_settings.model_dump(exclude_none=True, exclude_unset=True,
                                       exclude={"configured_secrets", "clear_secrets"})
     # Blank password fields mean "keep the existing value".  The API never
@@ -107,6 +108,15 @@ async def update_settings(new_settings: SettingsUpdate, request: Request):
             storage_dir = recording_directory(current)
             storage_dir.mkdir(parents=True, exist_ok=True)
             current["recording_storage_dir"] = str(storage_dir)
+            if storage_dir != old_recording_dir:
+                owned_run_ids = (await db.execute(select(TestRun.id).where(TestRun.account_id == account_id))).scalars().all()
+                for run_id in owned_run_ids:
+                    old_file = old_recording_dir / f"{run_id}.mp4"
+                    new_file = storage_dir / f"{run_id}.mp4"
+                    if old_file.is_file():
+                        if new_file.exists():
+                            raise HTTPException(status_code=409, detail=f"目标目录已存在同名录像文件：{new_file.name}")
+                        shutil.move(str(old_file), str(new_file))
         except (OSError, ValueError) as exc:
             raise HTTPException(status_code=422, detail=f"录像保存目录无效：{exc}")
     for key in new_settings.clear_secrets:
