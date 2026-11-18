@@ -123,7 +123,7 @@ class ScrcpyMediaSession:
                     # immediately closes before the remote abstract socket is ready.
                     candidate.settimeout(1.0)
                     first_byte = candidate.recv(1)
-                    if first_byte != b"\\x00":
+                    if first_byte != b"\x00":
                         last_error = ConnectionError(
                             "ADB forward did not reach the Scrcpy video socket"
                         )
