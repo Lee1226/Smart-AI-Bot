@@ -342,7 +342,7 @@ async def _run_local_adb_hub(device_id: str, serial: str, hub: dict) -> None:
                                 target.get_nowait()
                             except asyncio.QueueEmpty:
                                 break
-                        target.put_nowait(None)
+                        target.put_nowait({"error": f"{kind} recorder queue overflow"})
                     logger.warning(
                         "[LIVE HUB] recorder dropped: queue full device_id=%s recorder=%s stream=%s",
                         device_id, recorder_id, kind,
