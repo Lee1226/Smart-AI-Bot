@@ -360,6 +360,8 @@ async def _run_local_adb_hub(device_id: str, serial: str, hub: dict) -> None:
                 total_bytes += len(packet.payload)
                 await publish(packet.payload)
 
+    media_tasks: set[asyncio.Task] = set()
+
     async def read_audio() -> None:
         try:
             while True:
@@ -407,8 +409,9 @@ async def _run_local_adb_hub(device_id: str, serial: str, hub: dict) -> None:
         )
         video_task = asyncio.create_task(read_video(), name=f"scrcpy-video-{device_id}")
         audio_task = asyncio.create_task(read_audio(), name=f"scrcpy-audio-{device_id}")
+        media_tasks = {video_task, audio_task}
         done, pending = await asyncio.wait(
-            {video_task, audio_task}, return_when=asyncio.FIRST_EXCEPTION
+            media_tasks, return_when=asyncio.FIRST_EXCEPTION
         )
         for task in done:
             exception = task.exception()
@@ -423,6 +426,11 @@ async def _run_local_adb_hub(device_id: str, serial: str, hub: dict) -> None:
         hub["error"] = str(exc)
         logger.warning("Local ADB audio/video producer stopped: device_id=%s error=%s", device_id, exc)
     finally:
+        for task in media_tasks:
+            if not task.done():
+                task.cancel()
+        if media_tasks:
+            await asyncio.gather(*media_tasks, return_exceptions=True)
         hub["ready"].set()
         async with lock:
             for recorder in hub.get("recorders", {}).values():
