@@ -9,12 +9,14 @@ import shutil
 
 from fastapi import APIRouter, Depends, HTTPException, Request
 from pydantic import BaseModel, Field
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from auth.access import require_account_id, require_role
 from core.settings_store import load_settings, save_settings
 from core.run_recorder import recording_directory, cleanup_expired_recordings
 from db.database import AsyncSessionLocal
+from db.models import TestRun
 
 router = APIRouter(prefix="/api/settings", tags=["settings"])
 
@@ -115,15 +117,17 @@ async def update_settings(new_settings: SettingsUpdate, request: Request):
 
 
 @router.get("/recording-storage")
-async def get_recording_storage(request: Request):
+async def get_recording_storage(request: Request, db: AsyncSession = Depends(get_db)):
     """Return real disk usage and recording inventory for the current account."""
     require_role(request, "owner", "admin")
     settings = await load_settings(require_account_id(request))
     directory = recording_directory(settings)
     directory.mkdir(parents=True, exist_ok=True)
-    cleanup_expired_recordings(directory, settings.get("recording_retention_days", 30))
+    account_id = require_account_id(request)
+    owned_run_ids = set((await db.execute(select(TestRun.id).where(TestRun.account_id == account_id))).scalars().all())
+    cleanup_expired_recordings(directory, settings.get("recording_retention_days", 30), owned_run_ids)
     usage = shutil.disk_usage(directory)
-    files = [p for p in directory.glob("*.mp4") if p.is_file()]
+    files = [p for p in directory.glob("*.mp4") if p.is_file() and p.stem in owned_run_ids]
     total_bytes = sum(p.stat().st_size for p in files)
     return {
         "directory": str(directory),
