@@ -9,6 +9,7 @@ import Workbench from './pages/Workbench'
 import Suites from './pages/Suites'
 import SuiteDetail from './pages/SuiteDetail'
 import Runs from './pages/Runs'
+import Recordings from './pages/Recordings'
 import Regressions from './pages/Regressions'
 import RunDetail from './pages/RunDetail'
 import Settings from './pages/Settings'
@@ -34,6 +35,7 @@ const NAV_GROUPS: { label: { zh: string; en: string }; items: NavigationItem[] }
     { to: '/quick', label: { zh: '任务执行', en: 'Execution' }, icon: '⚡', paths: ['/quick', '/regressions'] },
     { to: '/suites', label: { zh: '用例中心', en: 'Cases' }, icon: '🧪', paths: ['/suites', '/library', '/automation', '/recorder', '/knowledge', '/execution-plans', '/apps'] },
     { to: '/runs', label: { zh: '测试任务', en: 'Test tasks' }, icon: '▶', paths: ['/runs'] },
+    { to: '/recordings', label: { zh: '录像文件', en: 'Recordings' }, icon: '▣', paths: ['/recordings'] },
   ] },
   { label: { zh: '管理', en: 'Manage' }, items: [
     { to: '/settings', label: { zh: '设置与账号', en: 'Settings & account' }, icon: '⚙', paths: ['/settings', '/account'] },
@@ -56,6 +58,7 @@ const PAGE_TABS = {
   results: [
     { to: '/runs', zh: '任务管理', en: 'Task management' },
     { to: '/runs/compare', zh: '结果对比', en: 'Compare' },
+    { to: '/recordings', zh: '录像文件', en: 'Recordings' },
   ],
   settings: [
     { to: '/settings', zh: '平台设置', en: 'Settings' },
@@ -225,6 +228,7 @@ function AppLayout() {
             <Route path="/knowledge" element={<PageTabs section="cases"><Knowledge /></PageTabs>} />
             <Route path="/regressions" element={<PageTabs section="execution"><Regressions /></PageTabs>} />
             <Route path="/runs" element={<PageTabs section="results"><Runs /></PageTabs>} />
+            <Route path="/recordings" element={<PageTabs section="results"><Recordings /></PageTabs>} />
             <Route path="/runs/compare" element={<PageTabs section="results"><RunCompare /></PageTabs>} />
             <Route path="/runs/:runId" element={<PageTabs section="results"><RunDetail /></PageTabs>} />
             <Route path="/account" element={<PageTabs section="settings"><Account /></PageTabs>} />
