@@ -129,6 +129,8 @@ export interface Settings {
   webhook_type: string
   language: string
   recording_auto_enabled: boolean
+  recording_storage_dir: string
+  recording_retention_days: number
   configured_secrets: string[]
 }
 
@@ -603,6 +605,18 @@ export const fetchNodeContext = (nodeId: string) =>
 // ── Settings ─────────────────────────────────────────────────────────────────
 
 export const fetchSettings = () => api.get<Settings>('/settings').then(r => r.data)
+export interface RecordingStorageStats {
+  directory: string
+  retention_days: number
+  recording_count: number
+  recording_bytes: number
+  disk_total_bytes: number
+  disk_used_bytes: number
+  disk_free_bytes: number
+}
+export const fetchRecordingStorageStats = () =>
+  api.get<RecordingStorageStats>('/settings/recording-storage').then(r => r.data)
+
 export const saveSettings = (data: Partial<Settings> & { clear_secrets?: string[] }) =>
   api.put<Settings>('/settings', data).then(r => r.data)
 
