@@ -168,8 +168,10 @@ async def subscribe_local_adb_recorder(device_id: str, serial: str):
     """
     consumer_id = "rec-" + uuid.uuid4().hex
     lock = _local_adb_hub_lock(device_id)
-    video_queue = asyncio.Queue(maxsize=512)
-    audio_queue = asyncio.Queue(maxsize=512)
+    # Bound backlog to about 4.3s of 30fps video and 5.1s of 20ms audio.
+    # Overflow fails only this recording; it never blocks preview or capture.
+    video_queue = asyncio.Queue(maxsize=128)
+    audio_queue = asyncio.Queue(maxsize=256)
 
     while True:
         wait_for_stopping_hub = None
@@ -248,19 +250,49 @@ async def _run_local_adb_hub(device_id: str, serial: str, hub: dict) -> None:
     total_nals = 0
     last_stats = asyncio.get_running_loop().time()
 
-    async def publish(data: bytes, idle_flush: bool = False) -> None:
+    def enqueue_recorder_packet_locked(kind: str, packet) -> None:
+        """Fan out a packet while the device hub lock is already held."""
+        for recorder_id, recorder in list(hub.get("recorders", {}).items()):
+            if recorder.get("failed"):
+                continue
+            queue = recorder[kind]
+            try:
+                queue.put_nowait(packet)
+            except asyncio.QueueFull:
+                recorder["failed"] = True
+                for target in (recorder["video"], recorder["audio"]):
+                    while not target.empty():
+                        try:
+                            target.get_nowait()
+                        except asyncio.QueueEmpty:
+                            break
+                    target.put_nowait({"error": f"{kind} recorder queue overflow"})
+                logger.warning(
+                    "[LIVE HUB] recorder dropped: queue full device_id=%s recorder=%s stream=%s",
+                    device_id, recorder_id, kind,
+                )
+
+    async def publish(data: bytes, idle_flush: bool = False, recorder_packet=None) -> None:
         nonlocal total_nals, last_stats
-        if not data and not idle_flush:
+        if not data and not idle_flush and recorder_packet is None:
             return
         close_viewers = []
         async with lock:
             # Parser/cache update and subscriber fan-out share one lock. This
             # makes the bootstrap snapshot and following live bytes contiguous.
             batch = stream.feed(data) if data else stream.flush()
+            if recorder_packet is not None:
+                enqueue_recorder_packet_locked("video", recorder_packet)
             if not batch and not idle_flush:
                 return
             total_nals += batch.count(b"\x00\x00\x00\x01")
-            bootstrap = stream.bootstrap
+            # Avoid copying the cached GOP on every packet once all viewers
+            # have received their initial keyframe.
+            needs_bootstrap = any(
+                not hub["bootstrap_sent"].get(viewer_id, False)
+                for viewer_id in hub["subscribers"]
+            )
+            bootstrap = stream.bootstrap if needs_bootstrap else b""
             for viewer_id, queue in list(hub["subscribers"].items()):
                 try:
                     just_bootstrapped = False
@@ -315,7 +347,7 @@ async def _run_local_adb_hub(device_id: str, serial: str, hub: dict) -> None:
                 logger.info(
                     "[H264] stream stats: device_id=%s bytes=%d nals=%d idr=%d gop_bytes=%d idle_flush=%s viewers=%d",
                     device_id, total_bytes, total_nals, stream.idr_count,
-                    len(bootstrap), idle_flush, len(hub["subscribers"]),
+                    len(stream.gop), idle_flush, len(hub["subscribers"]),
                 )
                 last_stats = now
         for ws in close_viewers:
@@ -326,25 +358,7 @@ async def _run_local_adb_hub(device_id: str, serial: str, hub: dict) -> None:
 
     async def publish_recorder_packet(kind: str, packet) -> None:
         async with lock:
-            for recorder_id, recorder in list(hub.get("recorders", {}).items()):
-                if recorder.get("failed"):
-                    continue
-                queue = recorder[kind]
-                try:
-                    queue.put_nowait(packet)
-                except asyncio.QueueFull:
-                    recorder["failed"] = True
-                    for target in (recorder["video"], recorder["audio"]):
-                        while not target.empty():
-                            try:
-                                target.get_nowait()
-                            except asyncio.QueueEmpty:
-                                break
-                        target.put_nowait({"error": f"{kind} recorder queue overflow"})
-                    logger.warning(
-                        "[LIVE HUB] recorder dropped: queue full device_id=%s recorder=%s stream=%s",
-                        device_id, recorder_id, kind,
-                    )
+            enqueue_recorder_packet_locked(kind, packet)
 
     async def read_video() -> None:
         nonlocal total_bytes
@@ -356,9 +370,9 @@ async def _run_local_adb_hub(device_id: str, serial: str, hub: dict) -> None:
             if not packets:
                 continue
             for packet in packets:
-                await publish_recorder_packet("video", packet)
                 total_bytes += len(packet.payload)
-                await publish(packet.payload)
+                # Preview and recorder fan-out share one lock acquisition.
+                await publish(packet.payload, recorder_packet=packet)
 
     media_tasks: set[asyncio.Task] = set()
 
