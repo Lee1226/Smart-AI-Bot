@@ -113,6 +113,8 @@ class RunOut(BaseModel):
     total: int = 0
     total_tokens: int = 0
     has_recording: bool = False
+    recording_status: str = "pending"
+    recording_message: str = ""
 
 
 class ResultOut(BaseModel):
@@ -161,6 +163,24 @@ async def _run_out(run: TestRun, db: AsyncSession) -> RunOut:
     suite = await db.get(TestSuite, run.suite_id)
     run_settings = await load_settings(run.account_id or "")
     run_recording_dir = recording_directory(run_settings)
+    recording_exists = has_recording(run.id, run_recording_dir)
+    run_device = await db.get(__import__("db.models", fromlist=["Device"]).Device, run.device_id)
+    if recording_exists:
+        recording_status = "saved"
+        recording_message = "录像文件已生成，可以在任务详情中播放或下载。"
+    elif not run_settings.get("recording_auto_enabled", True):
+        recording_status = "disabled"
+        recording_message = "该账号已关闭自动录像。请到「录制与存储」设置中开启。"
+    elif run_device is None or run_device.connection_type != "adb_usb" or not run_device.adb_serial:
+        recording_status = "unsupported_device"
+        connection_type = getattr(run_device, "connection_type", "设备记录不存在")
+        recording_message = f"当前录像功能仅支持本机 ADB USB 设备；当前设备连接方式：{connection_type}。"
+    elif run.status in ("pending", "queued", "preparing", "running"):
+        recording_status = "pending"
+        recording_message = "测试执行中，录像文件将在任务结束并完成封装后显示。"
+    else:
+        recording_status = "failed"
+        recording_message = "任务已结束，但没有生成完整的音视频文件。请检查后端日志中该任务对应的 [rec:运行ID] 记录。"
     return RunOut(
         id=run.id,
         suite_id=run.suite_id,
@@ -179,7 +199,9 @@ async def _run_out(run: TestRun, db: AsyncSession) -> RunOut:
         skipped=counts.get("skip", 0),
         total=len(results),
         total_tokens=total_tokens,
-        has_recording=has_recording(run.id, run_recording_dir),
+        has_recording=recording_exists,
+        recording_status=recording_status,
+        recording_message=recording_message,
     )
 
 
