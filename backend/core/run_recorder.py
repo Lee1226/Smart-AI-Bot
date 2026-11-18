@@ -155,13 +155,19 @@ class RunRecorder:
         mux_lock = asyncio.Lock()
 
         async def consume(queue: asyncio.Queue, write_packet, stream_name: str) -> None:
+            stop_quiet_since: float | None = None
+            loop = asyncio.get_running_loop()
             while True:
                 if self._stop.is_set() and queue.empty():
-                    return
+                    if stop_quiet_since is None:
+                        stop_quiet_since = loop.time()
+                    elif loop.time() - stop_quiet_since >= 0.5:
+                        return
                 try:
                     item = await asyncio.wait_for(queue.get(), timeout=0.2)
                 except asyncio.TimeoutError:
                     continue
+                stop_quiet_since = None
                 if item is None:
                     return
                 if isinstance(item, dict) and item.get("error"):
