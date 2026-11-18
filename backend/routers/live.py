@@ -533,7 +533,7 @@ async def _subscribe_local_adb_stream(websocket: WebSocket, device_id: str, seri
         # Scrcpy startup may spend up to 20s connecting and another 20s
         # waiting for the first framed video packet. Do not reject a healthy
         # but slow start before that startup budget has elapsed.
-        await asyncio.wait_for(hub["ready"].wait(), timeout=45)
+        await asyncio.wait_for(hub["ready"].wait(), timeout=70)
         if hub["error"]:
             await websocket.close(code=1012, reason="Scrcpy producer failed; reconnect")
             return
