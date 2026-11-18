@@ -46,6 +46,8 @@ def build_replay_step(step: Dict[str, Any]) -> Dict[str, Any]:
 
     raw: Dict[str, Any] = {"kind": action}
     raw.update(args)
+    if action in {"tap", "tap_element"}:
+        raw["force_coordinate"] = bool(step.get("force_coordinate", False))
     if locator.get("resource_id") or locator.get("resourceId"):
         raw["resourceId"] = locator.get("resource_id") or locator.get("resourceId")
     if locator.get("text"):
