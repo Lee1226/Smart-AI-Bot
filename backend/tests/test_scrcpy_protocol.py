@@ -17,12 +17,12 @@ class ScrcpyMediaStreamParserTests(unittest.TestCase):
         parser = ScrcpyMediaStreamParser(
             stream_type="video", send_dummy_byte=True, send_device_meta=True
         )
-        device_name = b"Test Phone".ljust(64, b"\\x00")
-        prefix = b"\\x00" + device_name + struct.pack(">I", SCRCPY_VIDEO_H264)
+        device_name = b"Test Phone".ljust(64, b"\x00")
+        prefix = b"\x00" + device_name + struct.pack(">I", SCRCPY_VIDEO_H264)
         session = struct.pack(">QII", PACKET_FLAG_SESSION, 1080, 2400)
-        config_payload = b"\\x00\\x00\\x00\\x01\\x67SPS\\x00\\x00\\x00\\x01\\x68PPS"
+        config_payload = b"\x00\x00\x00\\x01\\x67SPS\x00\x00\x00\\x01\\x68PPS"
         config = struct.pack(">QI", PACKET_FLAG_CONFIG, len(config_payload)) + config_payload
-        frame_payload = b"\\x00\\x00\\x00\\x01\\x65IDR"
+        frame_payload = b"\x00\x00\x00\\x01\\x65IDR"
         frame = struct.pack(">QI", 1234567 | PACKET_FLAG_KEY_FRAME, len(frame_payload)) + frame_payload
 
         self.assertEqual(parser.feed(prefix[:20]), [])
