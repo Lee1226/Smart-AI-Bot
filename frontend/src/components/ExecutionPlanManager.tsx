@@ -35,9 +35,17 @@ function asNumber(value: unknown): string {
 
 function hasValidTapCoordinates(step: ExecutionPlanStep): boolean {
   const fallbackCoordinates = (step.fallback?.coordinates || {}) as Record<string, unknown>
-  const x = fallbackCoordinates.x ?? step.args?.x
-  const y = fallbackCoordinates.y ?? step.args?.y
+  const x = step.args?.x ?? fallbackCoordinates.x
+  const y = step.args?.y ?? fallbackCoordinates.y
   return [x, y].every(value => value !== undefined && value !== null && value !== '' && Number.isFinite(Number(value)))
+}
+
+function hasValidSwipeCoordinates(step: ExecutionPlanStep): boolean {
+  const fallbackCoordinates = (step.fallback?.coordinates || {}) as Record<string, unknown>
+  return ['x1', 'y1', 'x2', 'y2'].every(key => {
+    const value = step.args?.[key] ?? fallbackCoordinates[key]
+    return value !== undefined && value !== null && value !== '' && Number.isFinite(Number(value))
+  })
 }
 
 export default function ExecutionPlanManager({ suiteId, platform, device }: { suiteId: string; platform: string; device: Device | null }) {
@@ -161,6 +169,18 @@ export default function ExecutionPlanManager({ suiteId, platform, device }: { su
     const coordinates = { ...((fallback.coordinates as Record<string, unknown>) || {}), [key]: value === '' ? '' : Number(value) }
     patchStep(index, { fallback: { ...fallback, type: 'coordinate', coordinates } })
   }
+  const patchSwipeCoordinate = (index: number, key: 'x1' | 'y1' | 'x2' | 'y2', value: string) => {
+    const step = draftSteps[index]
+    const nextValue = value === '' ? '' : Number(value)
+    const fallback = (step.fallback || { type: 'coordinate', coordinates: {} }) as Record<string, unknown>
+    const coordinates = { ...((fallback.coordinates as Record<string, unknown>) || {}), [key]: nextValue }
+    // The replay adapter gives args precedence over fallback.coordinates.
+    // Keep both representations in sync so edited coordinates always take effect.
+    patchStep(index, {
+      args: { ...(step.args || {}), [key]: nextValue },
+      fallback: { ...fallback, type: 'coordinate', coordinates },
+    })
+  }
   const patchWait = (index: number, value: string) => {
     patchStep(index, { wait_condition: value === '' ? null : { type: 'delay', duration_ms: Math.max(0, Number(value) || 0) } })
   }
@@ -278,12 +298,18 @@ export default function ExecutionPlanManager({ suiteId, platform, device }: { su
       setEditError(t('至少保留一个执行步骤。', 'Keep at least one execution step.'))
       return
     }
-    const invalid = draftSteps.findIndex(step => !step.action || !step.executor || (step.force_coordinate && (!['tap', 'tap_element'].includes(step.action) || !hasValidTapCoordinates(step))))
+    const invalid = draftSteps.findIndex(step =>
+      !step.action || !step.executor ||
+      (step.force_coordinate && (!['tap', 'tap_element'].includes(step.action) || !hasValidTapCoordinates(step))) ||
+      (step.action === 'swipe' && !hasValidSwipeCoordinates(step))
+    )
     if (invalid >= 0) {
       const invalidStep = draftSteps[invalid]
-      setEditError(invalidStep.force_coordinate
-        ? `第 ${invalid + 1} 步已启用强制坐标点击，但没有有效的 X/Y 坐标，或该操作不是点击。`
-        : `第 ${invalid + 1} 步缺少操作类型或执行策略。`)
+      setEditError(invalidStep.action === 'swipe'
+        ? `第 ${invalid + 1} 步是坐标滑动，必须填写有效的起点 X/Y 和终点 X/Y。`
+        : invalidStep.force_coordinate
+          ? `第 ${invalid + 1} 步已启用强制坐标点击，但没有有效的 X/Y 坐标，或该操作不是点击。`
+          : `第 ${invalid + 1} 步缺少操作类型或执行策略。`)
       return
     }
     setEditError('')
@@ -432,9 +458,18 @@ export default function ExecutionPlanManager({ suiteId, platform, device }: { su
               />
             </div>
             {draftSteps.map((step, index) => {
-              const coords = ((step.fallback as Record<string, unknown> | null)?.coordinates || {}) as Record<string, unknown>
-              const coordinateX = coords.x ?? step.args?.x
-              const coordinateY = coords.y ?? step.args?.y
+              const fallback = (step.fallback || {}) as Record<string, unknown>
+              const coords = (fallback.coordinates || {}) as Record<string, unknown>
+              const coordinateX = step.args?.x ?? coords.x
+              const coordinateY = step.args?.y ?? coords.y
+              const swipeCoordinates = {
+                x1: step.args?.x1 ?? coords.x1,
+                y1: step.args?.y1 ?? coords.y1,
+                x2: step.args?.x2 ?? coords.x2,
+                y2: step.args?.y2 ?? coords.y2,
+              }
+              const swipeDuration = step.args?.duration_ms ?? coords.duration_ms ?? ''
+              const swipeCoordinateSpace = fallback.coordinate_space ?? step.args?.coordinate_space
               const waitMs = step.wait_condition?.type === 'delay' ? step.wait_condition.duration_ms : ''
               return (
                 <div key={step.step_id || index} className="overflow-hidden rounded-lg border border-gray-200">
@@ -524,10 +559,10 @@ export default function ExecutionPlanManager({ suiteId, platform, device }: { su
                         <div className="text-[10px] text-gray-400">执行时使用包名直接启动；未安装在当前设备的应用不可选择。</div>
                       </div>
                     )}
-                    {(step.action === 'swipe' || step.action === 'scroll') && (
+                    {step.action === 'scroll' && (
                       <>
                         <div>
-                          <label className={labelClass}>{t('滑动方向', 'Direction')}</label>
+                          <label className={labelClass}>{t('滚动方向', 'Scroll direction')}</label>
                           <select className={fieldClass} value={String(step.args?.direction || 'up')} onChange={e => patchArgs(index, 'direction', e.target.value)}>
                             <option value="up">{t('向上', 'Up')}</option><option value="down">{t('向下', 'Down')}</option><option value="left">{t('向左', 'Left')}</option><option value="right">{t('向右', 'Right')}</option>
                           </select>
@@ -535,6 +570,34 @@ export default function ExecutionPlanManager({ suiteId, platform, device }: { su
                         <div>
                           <label className={labelClass}>{t('持续时间（毫秒）', 'Duration (ms)')}</label>
                           <input type="number" min="0" className={fieldClass} value={asNumber(step.args?.duration_ms)} onChange={e => patchArgs(index, 'duration_ms', Number(e.target.value) || 0)} />
+                        </div>
+                      </>
+                    )}
+                    {step.action === 'swipe' && (
+                      <>
+                        <div className="md:col-span-2 rounded-md border border-blue-100 bg-blue-50/50 p-3">
+                          <div className="flex flex-wrap items-center justify-between gap-2">
+                            <span className="text-xs font-semibold text-gray-700">{t('滑动坐标', 'Swipe coordinates')}</span>
+                            <span className="text-[10px] text-gray-500">{t('坐标空间', 'Coordinate space')}: {String(swipeCoordinateSpace || t('未标注', 'Not specified'))}</span>
+                          </div>
+                          <p className="mt-1 text-[11px] text-gray-500">{t('起点和终点坐标来自录制数据。编辑时会同步保存到执行参数和坐标兜底数据，确保运行时使用修改后的值。', 'Coordinates come from the recording. Edits are saved to both execution arguments and fallback data so the updated values are used at runtime.')}</p>
+                          <div className="mt-3 grid grid-cols-2 gap-3 md:grid-cols-4">
+                            {([
+                              ['x1', t('起点 X', 'Start X')],
+                              ['y1', t('起点 Y', 'Start Y')],
+                              ['x2', t('终点 X', 'End X')],
+                              ['y2', t('终点 Y', 'End Y')],
+                            ] as const).map(([key, label]) => (
+                              <div key={key}>
+                                <label className={labelClass}>{label}</label>
+                                <input type="number" className={fieldClass} value={asNumber(swipeCoordinates[key])} onChange={e => patchSwipeCoordinate(index, key, e.target.value)} placeholder={key.toUpperCase()} />
+                              </div>
+                            ))}
+                          </div>
+                        </div>
+                        <div>
+                          <label className={labelClass}>{t('持续时间（毫秒）', 'Duration (ms)')}</label>
+                          <input type="number" min="0" className={fieldClass} value={asNumber(swipeDuration)} onChange={e => patchArgs(index, 'duration_ms', Number(e.target.value) || 0)} />
                         </div>
                       </>
                     )}
