@@ -1,0 +1,311 @@
+"""Scrcpy 4.x audio/video transport for task recording.
+
+The existing ScrcpyVideoSession remains the preview-compatible raw H.264 path.
+This session opens the two media sockets of one Scrcpy server instance and
+preserves packet PTS for a recorder. It intentionally does not mux or persist
+media; the shared live hub owns fan-out and the recorder owns MP4 muxing.
+"""
+from __future__ import annotations
+
+import asyncio
+import logging
+import os
+import random
+import shutil
+import socket
+import subprocess
+import threading
+import time
+from collections import deque
+from pathlib import Path
+
+from agent.scrcpy_protocol import (
+    SCRCPY_AUDIO_AAC,
+    ScrcpyMediaStreamParser,
+    ScrcpyPacket,
+)
+from agent.scrcpy_video import (
+    DEVICE_SERVER_PATH,
+    SCRCPY_VERSION,
+    _creationflags,
+    _ensure_server_on_device,
+    _run_adb,
+    _video_setting,
+    server_path,
+)
+
+logger = logging.getLogger(__name__)
+
+SERVER_CONNECT_TIMEOUT = 15.0
+FIRST_VIDEO_PACKET_TIMEOUT = 20.0
+READ_SIZE = 64 * 1024
+
+
+class ScrcpyMediaSession:
+    """Own one Scrcpy server and its separate video/audio TCP sockets."""
+
+    def __init__(
+        self,
+        adb: str,
+        serial: str,
+        max_size: int | None = None,
+        bit_rate: int | None = None,
+        max_fps: int | None = None,
+        audio_bit_rate: int = 128_000,
+    ) -> None:
+        self.adb = adb
+        self.serial = serial
+        self.max_size = max_size if max_size is not None else _video_setting(
+            "SCRCPY_MAX_SIZE", 1280, 480, 2560
+        )
+        self.bit_rate = bit_rate if bit_rate is not None else _video_setting(
+            "SCRCPY_BIT_RATE", 8_000_000, 500_000, 40_000_000
+        )
+        self.max_fps = max_fps if max_fps is not None else _video_setting(
+            "SCRCPY_MAX_FPS", 30, 5, 60
+        )
+        self.audio_bit_rate = audio_bit_rate
+        self.scid = f"{random.getrandbits(31):08x}"
+        self.port = self._free_port()
+        self.video_socket: socket.socket | None = None
+        self.audio_socket: socket.socket | None = None
+        self.server_process: subprocess.Popen | None = None
+        self.server_log_thread: threading.Thread | None = None
+        self.server_logs: deque[str] = deque(maxlen=80)
+        self.forward_created = False
+        self.started = False
+        self.video_parser = ScrcpyMediaStreamParser(
+            stream_type="video",
+            send_dummy_byte=True,
+            send_device_meta=True,
+            send_codec_meta=True,
+        )
+        self.audio_parser = ScrcpyMediaStreamParser(
+            stream_type="audio",
+            send_dummy_byte=False,
+            send_device_meta=False,
+            send_codec_meta=True,
+        )
+        self._pending_video: deque[ScrcpyPacket] = deque()
+
+    @staticmethod
+    def _free_port() -> int:
+        with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as sock:
+            sock.bind(("127.0.0.1", 0))
+            return int(sock.getsockname()[1])
+
+    @property
+    def video_metadata(self):
+        return self.video_parser.metadata
+
+    @property
+    def audio_codec_id(self) -> int | None:
+        metadata = self.audio_parser.metadata
+        return metadata.codec_id if metadata is not None else None
+
+    def _connect_socket(self, label: str) -> socket.socket:
+        deadline = time.monotonic() + SERVER_CONNECT_TIMEOUT
+        last_error: Exception | None = None
+        while time.monotonic() < deadline:
+            if self.server_process is not None and self.server_process.poll() is not None:
+                raise self._startup_error(
+                    f"Scrcpy server exited with code {self.server_process.returncode}"
+                )
+            candidate: socket.socket | None = None
+            try:
+                candidate = socket.create_connection(("127.0.0.1", self.port), timeout=1)
+                candidate.settimeout(0.25)
+                result = candidate
+                candidate = None
+                logger.info(
+                    "[SCRCPY MEDIA] %s socket connected: serial=%s scid=%s port=%s",
+                    label, self.serial, self.scid, self.port,
+                )
+                return result
+            except OSError as exc:
+                last_error = exc
+                time.sleep(0.2)
+            finally:
+                if candidate is not None:
+                    candidate.close()
+        raise self._startup_error(f"Scrcpy {label} socket connection timed out: {last_error}")
+
+    def _start(self) -> None:
+        jar = server_path()
+        if jar is None:
+            raise RuntimeError(
+                "未找到 Scrcpy Server。请确认 backend/assets/ 中存在 "
+                f"scrcpy-server-v{SCRCPY_VERSION}，或设置 SCRCPY_SERVER_PATH"
+            )
+
+        _ensure_server_on_device(self.adb, self.serial, jar)
+        socket_name = f"scrcpy_{self.scid}"
+        _run_adb(
+            self.adb, self.serial, "forward",
+            f"tcp:{self.port}", f"localabstract:{socket_name}", timeout=10,
+        )
+        self.forward_created = True
+
+        command = [
+            self.adb, "-s", self.serial, "shell",
+            f"CLASSPATH={DEVICE_SERVER_PATH}", "app_process", "/",
+            "com.genymobile.scrcpy.Server", SCRCPY_VERSION,
+            f"scid={self.scid}",
+            "log_level=info",
+            "video=true", "audio=true", "control=false",
+            "video_codec=h264", "audio_codec=aac", "audio_source=output",
+            f"video_bit_rate={self.bit_rate}",
+            f"audio_bit_rate={self.audio_bit_rate}",
+            f"max_size={self.max_size}",
+            f"max_fps={self.max_fps}",
+            "tunnel_forward=true",
+            # Keep Scrcpy frame PTS and codec metadata for audio/video muxing.
+            # DesktopConnection accepts video first, then audio, on this port.
+            "send_dummy_byte=true",
+            "send_device_meta=true",
+            "send_codec_meta=true",
+            "send_frame_meta=true",
+        ]
+        self.server_process = subprocess.Popen(
+            command,
+            stdin=subprocess.DEVNULL,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.STDOUT,
+            bufsize=0,
+            creationflags=_creationflags(),
+        )
+        self.server_log_thread = threading.Thread(
+            target=self._drain_server_logs,
+            name=f"scrcpy-media-log-{self.scid}",
+            daemon=True,
+        )
+        self.server_log_thread.start()
+
+        try:
+            # Scrcpy's tunnel-forward accept order is video, then audio.
+            # Connect both before waiting for media; otherwise the server can
+            # remain blocked in accept(audio) while the client waits for video.
+            self.video_socket = self._connect_socket("video")
+            self.audio_socket = self._connect_socket("audio")
+            self.started = True
+        except Exception:
+            self._stop()
+            raise
+
+    def _drain_server_logs(self) -> None:
+        process = self.server_process
+        if process is None or process.stdout is None:
+            return
+        try:
+            for raw_line in iter(process.stdout.readline, b""):
+                line = raw_line.decode("utf-8", errors="replace").strip()
+                if line:
+                    self.server_logs.append(line)
+                    logger.info("[SCRCPY SERVER] serial=%s scid=%s %s", self.serial, self.scid, line)
+        except (OSError, ValueError):
+            logger.debug("Scrcpy media log reader stopped: serial=%s scid=%s", self.serial, self.scid)
+
+    def _startup_error(self, message: str) -> RuntimeError:
+        recent = " | ".join(list(self.server_logs)[-12:])
+        return RuntimeError(f"{message}; recent server logs: {recent}" if recent else message)
+
+    def _recv_packets(self, sock: socket.socket | None, parser: ScrcpyMediaStreamParser) -> list[ScrcpyPacket] | None:
+        if sock is None:
+            raise RuntimeError("Scrcpy media socket is not connected")
+        try:
+            chunk = sock.recv(READ_SIZE)
+        except socket.timeout:
+            return None
+        except OSError:
+            if sock.fileno() < 0:
+                return []
+            raise
+        if not chunk:
+            return []
+        packets = parser.feed(chunk)
+        if parser.stream_type == "audio" and parser.metadata is not None:
+            if parser.metadata.codec_id != SCRCPY_AUDIO_AAC:
+                raise RuntimeError(
+                    "Scrcpy audio capture unavailable or unsupported: "
+                    f"codec_id=0x{parser.metadata.codec_id:08x} (AAC required)"
+                )
+        return packets
+
+    def _read_video_until_packet(self) -> None:
+        deadline = time.monotonic() + FIRST_VIDEO_PACKET_TIMEOUT
+        while time.monotonic() < deadline:
+            packets = self._recv_packets(self.video_socket, self.video_parser)
+            if packets:
+                self._pending_video.extend(packets)
+                return
+            if packets == []:
+                raise RuntimeError("Scrcpy video socket closed before the first packet")
+        raise TimeoutError("Scrcpy video stream did not produce its first packet")
+
+    async def start(self) -> None:
+        try:
+            await asyncio.to_thread(self._start)
+            await asyncio.to_thread(self._read_video_until_packet)
+        except Exception:
+            await self.stop()
+            raise
+
+    async def read_video_packets(self) -> list[ScrcpyPacket] | None:
+        if self._pending_video:
+            return [self._pending_video.popleft()]
+        return await asyncio.to_thread(
+            self._recv_packets, self.video_socket, self.video_parser
+        )
+
+    async def read_audio_packets(self) -> list[ScrcpyPacket] | None:
+        return await asyncio.to_thread(
+            self._recv_packets, self.audio_socket, self.audio_parser
+        )
+
+    def _stop(self) -> None:
+        for attr in ("video_socket", "audio_socket"):
+            sock = getattr(self, attr)
+            if sock is not None:
+                try:
+                    sock.shutdown(socket.SHUT_RDWR)
+                except OSError:
+                    pass
+                try:
+                    sock.close()
+                except OSError:
+                    pass
+                setattr(self, attr, None)
+
+        process = self.server_process
+        if process is not None and process.poll() is None:
+            process.terminate()
+            try:
+                process.wait(timeout=3)
+            except subprocess.TimeoutExpired:
+                process.kill()
+                process.wait(timeout=2)
+        if process is not None and process.stdout is not None:
+            try:
+                process.stdout.close()
+            except OSError:
+                pass
+        self.server_process = None
+
+        if self.server_log_thread is not None and self.server_log_thread.is_alive():
+            self.server_log_thread.join(timeout=1)
+        self.server_log_thread = None
+
+        if self.forward_created:
+            try:
+                subprocess.run(
+                    [self.adb, "-s", self.serial, "forward", "--remove", f"tcp:{self.port}"],
+                    stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+                    timeout=5, check=False, creationflags=_creationflags(),
+                )
+            except Exception:
+                logger.debug("Scrcpy media forward cleanup failed: serial=%s", self.serial, exc_info=True)
+            self.forward_created = False
+        self.started = False
+
+    async def stop(self) -> None:
+        await asyncio.to_thread(self._stop)
