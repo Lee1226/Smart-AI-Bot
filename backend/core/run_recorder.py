@@ -1,24 +1,20 @@
-"""Records a run's device screen via ADB screenrecord (local devices only).
+"""Task-scoped recording from the shared Scrcpy audio/video hub.
 
-We record ON-DEVICE mp4 segments (`adb shell screenrecord <file>`) rather than
-streaming raw H.264 to stdout: the on-device encoder/muxer writes correct frame
-timestamps, so playback runs at real-time speed (a raw elementary stream has no
-timestamps, which made replay play slow). screenrecord caps at ~3 min/segment,
-so we chain segments and concat them with ffmpeg when the run ends.
+The recorder subscribes to the existing per-device Scrcpy producer. Browser
+preview and recording therefore share one device-side Scrcpy process, while
+each consumer has independent bounded queues.
+"""
+from __future__ import annotations
 
-Remote devices (no local ADB) are skipped — the per-step screenshot replay
-covers those."""
 import asyncio
 import logging
 import os
 import shutil
-import subprocess
-from pathlib import Path
-from typing import List, Optional
 from datetime import datetime
+from pathlib import Path
+from typing import Optional
 
 logger = logging.getLogger(__name__)
-
 REC_DIR = Path(__file__).parent.parent / "data" / "recordings"
 
 
@@ -47,147 +43,178 @@ def cleanup_expired_recordings(directory: Path, retention_days: int, owned_run_i
     return removed
 
 
-def _adb_path() -> Optional[str]:
-    found = shutil.which("adb")
-    if found:
-        return found
-    fallback = os.path.expanduser("~/Library/Android/sdk/platform-tools/adb")
-    return fallback if os.path.exists(fallback) else None
-
-
-def _single_adb_serial() -> Optional[str]:
-    """Return the serial only when exactly one device is attached (unambiguous)."""
-    adb = _adb_path()
-    if not adb:
-        return None
-    try:
-        out = subprocess.run([adb, "devices"], capture_output=True, text=True, timeout=5).stdout
-    except Exception:
-        return None
-    serials = [l.split()[0] for l in out.splitlines()[1:] if len(l.split()) >= 2 and l.split()[1] == "device"]
-    return serials[0] if len(serials) == 1 else None
-
-
 def recording_path(run_id: str, directory: Optional[Path] = None) -> Path:
     return (directory or REC_DIR) / f"{run_id}.mp4"
 
 
 def has_recording(run_id: str, directory: Optional[Path] = None) -> bool:
-    p = recording_path(run_id, directory)
-    return p.exists() and p.stat().st_size > 0
-
-
-async def _run(*args: str, timeout: Optional[float] = None) -> None:
-    proc = await asyncio.create_subprocess_exec(
-        *args, stdout=asyncio.subprocess.DEVNULL, stderr=asyncio.subprocess.DEVNULL,
-    )
-    try:
-        await asyncio.wait_for(proc.wait(), timeout=timeout)
-    except Exception:
-        if proc.returncode is None:
-            proc.kill()
+    path = recording_path(run_id, directory)
+    return path.exists() and path.stat().st_size > 0
 
 
 class RunRecorder:
+    """Own one task's subscription and MP4 output; never owns the Scrcpy hub."""
+
     def __init__(self, run_id: str):
         self.run_id = run_id
         self.serial: Optional[str] = None
         self.rec_dir: Path = REC_DIR
         self._task: Optional[asyncio.Task] = None
-        self._proc: Optional[asyncio.subprocess.Process] = None
         self._stop = asyncio.Event()
-        self._device_files: List[str] = []
+        self._video_queue: asyncio.Queue | None = None
+        self._audio_queue: asyncio.Queue | None = None
+        self._release = None
+        self._recording_error: str | None = None
+        self._started = False
 
     async def start(self, device_id: Optional[str] = None) -> bool:
-        # Recording is controlled by the account that owns this run.
+        if not device_id:
+            return False
         try:
             from db.database import AsyncSessionLocal
+            from db.models import Device, TestRun
             from sqlalchemy import select
-            from db.models import TestRun
             from core.settings_store import load_settings
+
             async with AsyncSessionLocal() as db:
                 run = await db.get(TestRun, self.run_id)
-                owned_run_ids = set((await db.execute(select(TestRun.id).where(TestRun.account_id == (run.account_id if run else "")))).scalars().all())
-            if run is not None:
-                settings = await load_settings(run.account_id or "")
-                if not settings.get("recording_auto_enabled", True):
-                    logger.info("[rec:%s] automatic recording disabled by account settings", self.run_id)
+                if run is None:
+                    logger.warning("[rec:%s] run record not found; recording skipped", self.run_id)
                     return False
-                self.rec_dir = recording_directory(settings)
-                self.rec_dir.mkdir(parents=True, exist_ok=True)
-                cleanup_expired_recordings(self.rec_dir, settings.get("recording_retention_days", 30), owned_run_ids)
-        except Exception as exc:
-            logger.warning("[rec:%s] could not read recording settings; using default enabled: %s", self.run_id, exc)
-        if device_id:
-            from db.database import AsyncSessionLocal
-            from db.models import Device
-            async with AsyncSessionLocal() as db:
                 device = await db.get(Device, device_id)
-            if device is None or device.connection_type in {"browser_usb", "adb_bridge", "hdc_bridge", "ios_bridge"}:
-                # USB belongs to a browser/bridge on another host. Never record
-                # an unrelated server-side phone for that registered device.
-                return False
-        self.serial = _single_adb_serial()
-        if not self.serial:
-            return False
-        self.rec_dir.mkdir(parents=True, exist_ok=True)
-        self._task = asyncio.create_task(self._loop())
-        logger.info("[rec:%s] recording via adb %s", self.run_id, self.serial)
-        return True
+                owned_run_ids = set((
+                    await db.execute(
+                        select(TestRun.id).where(TestRun.account_id == run.account_id)
+                    )
+                ).scalars().all())
 
-    async def _loop(self) -> None:
-        adb = _adb_path()
-        n = 0
-        while not self._stop.is_set():
-            devfile = f"/sdcard/smartrec_{self.run_id}_{n}.mp4"
-            self._proc = await asyncio.create_subprocess_exec(
-                adb, "-s", self.serial, "shell", "screenrecord", "--time-limit", "180", devfile,
-                stdout=asyncio.subprocess.DEVNULL, stderr=asyncio.subprocess.DEVNULL,
+            settings = await load_settings(run.account_id or "")
+            if not settings.get("recording_auto_enabled", True):
+                logger.info("[rec:%s] automatic recording disabled by account settings", self.run_id)
+                return False
+            self.rec_dir = recording_directory(settings)
+            self.rec_dir.mkdir(parents=True, exist_ok=True)
+            cleanup_expired_recordings(
+                self.rec_dir, settings.get("recording_retention_days", 30), owned_run_ids
             )
-            await self._proc.wait()
-            self._device_files.append(devfile)
-            n += 1
+
+            # Only server-attached ADB USB devices are eligible for this
+            # Scrcpy transport. Never fall back to an arbitrary attached phone.
+            if device is None or device.connection_type != "adb_usb" or not device.adb_serial:
+                logger.info(
+                    "[rec:%s] device is not a bound local ADB USB device; recording skipped",
+                    self.run_id,
+                )
+                return False
+            self.serial = device.adb_serial
+
+            from routers.live import subscribe_local_adb_recorder
+            video_queue, audio_queue, metadata, release = await subscribe_local_adb_recorder(
+                device_id, self.serial
+            )
+            video_meta = metadata.get("video") if isinstance(metadata, dict) else None
+            width = getattr(video_meta, "width", None)
+            height = getattr(video_meta, "height", None)
+            if not width or not height:
+                await release()
+                raise RuntimeError("Scrcpy did not report valid video dimensions")
+
+            self._video_queue = video_queue
+            self._audio_queue = audio_queue
+            self._release = release
+            self._stop = asyncio.Event()
+            self._recording_error = None
+            self._task = asyncio.create_task(
+                self._consume_av(int(width), int(height)),
+                name=f"run-recorder-{self.run_id}",
+            )
+            self._started = True
+            logger.info(
+                "[rec:%s] subscribed to shared Scrcpy A/V: serial=%s size=%sx%s",
+                self.run_id, self.serial, width, height,
+            )
+            return True
+        except Exception as exc:
+            logger.warning("[rec:%s] could not start A/V recording: %s", self.run_id, exc)
+            self._recording_error = str(exc)
+            if self._release is not None:
+                try:
+                    await self._release()
+                except Exception:
+                    logger.debug("[rec:%s] subscription cleanup failed", self.run_id, exc_info=True)
+                self._release = None
+            return False
+
+    async def _consume_av(self, width: int, height: int) -> None:
+        from core.scrcpy_mp4_muxer import ScrcpyMp4Muxer
+
+        final_path = recording_path(self.run_id, self.rec_dir)
+        temp_path = self.rec_dir / f"{self.run_id}.part.mp4"
+        temp_path.unlink(missing_ok=True)
+        muxer = ScrcpyMp4Muxer(temp_path, width, height)
+        mux_lock = asyncio.Lock()
+
+        async def consume(queue: asyncio.Queue, write_packet, stream_name: str) -> None:
+            while True:
+                if self._stop.is_set() and queue.empty():
+                    return
+                try:
+                    item = await asyncio.wait_for(queue.get(), timeout=0.2)
+                except asyncio.TimeoutError:
+                    continue
+                if item is None:
+                    return
+                if isinstance(item, dict) and item.get("error"):
+                    raise RuntimeError(f"{stream_name} capture failed: {item['error']}")
+                async with mux_lock:
+                    await asyncio.to_thread(write_packet, item)
+
+        try:
+            if self._video_queue is None or self._audio_queue is None:
+                raise RuntimeError("Recorder queues are not initialized")
+            await asyncio.gather(
+                consume(self._video_queue, muxer.write_video, "video"),
+                consume(self._audio_queue, muxer.write_audio, "audio"),
+            )
+            await asyncio.to_thread(muxer.close)
+            os.replace(temp_path, final_path)
+            logger.info("[rec:%s] saved audio/video recording: %s", self.run_id, final_path)
+        except asyncio.CancelledError:
+            await asyncio.to_thread(muxer.abort)
+            raise
+        except Exception as exc:
+            self._recording_error = str(exc)
+            logger.warning("[rec:%s] audio/video recording incomplete: %s", self.run_id, exc)
+            try:
+                await asyncio.to_thread(muxer.abort)
+            except Exception:
+                logger.debug("[rec:%s] muxer abort failed", self.run_id, exc_info=True)
+            temp_path.unlink(missing_ok=True)
 
     async def stop(self) -> None:
-        if self._task is None:
+        if not self._started and self._release is None:
             return
         self._stop.set()
-        # SIGINT lets the on-device screenrecord finalize the current mp4 (write
-        # the moov atom) so the last segment is playable.
-        adb = _adb_path()
-        await _run(adb, "-s", self.serial, "shell", "pkill", "-INT", "screenrecord", timeout=5)
-        try:
-            await asyncio.wait_for(self._task, timeout=15)
-        except Exception:
-            pass
-        await self._finalize()
+        if self._task is not None:
+            try:
+                await asyncio.wait_for(self._task, timeout=20)
+            except asyncio.TimeoutError:
+                self._task.cancel()
+                await asyncio.gather(self._task, return_exceptions=True)
+                logger.warning("[rec:%s] recorder drain timed out", self.run_id)
+            except Exception:
+                logger.warning("[rec:%s] recorder task stopped with error", self.run_id, exc_info=True)
+            self._task = None
 
-    async def _finalize(self) -> None:
-        adb = _adb_path()
-        local_segs: List[Path] = []
-        for i, dev in enumerate(self._device_files):
-            local = self.rec_dir / f"{self.run_id}_seg{i}.mp4"
-            await _run(adb, "-s", self.serial, "pull", dev, str(local), timeout=30)
-            if local.exists() and local.stat().st_size > 0:
-                local_segs.append(local)
-            await _run(adb, "-s", self.serial, "shell", "rm", "-f", dev, timeout=10)
+        if self._release is not None:
+            try:
+                await self._release()
+            except Exception:
+                logger.warning("[rec:%s] failed to release shared Scrcpy subscription", self.run_id, exc_info=True)
+            self._release = None
 
-        if not local_segs:
-            return
-        mp4 = recording_path(self.run_id, self.rec_dir)
-        try:
-            if len(local_segs) == 1:
-                local_segs[0].replace(mp4)
-            else:
-                listfile = self.rec_dir / f"{self.run_id}_list.txt"
-                listfile.write_text("".join(f"file '{s.name}'\n" for s in local_segs))
-                await _run(
-                    "ffmpeg", "-y", "-f", "concat", "-safe", "0", "-i", str(listfile),
-                    "-c", "copy", "-movflags", "+faststart", str(mp4), timeout=120,
-                )
-                listfile.unlink(missing_ok=True)
-                for s in local_segs:
-                    s.unlink(missing_ok=True)
-            logger.info("[rec:%s] saved %s", self.run_id, mp4.name)
-        except Exception as e:
-            logger.warning("[rec:%s] finalize failed: %s", self.run_id, e)
+        self._video_queue = None
+        self._audio_queue = None
+        self._started = False
+        if self._recording_error:
+            logger.warning("[rec:%s] recording not saved: %s", self.run_id, self._recording_error)
