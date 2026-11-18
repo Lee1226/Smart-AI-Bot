@@ -59,7 +59,6 @@ class ScrcpyMediaStreamParser:
         self.send_codec_meta = send_codec_meta
         self.buffer = bytearray()
         self.metadata: ScrcpyStreamMetadata | None = None
-        self._prefix_consumed = False
         self._session_seen = stream_type == "audio"
 
     def feed(self, data: bytes) -> list[ScrcpyPacket]:
