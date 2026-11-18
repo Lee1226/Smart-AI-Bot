@@ -15,10 +15,34 @@ import shutil
 import subprocess
 from pathlib import Path
 from typing import List, Optional
+from datetime import datetime
 
 logger = logging.getLogger(__name__)
 
 REC_DIR = Path(__file__).parent.parent / "data" / "recordings"
+
+
+def recording_directory(settings: Optional[dict] = None) -> Path:
+    configured = (settings or {}).get("recording_storage_dir") or str(REC_DIR)
+    path = Path(configured).expanduser().resolve()
+    if path == Path(path.anchor):
+        raise ValueError("Recording directory cannot be a filesystem root")
+    return path
+
+
+def cleanup_expired_recordings(directory: Path, retention_days: int) -> int:
+    cutoff = datetime.now().timestamp() - max(1, int(retention_days)) * 86400
+    removed = 0
+    if not directory.exists():
+        return 0
+    for path in directory.glob("*.mp4"):
+        try:
+            if path.is_file() and path.stat().st_mtime < cutoff:
+                path.unlink()
+                removed += 1
+        except OSError:
+            logger.warning("Could not remove expired recording %s", path, exc_info=True)
+    return removed
 
 
 def _adb_path() -> Optional[str]:
@@ -42,12 +66,12 @@ def _single_adb_serial() -> Optional[str]:
     return serials[0] if len(serials) == 1 else None
 
 
-def recording_path(run_id: str) -> Path:
-    return REC_DIR / f"{run_id}.mp4"
+def recording_path(run_id: str, directory: Optional[Path] = None) -> Path:
+    return (directory or REC_DIR) / f"{run_id}.mp4"
 
 
-def has_recording(run_id: str) -> bool:
-    p = recording_path(run_id)
+def has_recording(run_id: str, directory: Optional[Path] = None) -> bool:
+    p = recording_path(run_id, directory)
     return p.exists() and p.stat().st_size > 0
 
 
@@ -66,6 +90,7 @@ class RunRecorder:
     def __init__(self, run_id: str):
         self.run_id = run_id
         self.serial: Optional[str] = None
+        self.rec_dir: Path = REC_DIR
         self._task: Optional[asyncio.Task] = None
         self._proc: Optional[asyncio.subprocess.Process] = None
         self._stop = asyncio.Event()
@@ -84,6 +109,9 @@ class RunRecorder:
                 if not settings.get("recording_auto_enabled", True):
                     logger.info("[rec:%s] automatic recording disabled by account settings", self.run_id)
                     return False
+                self.rec_dir = recording_directory(settings)
+                self.rec_dir.mkdir(parents=True, exist_ok=True)
+                cleanup_expired_recordings(self.rec_dir, settings.get("recording_retention_days", 30))
         except Exception as exc:
             logger.warning("[rec:%s] could not read recording settings; using default enabled: %s", self.run_id, exc)
         if device_id:
@@ -98,7 +126,7 @@ class RunRecorder:
         self.serial = _single_adb_serial()
         if not self.serial:
             return False
-        REC_DIR.mkdir(parents=True, exist_ok=True)
+        self.rec_dir.mkdir(parents=True, exist_ok=True)
         self._task = asyncio.create_task(self._loop())
         logger.info("[rec:%s] recording via adb %s", self.run_id, self.serial)
         return True
@@ -134,7 +162,7 @@ class RunRecorder:
         adb = _adb_path()
         local_segs: List[Path] = []
         for i, dev in enumerate(self._device_files):
-            local = REC_DIR / f"{self.run_id}_seg{i}.mp4"
+            local = self.rec_dir / f"{self.run_id}_seg{i}.mp4"
             await _run(adb, "-s", self.serial, "pull", dev, str(local), timeout=30)
             if local.exists() and local.stat().st_size > 0:
                 local_segs.append(local)
@@ -142,12 +170,12 @@ class RunRecorder:
 
         if not local_segs:
             return
-        mp4 = recording_path(self.run_id)
+        mp4 = recording_path(self.run_id, self.rec_dir)
         try:
             if len(local_segs) == 1:
                 local_segs[0].replace(mp4)
             else:
-                listfile = REC_DIR / f"{self.run_id}_list.txt"
+                listfile = self.rec_dir / f"{self.run_id}_list.txt"
                 listfile.write_text("".join(f"file '{s.name}'\n" for s in local_segs))
                 await _run(
                     "ffmpeg", "-y", "-f", "concat", "-safe", "0", "-i", str(listfile),
