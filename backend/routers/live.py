@@ -442,7 +442,27 @@ async def _run_local_adb_hub(device_id: str, serial: str, hub: dict) -> None:
         # must wait for this task to finish instead of attaching to a dead hub.
         async with lock:
             hub["stopping"] = True
-        logger.warning("Local ADB audio/video producer stopped: device_id=%s error=%s", device_id, exc)
+        process = getattr(session, "server_process", None)
+        process_state = None if process is None else {
+            "pid": process.pid,
+            "returncode": process.poll(),
+        }
+        socket_state = {
+            "video_connected": getattr(session, "video_socket", None) is not None
+                and session.video_socket.fileno() >= 0,
+            "audio_connected": getattr(session, "audio_socket", None) is not None
+                and session.audio_socket.fileno() >= 0,
+            "audio_error": getattr(session, "audio_error", None),
+            "fallback": getattr(session, "_video_only_fallback", None) is not None,
+        }
+        recent_server_logs = list(getattr(session, "server_logs", []))[-20:]
+        logger.error(
+            "Local ADB Scrcpy producer crashed: device_id=%s serial=%s scid=%s "
+            "error=%s process=%s sockets=%s server_logs=%s",
+            device_id, serial, getattr(session, "scid", None), exc,
+            process_state, socket_state, recent_server_logs,
+            exc_info=True,
+        )
     finally:
         for task in media_tasks:
             if not task.done():
