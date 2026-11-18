@@ -373,14 +373,30 @@ async def _run_local_adb_hub(device_id: str, serial: str, hub: dict) -> None:
                 await publish(packet.payload)
 
     async def read_audio() -> None:
-        while True:
-            packets = await session.read_audio_packets()
-            if packets is None:
-                continue
-            if not packets:
-                continue
-            for packet in packets:
-                await publish_recorder_packet("audio", packet)
+        try:
+            while True:
+                packets = await session.read_audio_packets()
+                if packets is None:
+                    continue
+                if not packets:
+                    continue
+                for packet in packets:
+                    await publish_recorder_packet("audio", packet)
+        except asyncio.CancelledError:
+            raise
+        except Exception as exc:
+            # Audio failure is reported to the recorder only. The video
+            # producer and browser preview must remain operational.
+            logger.warning(
+                "[LIVE HUB] audio unavailable; video preview continues: device_id=%s error=%s",
+                device_id, exc,
+            )
+            async with lock:
+                for recorder_id, recorder in list(hub.get("recorders", {}).items()):
+                    try:
+                        recorder["audio"].put_nowait({"error": str(exc)})
+                    except asyncio.QueueFull:
+                        recorder["failed"] = True
 
     try:
         await session.start()
