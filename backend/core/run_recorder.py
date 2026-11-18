@@ -33,7 +33,8 @@ def cleanup_expired_recordings(directory: Path, retention_days: int, owned_run_i
         return 0
     for path in directory.glob("*.mp4"):
         try:
-            if owned_run_ids is not None and path.stem not in owned_run_ids:
+            run_stem = path.name[:-len(".part.mp4")] if path.name.endswith(".part.mp4") else path.stem
+            if owned_run_ids is not None and run_stem not in owned_run_ids:
                 continue
             if path.is_file() and path.stat().st_mtime < cutoff:
                 path.unlink()
