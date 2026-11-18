@@ -428,6 +428,11 @@ async def execute_batch_run(run_id: str, state: "RunState", base_path: str,
             await session.commit()
     finally:
         await recorder.stop()
+        if not recorder.saved:
+            try:
+                await emit(f"录像未生成：{recorder.status_message}")
+            except Exception:
+                logger.debug("[rec:%s] could not emit recording status", run_id, exc_info=True)
         from core.test_accounts import release_run_account
         await release_run_account(run_id)
         from core.device_scheduler import jobs
@@ -676,6 +681,11 @@ async def execute_tree_run(run_id: str, state: "RunState", max_steps: int = 20,
             await session.commit()
     finally:
         await recorder.stop()
+        if not recorder.saved:
+            try:
+                await emit(f"录像未生成：{recorder.status_message}")
+            except Exception:
+                logger.debug("[rec:%s] could not emit recording status", run_id, exc_info=True)
         from core.test_accounts import release_run_account
         await release_run_account(run_id)
         from core.device_scheduler import jobs
@@ -950,6 +960,11 @@ async def execute_replay_run(
             await session.commit()
     finally:
         await recorder.stop()
+        if not recorder.saved:
+            try:
+                await emit(f"录像未生成：{recorder.status_message}")
+            except Exception:
+                logger.debug("[rec:%s] could not emit recording status", run_id, exc_info=True)
         from core.test_accounts import release_run_account
         await release_run_account(run_id)
         from core.device_scheduler import jobs
@@ -1347,6 +1362,11 @@ async def execute_run(
 
     finally:
         await recorder.stop()
+        if not recorder.saved:
+            try:
+                await emit(f"录像未生成：{recorder.status_message}")
+            except Exception:
+                logger.debug("[rec:%s] could not emit recording status", run_id, exc_info=True)
         from core.test_accounts import release_run_account
         await release_run_account(run_id)
         from core.device_scheduler import jobs
