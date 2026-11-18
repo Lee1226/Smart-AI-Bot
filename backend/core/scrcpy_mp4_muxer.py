@@ -80,7 +80,7 @@ def build_avc_decoder_config(data: bytes) -> bytes:
     )
 
 
-def parse_aac_audio_specific_config(data: bytes) -> tuple[int, str]:
+def parse_aac_audio_specific_config(data: bytes) -> tuple[int, str, int]:
     """Read AAC-LC sample rate and channel layout from AudioSpecificConfig."""
     if len(data) < 2:
         raise ValueError("AAC configuration packet is too short")
@@ -110,7 +110,10 @@ def parse_aac_audio_specific_config(data: bytes) -> tuple[int, str]:
     layout = _AAC_LAYOUTS.get(channel_config)
     if not sample_rate or layout is None:
         raise ValueError(f"Unsupported AAC channel configuration: {channel_config}")
-    return sample_rate, layout
+    # AAC-LC GASpecificConfig: frameLengthFlag=0 => 1024 samples,
+    # frameLengthFlag=1 => 960 samples per access unit.
+    frame_size = 960 if read(1) else 1024
+    return sample_rate, layout, frame_size
 
 
 class ScrcpyMp4Muxer:
@@ -134,6 +137,7 @@ class ScrcpyMp4Muxer:
         self._video_config_injected = False
         self._audio_rate: int | None = None
         self._audio_layout: str | None = None
+        self._audio_frame_size = 1024
         self._pending_video: list[ScrcpyPacket] = []
         self._pending_audio: list[ScrcpyPacket] = []
         self._last_video_pts: int | None = None
@@ -189,7 +193,7 @@ class ScrcpyMp4Muxer:
     def write_audio(self, packet: ScrcpyPacket) -> None:
         if packet.kind == "configuration":
             self._ensure_container()
-            self._audio_rate, self._audio_layout = parse_aac_audio_specific_config(packet.payload)
+            self._audio_rate, self._audio_layout, self._audio_frame_size = parse_aac_audio_specific_config(packet.payload)
             self.audio_configured = True
             self._start_if_ready()
             return
@@ -257,7 +261,7 @@ class ScrcpyMp4Muxer:
         av_packet.stream = self.audio_stream
         av_packet.pts = packet.pts_us
         av_packet.dts = packet.pts_us
-        av_packet.duration = max(1, round(1_024_000_000 / self._audio_rate))
+        av_packet.duration = max(1, round(self._audio_frame_size * 1_000_000 / self._audio_rate))
         av_packet.time_base = TIME_BASE
         self.container.mux(av_packet)
         self._last_audio_pts = packet.pts_us
