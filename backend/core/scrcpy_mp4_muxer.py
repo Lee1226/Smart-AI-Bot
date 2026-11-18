@@ -132,7 +132,9 @@ class ScrcpyMp4Muxer:
         self.video_configured = False
         self.audio_configured = False
         self.started = False
+        self._streams_created = False
         self.closed = False
+        self._pts_origin_us: int | None = None
         self._video_config: bytes | None = None
         self._video_config_injected = False
         self._audio_rate: int | None = None
@@ -186,7 +188,8 @@ class ScrcpyMp4Muxer:
         if not self.started:
             self._pending_video.append(packet)
             if len(self._pending_video) > self.MAX_PENDING_PACKETS:
-                raise RuntimeError("AAC configuration did not arrive; video startup buffer is full")
+                raise RuntimeError("AAC stream did not start; video startup buffer is full")
+            self._start_if_ready()
             return
         self._mux_video(packet)
 
@@ -206,20 +209,30 @@ class ScrcpyMp4Muxer:
         if not self.started:
             self._pending_audio.append(packet)
             if len(self._pending_audio) > self.MAX_PENDING_PACKETS:
-                raise RuntimeError("H.264 configuration did not arrive; audio startup buffer is full")
+                raise RuntimeError("H.264 stream did not start; audio startup buffer is full")
+            self._start_if_ready()
             return
         self._mux_audio(packet)
 
     def _start_if_ready(self) -> None:
-        if self.started or not (self.video_configured and self.audio_configured):
+        if not (self.video_configured and self.audio_configured):
             return
-        self.audio_stream = self.container.add_stream("aac", rate=self._audio_rate)
-        self.audio_stream.codec_context.layout = self._audio_layout
-        self.audio_stream.time_base = TIME_BASE
+        if not self._streams_created:
+            self.audio_stream = self.container.add_stream("aac", rate=self._audio_rate)
+            self.audio_stream.codec_context.layout = self._audio_layout
+            self.audio_stream.time_base = TIME_BASE
+            self._streams_created = True
+        # Wait for the first packet from both tracks before choosing a shared
+        # zero point. This avoids large device-uptime timestamps and preserves
+        # the initial audio/video offset without introducing negative PTS.
+        if self.started or not self._pending_video or not self._pending_audio:
+            return
+        self._pts_origin_us = min(
+            self._pending_video[0].pts_us,
+            self._pending_audio[0].pts_us,
+        )
         self.started = True
 
-        # Preserve timestamp order across the short startup buffer. PyAV's
-        # muxer then interleaves subsequent packets using the same device clock.
         pending = [
             (packet.pts_us, "video", packet) for packet in self._pending_video
         ] + [
@@ -246,13 +259,14 @@ class ScrcpyMp4Muxer:
             payload = packet.payload
         av_packet = self._av.Packet(payload)
         av_packet.stream = self.video_stream
-        av_packet.pts = packet.pts_us
-        av_packet.dts = packet.pts_us
+        pts_us = packet.pts_us - (self._pts_origin_us or 0)
+        av_packet.pts = pts_us
+        av_packet.dts = pts_us
         av_packet.duration = max(1, round(1_000_000 / self.fps))
         av_packet.time_base = TIME_BASE
         av_packet.is_keyframe = bool(packet.keyframe)
         self.container.mux(av_packet)
-        self._last_video_pts = packet.pts_us
+        self._last_video_pts = pts_us
         self._video_packets += 1
 
     def _mux_audio(self, packet: ScrcpyPacket) -> None:
@@ -261,12 +275,13 @@ class ScrcpyMp4Muxer:
             return
         av_packet = self._av.Packet(packet.payload)
         av_packet.stream = self.audio_stream
-        av_packet.pts = packet.pts_us
-        av_packet.dts = packet.pts_us
+        pts_us = packet.pts_us - (self._pts_origin_us or 0)
+        av_packet.pts = pts_us
+        av_packet.dts = pts_us
         av_packet.duration = max(1, round(self._audio_frame_size * 1_000_000 / self._audio_rate))
         av_packet.time_base = TIME_BASE
         self.container.mux(av_packet)
-        self._last_audio_pts = packet.pts_us
+        self._last_audio_pts = pts_us
         self._audio_packets += 1
 
     def close(self) -> None:
