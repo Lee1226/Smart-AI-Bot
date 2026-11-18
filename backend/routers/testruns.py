@@ -515,6 +515,54 @@ async def compare_runs(
     )
 
 
+@router.get("/recordings")
+async def list_recordings(request: Request, db: AsyncSession = Depends(get_db)):
+    """List completed local recordings belonging to the current account."""
+    from core.run_recorder import REC_DIR
+    from db.models import Device
+
+    q = select(TestRun).order_by(TestRun.created_at.desc())
+    if request.state.account_id:
+        q = q.where(TestRun.account_id == request.state.account_id)
+    runs = (await db.execute(q)).scalars().all()
+    items = []
+    total_bytes = 0
+    for run in runs:
+        path = recording_path(run.id)
+        if not path.is_file() or path.stat().st_size <= 0:
+            continue
+        stat = path.stat()
+        total_bytes += stat.st_size
+        suite = await db.get(TestSuite, run.suite_id)
+        device = await db.get(Device, run.device_id)
+        items.append({
+            "run_id": run.id,
+            "task_name": suite.name if suite else "测试任务",
+            "device_id": run.device_id,
+            "device_name": device.name if device else run.device_id,
+            "created_at": run.created_at.isoformat() if run.created_at else None,
+            "finished_at": run.finished_at.isoformat() if run.finished_at else None,
+            "status": run.status,
+            "file_name": path.name,
+            "size_bytes": stat.st_size,
+            "download_url": f"/api/runs/{run.id}/recording.mp4",
+        })
+    return {"items": items, "total": len(items), "total_bytes": total_bytes, "storage_dir": str(REC_DIR)}
+
+
+@router.delete("/recordings/{run_id}", status_code=204)
+async def delete_recording(run_id: str, request: Request, db: AsyncSession = Depends(get_db)):
+    """Delete only the video file; keep the test run and its results."""
+    run = await require_run(request, db, run_id)
+    if run.status in ("queued", "preparing", "pending", "running"):
+        raise HTTPException(status_code=409, detail="任务仍在执行，暂不能删除录像")
+    path = recording_path(run_id)
+    if not path.is_file():
+        raise HTTPException(status_code=404, detail="录像文件不存在")
+    path.unlink()
+    return None
+
+
 @router.get("/{run_id}", response_model=RunOut)
 async def get_run(run_id: str, request: Request, db: AsyncSession = Depends(get_db)):
     run = await db.get(TestRun, run_id)
@@ -620,11 +668,12 @@ async def stream_logs(run_id: str):
 
 
 @router.get("/{run_id}/recording.mp4")
-async def get_recording(run_id: str):
-    """Serve the ADB screen recording for a finished run (404 if none)."""
+async def get_recording(run_id: str, request: Request, db: AsyncSession = Depends(get_db)):
+    """Serve an account-owned ADB screen recording."""
+    await require_run(request, db, run_id)
     if not has_recording(run_id):
         raise HTTPException(status_code=404, detail="No recording for this run")
-    return FileResponse(str(recording_path(run_id)), media_type="video/mp4")
+    return FileResponse(str(recording_path(run_id)), media_type="video/mp4", filename=f"run_{run_id[:8]}.mp4")
 
 
 @router.get("/{run_id}/report", response_class=HTMLResponse)
