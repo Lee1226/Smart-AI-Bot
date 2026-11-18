@@ -191,6 +191,31 @@ export default function RunDetail() {
         </div>
       )}
 
+      {run && (
+        <section className={`mb-4 rounded-lg border px-4 py-3 text-sm ${
+          run.recording_status === 'saved'
+            ? 'border-green-200 bg-green-50 text-green-800'
+            : run.recording_status === 'failed' || run.recording_status === 'unsupported_device'
+              ? 'border-amber-200 bg-amber-50 text-amber-900'
+              : 'border-hairline bg-white text-ink'
+        }`}>
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <div className="font-medium">
+              {run.recording_status === 'saved' ? '✓ 视频录像已生成'
+                : run.recording_status === 'pending' ? '视频录像处理中'
+                : run.recording_status === 'disabled' ? '视频录像未开启'
+                : run.recording_status === 'unsupported_device' ? '当前设备暂不支持视频录像'
+                : '本次任务未生成视频录像'}
+            </div>
+            {run.has_recording && (
+              <a href={`/api/runs/${run.id}/recording.mp4?token=${encodeURIComponent(getToken() || '')}`}
+                target="_blank" rel="noreferrer" className="font-medium underline">播放 / 下载录像</a>
+            )}
+          </div>
+          <p className="mt-1 text-xs opacity-80">{run.recording_message}</p>
+        </section>
+      )}
+
       <div className="flex gap-6 items-start">
         <div className="flex-1 min-w-0 grid grid-cols-2 gap-6">
         {/* Left: results table */}
