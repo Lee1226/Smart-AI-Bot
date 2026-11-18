@@ -282,7 +282,7 @@ async def execute_batch_run(run_id: str, state: "RunState", base_path: str,
         if len(ordered) > len(safe):
             await emit(f"  ⚠ {len(ordered) - len(safe)} destructive check(s) deferred to the end")
         if await recorder.start(device_id):
-            await emit("Screen recording started (ADB)")
+            await emit("Audio/video recording started (Scrcpy)")
 
         async def log_cb(m: str) -> None:
             await emit(m)
@@ -541,7 +541,7 @@ async def execute_tree_run(run_id: str, state: "RunState", max_steps: int = 20,
 
         await emit(f"Tree run: {len(targets)} leaf case(s) · DFS · model = {provider}/{model}")
         if await recorder.start(device_id):
-            await emit("Screen recording started (ADB)")
+            await emit("Audio/video recording started (Scrcpy)")
 
         async def log_cb(m: str) -> None:
             await emit(m)
@@ -849,7 +849,7 @@ async def execute_replay_run(
 
         await emit(f"Replay run: {len(cases)} case(s) · device={device_id} · deterministic (no per-step AI)")
         if await recorder.start(device_id):
-            await emit("Screen recording started (ADB)")
+            await emit("Audio/video recording started (Scrcpy)")
 
         verifier = LLMVerifier(v_provider, v_model, v_key, v_base, fallbacks=fallbacks, language=language)
 
@@ -1043,7 +1043,7 @@ async def execute_run(
 
         await emit(f"Run started: {len(cases)} test cases, device={device_id}, model={provider}/{model}")
         if await recorder.start(device_id):
-            await emit("Screen recording started (ADB)")
+            await emit("Audio/video recording started (Scrcpy)")
 
         passed = failed = errored = skipped = 0
 
