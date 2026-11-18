@@ -246,24 +246,6 @@ export default function Settings() {
           <p className="text-xs text-gray-400 mt-1">{t('AI 的思考 / 理由 / 校验结论 / 计划 与测试报告都用这个语言。', "The AI's thinking / reasoning / verification conclusions / plans and the test report all use this language.")}</p>
         </div>
 
-        {/* ── Screen recording ── */}
-        <div className="border-t pt-4 space-y-3">
-          <div>
-            <h3 className="text-sm font-semibold">{t("屏幕录制", "Screen recording")}</h3>
-            <p className="mt-1 text-xs text-gray-400">{t("测试任务开始时自动录制，任务结束后保存 MP4。关闭后，新任务不再启动录制。", "Automatically record from task start and save an MP4 when the task ends. New tasks will not start recording when disabled.")}</p>
-          </div>
-          <label className="flex items-center justify-between gap-4 rounded-lg border border-hairline bg-canvas-soft px-3 py-3">
-            <span><span className="block text-sm font-medium text-ink">{t("自动录制", "Automatic recording")}</span><span className="mt-0.5 block text-xs text-ink-mute">{t("默认开启，可按账号关闭", "Enabled by default; can be disabled per account")}</span></span>
-            <input type="checkbox" checked={form.recording_auto_enabled !== false} onChange={e => setForm(prev => ({ ...prev, recording_auto_enabled: e.target.checked }))} className="h-4 w-4 accent-primary" />
-          </label>
-          <div className="grid grid-cols-3 gap-2">
-            <div className="rounded-lg border border-hairline p-3"><div className="text-[11px] text-ink-mute">{t("画质", "Quality")}</div><div className="mt-1 text-sm font-medium text-ink">{t("高清", "HD")}</div></div>
-            <div className="rounded-lg border border-hairline p-3"><div className="text-[11px] text-ink-mute">{t("帧率", "Frame rate")}</div><div className="mt-1 text-sm font-medium text-ink">30 FPS*</div></div>
-            <div className="rounded-lg border border-hairline p-3"><div className="text-[11px] text-ink-mute">{t("格式", "Format")}</div><div className="mt-1 text-sm font-medium text-ink">MP4</div></div>
-          </div>
-          <p className="text-[11px] text-ink-mute">{t("* 当前 ADB screenrecord 采用设备端默认帧率与分辨率；上方为目标规格展示，暂不代表所有设备均能锁定 30 FPS。", "* ADB screenrecord currently uses device-default frame rate and resolution; 30 FPS is a target, not a guaranteed setting on every device.")}</p>
-        </div>
-
         {/* ── CLI download (sab) ── */}
         <div className="border-t pt-3">
           <h3 className="text-sm font-medium">{t('CLI 下载', 'CLI Download')}</h3>
