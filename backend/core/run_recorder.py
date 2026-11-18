@@ -94,6 +94,9 @@ class RunRecorder:
                 return False
             self.rec_dir = recording_directory(settings)
             self.rec_dir.mkdir(parents=True, exist_ok=True)
+            # A rerun must not expose a stale MP4 if the new capture fails.
+            recording_path(self.run_id, self.rec_dir).unlink(missing_ok=True)
+            (self.rec_dir / f"{self.run_id}.part.mp4").unlink(missing_ok=True)
             cleanup_expired_recordings(
                 self.rec_dir, settings.get("recording_retention_days", 30), owned_run_ids
             )
