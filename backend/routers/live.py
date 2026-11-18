@@ -159,6 +159,85 @@ def _local_adb_hub_lock(device_id: str) -> asyncio.Lock:
     return lock
 
 
+async def subscribe_local_adb_recorder(device_id: str, serial: str):
+    """Subscribe a task-owned recorder to the shared Scrcpy stream.
+
+    The returned queue receives the same H.264 chunks as browser previews.
+    Releasing this subscription never closes a preview; the Scrcpy producer
+    stops only after the final preview/recorder consumer leaves.
+    """
+    consumer_id = "rec-" + uuid.uuid4().hex
+    lock = _local_adb_hub_lock(device_id)
+
+    while True:
+        wait_for_stopping_hub = None
+        async with lock:
+            hub = _local_adb_hubs.get(device_id)
+            if hub is not None and hub.get("stopping"):
+                wait_for_stopping_hub = hub.get("task")
+            else:
+                if hub is None:
+                    hub = {
+                        "ready": asyncio.Event(),
+                        "subscribers": {},
+                        "websockets": {},
+                        "session": None,
+                        "task": None,
+                        "error": None,
+                        "stream": _H264AnnexBStream(),
+                        "bootstrap_sent": {},
+                        "stopping": False,
+                    }
+                    _local_adb_hubs[device_id] = hub
+                    hub["task"] = asyncio.create_task(_run_local_adb_hub(device_id, serial, hub))
+
+                queue = asyncio.Queue(maxsize=128)
+                bootstrap = hub["stream"].bootstrap
+                if bootstrap:
+                    queue.put_nowait(_H264_BOOTSTRAP_START)
+                    queue.put_nowait(bootstrap + b"\\x00\\x00\\x00\\x01")
+                    queue.put_nowait(None)
+                    queue.put_nowait(_H264_BOOTSTRAP_END)
+                hub["bootstrap_sent"][consumer_id] = bool(bootstrap)
+                hub["subscribers"][consumer_id] = queue
+                # None marks a non-WebSocket consumer. It still participates
+                # in the exact same producer lifetime and fan-out path.
+                hub["websockets"][consumer_id] = None
+        if wait_for_stopping_hub is None:
+            break
+        if not wait_for_stopping_hub.done():
+            await asyncio.gather(wait_for_stopping_hub, return_exceptions=True)
+
+    try:
+        await asyncio.wait_for(hub["ready"].wait(), timeout=20)
+        if hub["error"]:
+            raise RuntimeError(f"Scrcpy video unavailable: {hub['error']}")
+    except Exception:
+        await release_local_adb_recorder(device_id, hub, consumer_id)
+        raise
+
+    async def release():
+        await release_local_adb_recorder(device_id, hub, consumer_id)
+
+    logger.info("[LIVE HUB] recorder subscribed: device_id=%s consumer=%s", device_id, consumer_id)
+    return queue, release
+
+
+async def release_local_adb_recorder(device_id: str, hub: dict, consumer_id: str) -> None:
+    lock = _local_adb_hub_lock(device_id)
+    task_to_stop = None
+    async with lock:
+        hub["subscribers"].pop(consumer_id, None)
+        hub.get("websockets", {}).pop(consumer_id, None)
+        hub.get("bootstrap_sent", {}).pop(consumer_id, None)
+        if not hub["subscribers"] and _local_adb_hubs.get(device_id) is hub:
+            hub["stopping"] = True
+            task_to_stop = hub["task"]
+    if task_to_stop and not task_to_stop.done():
+        task_to_stop.cancel()
+        await asyncio.gather(task_to_stop, return_exceptions=True)
+
+
 async def _run_local_adb_hub(device_id: str, serial: str, hub: dict) -> None:
     from agent.scrcpy_video import ScrcpyVideoSession
 
@@ -221,7 +300,16 @@ async def _run_local_adb_hub(device_id: str, serial: str, hub: dict) -> None:
                     hub["bootstrap_sent"].pop(viewer_id, None)
                     if ws is not None:
                         close_viewers.append(ws)
-                    logger.warning("[LIVE HUB] slow viewer dropped: device_id=%s viewer=%s", device_id, viewer_id)
+                    else:
+                        # A slow recorder must not back-pressure previews or
+                        # keep a dead subscription attached to the producer.
+                        while not queue.empty():
+                            try:
+                                queue.get_nowait()
+                            except asyncio.QueueEmpty:
+                                break
+                        queue.put_nowait(None)
+                    logger.warning("[LIVE HUB] slow consumer dropped: device_id=%s consumer=%s", device_id, viewer_id)
 
             now = asyncio.get_running_loop().time()
             if now - last_stats >= 5:
