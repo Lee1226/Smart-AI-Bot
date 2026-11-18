@@ -438,6 +438,10 @@ async def _run_local_adb_hub(device_id: str, serial: str, hub: dict) -> None:
         raise
     except Exception as exc:
         hub["error"] = str(exc)
+        # Mark the failed producer unavailable before cleanup. New subscribers
+        # must wait for this task to finish instead of attaching to a dead hub.
+        async with lock:
+            hub["stopping"] = True
         logger.warning("Local ADB audio/video producer stopped: device_id=%s error=%s", device_id, exc)
     finally:
         for task in media_tasks:
@@ -470,9 +474,13 @@ async def _run_local_adb_hub(device_id: str, serial: str, hub: dict) -> None:
             hub["websockets"].clear()
             hub.get("recorders", {}).clear()
             hub["bootstrap_sent"].clear()
+        # A producer crash is transient from the viewer perspective: close with
+        # 1012 so the frontend reconnects and creates a fresh Scrcpy hub.
+        close_code = 1012 if hub.get("error") else 4404
+        close_reason = "Scrcpy producer stopped; reconnect" if hub.get("error") else "Device video producer stopped"
         for ws in viewers:
             try:
-                await ws.close(code=4404, reason="Device video producer stopped")
+                await ws.close(code=close_code, reason=close_reason)
             except Exception:
                 pass
 
@@ -522,9 +530,12 @@ async def _subscribe_local_adb_stream(websocket: WebSocket, device_id: str, seri
             await asyncio.gather(wait_for_stopping_hub, return_exceptions=True)
 
     try:
-        await asyncio.wait_for(hub["ready"].wait(), timeout=15)
+        # Scrcpy startup may spend up to 20s connecting and another 20s
+        # waiting for the first framed video packet. Do not reject a healthy
+        # but slow start before that startup budget has elapsed.
+        await asyncio.wait_for(hub["ready"].wait(), timeout=45)
         if hub["error"]:
-            await websocket.close(code=4404, reason="Scrcpy video unavailable")
+            await websocket.close(code=1012, reason="Scrcpy producer failed; reconnect")
             return
         while True:
             chunk = await queue.get()
@@ -541,7 +552,7 @@ async def _subscribe_local_adb_stream(websocket: WebSocket, device_id: str, seri
                     device_id, viewer_id, exc)
     except asyncio.TimeoutError:
         try:
-            await websocket.close(code=4404, reason="Scrcpy startup timed out")
+            await websocket.close(code=1012, reason="Scrcpy startup timed out; reconnect")
         except Exception:
             pass
     finally:
