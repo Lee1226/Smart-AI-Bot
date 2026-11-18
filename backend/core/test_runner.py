@@ -706,6 +706,20 @@ async def _replay_step(device: WebSocketDevice, step: dict, emit) -> str:
     """Execute one recorded step with explicit locator provenance and safe fallback."""
     kind = step.get("kind")
     if kind == "tap":
+        # An explicitly configured coordinate tap bypasses all semantic lookup.
+        # This is different from the normal UI-first fallback path.
+        if step.get("force_coordinate"):
+            if step.get("x") is None or step.get("y") is None:
+                raise ValueError("已启用强制坐标点击，但步骤缺少有效的 X/Y 坐标")
+            await emit(
+                f"    强制坐标点击：({step['x']},{step['y']}) "
+                f"· coordinate_space={step.get('coordinate_space') or 'image_px'}"
+            )
+            if step.get("coordinate_space") == "device_px":
+                await device.tap_absolute(step["x"], step["y"])
+            else:
+                await device.tap(step["x"], step["y"])
+            return f"tap coordinate ({step['x']},{step['y']})"
         # Resource ID and text are semantic hints. ClassName alone is too broad
         # (e.g. many unrelated nodes are LinearLayout), so it must never trigger a tap.
         if step.get("resourceId"):
