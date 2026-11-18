@@ -50,6 +50,8 @@ DEFAULT_SETTINGS = {
     "webhook_type": "",
     "language": "zh",
     "recording_auto_enabled": True,
+    "recording_storage_dir": str(Path(__file__).resolve().parent.parent / "data" / "recordings"),
+    "recording_retention_days": 30,
     "ark_api_key": "",
     "ark_base_url": "https://ark.cn-beijing.volces.com/api/v3",
 }
