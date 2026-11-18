@@ -64,61 +64,33 @@ export default function RecordingSettings() {
     <div className="rounded-xl border border-hairline bg-white p-5 shadow-sm space-y-5">
       <div>
         <h2 className="text-base font-semibold text-ink">{t('录制设置', 'Recording')}</h2>
-        <p className="mt-1 text-xs text-ink-mute">{t('设置对当前账号新启动的测试任务生效。任务开始后录制，任务结束时保存视频。', 'These settings apply to new runs for this account. Recording starts with the run and is finalized when it ends.')}</p>
-        <div className="mt-3 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-800">{t('当前录制能力限制：仅支持后端本机 ADB，并且需要系统只识别到一台在线设备；远程连接、桥接设备及多台 ADB 同时在线时暂不会生成录像。', 'Current limitation: recording requires local ADB with exactly one online device. Remote/bridged devices and multiple simultaneously connected ADB devices are not recorded yet.')}</div>
+        <p className="mt-1 text-xs text-ink-mute">
+          {t('测试任务开始时自动录制，任务结束后自动保存带声音的测试视频。', 'Automatically record a test video with audio when a run starts, and save it when the run ends.')}
+        </p>
       </div>
 
       <label className="flex items-center justify-between gap-4 rounded-lg border border-hairline bg-canvas-soft px-4 py-4">
         <span>
-          <span className="block text-sm font-medium text-ink">{t('自动录制测试任务', 'Automatically record test runs')}</span>
-          <span className="mt-1 block text-xs text-ink-mute">{t('开启后，满足设备录制条件的任务会自动录制；关闭后只保留步骤截图和日志。', 'When enabled, supported devices are recorded automatically. When disabled, step screenshots and logs remain available.')}</span>
+          <span className="block text-sm font-medium text-ink">{t('任务视频录制', 'Task video recording')}</span>
+          <span className="mt-1 block text-xs text-ink-mute">
+            {t('开启后，测试任务执行期间自动录制屏幕并采集声音。', 'When enabled, the screen and audio are recorded automatically while the test runs.')}
+          </span>
         </span>
         <input type="checkbox" className="h-4 w-4 accent-primary" checked={form.recording_auto_enabled !== false}
           onChange={e => setForm(prev => ({ ...prev, recording_auto_enabled: e.target.checked }))} />
       </label>
 
-      <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-        <div className="rounded-lg border border-hairline p-4">
-          <div className="text-xs text-ink-mute">{t('视频画质', 'Video quality')}</div>
-          <div className="mt-1 text-lg font-semibold text-ink">{t('高清', 'HD')}</div>
-          <div className="mt-1 text-xs text-ink-mute">{t('由设备录制能力决定实际分辨率', 'Actual resolution depends on device capabilities')}</div>
-        </div>
-        <div className="rounded-lg border border-hairline p-4">
-          <div className="text-xs text-ink-mute">{t('目标帧率', 'Target frame rate')}</div>
-          <div className="mt-1 text-lg font-semibold text-ink">30 FPS</div>
-          <div className="mt-1 text-xs text-ink-mute">{t('当前 ADB screenrecord 使用设备默认帧率，暂不能强制锁定', 'ADB screenrecord currently uses the device default; it cannot be forced')}</div>
-        </div>
-        <div className="rounded-lg border border-hairline p-4">
-          <div className="text-xs text-ink-mute">{t('视频格式', 'Video format')}</div>
-          <div className="mt-1 text-lg font-semibold text-ink">MP4 · H.264</div>
-          <div className="mt-1 text-xs text-ink-mute">{t('设备端编码并封装为 MP4', 'Encoded and muxed on the device')}</div>
-        </div>
-      </div>
-
-      <div className="rounded-lg border border-dashed border-hairline bg-canvas-soft px-4 py-3">
-        <div className="text-sm font-medium text-ink">{t('音频录制', 'Audio recording')}</div>
-        <div className="mt-1 text-xs text-ink-mute">{t('当前录制链路暂不采集设备音频，暂不可开启。', 'Device audio capture is not supported by the current recording pipeline.')}</div>
-        <span className="mt-2 inline-flex rounded-full bg-gray-100 px-2 py-1 text-[11px] text-gray-500">{t('暂未支持', 'Not supported yet')}</span>
-      </div>
-
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-        <div>
-          <label className="mb-1 block text-sm font-medium text-ink">{t('录像保存目录', 'Recording directory')}</label>
-          <input value={form.recording_storage_dir || ''} onChange={e => setForm(prev => ({ ...prev, recording_storage_dir: e.target.value }))}
-            placeholder="backend/data/recordings" className="w-full rounded-lg border border-hairline px-3 py-2 text-sm font-mono" />
-          <p className="mt-1 text-xs text-ink-mute">{t('填写后端服务器上的目录路径；支持绝对路径和 ~。保存时会自动创建目录。', 'Path on the backend server; absolute paths and ~ are supported. The directory is created when saved.')}</p>
-        </div>
-        <div>
-          <label className="mb-1 block text-sm font-medium text-ink">{t('录像保留期限（天）', 'Retention period (days)')}</label>
-          <input type="number" min={1} max={3650} value={form.recording_retention_days ?? 30}
-            onChange={e => setForm(prev => ({ ...prev, recording_retention_days: Number(e.target.value) }))}
-            className="w-full rounded-lg border border-hairline px-3 py-2 text-sm" />
-          <p className="mt-1 text-xs text-ink-mute">{t('超过期限的录像会在打开存储页或下次启动录制时清理。', 'Expired recordings are cleaned when this page is opened or the next recording starts.')}</p>
-        </div>
+      <div>
+        <label className="mb-1 block text-sm font-medium text-ink">{t('录像保留时间', 'Retention period')}</label>
+        <select value={String(form.recording_retention_days ?? 30)}
+          onChange={e => setForm(prev => ({ ...prev, recording_retention_days: Number(e.target.value) }))}
+          className="w-full rounded-lg border border-hairline bg-white px-3 py-2 text-sm">
+          {[7, 15, 30, 60, 90, 365].map(days => <option key={days} value={days}>{days} {t('天', 'days')}</option>)}
+        </select>
       </div>
 
       <div className="flex items-center justify-end gap-3 border-t border-hairline pt-4">
-        {saveMut.isError && <span className="text-xs text-red-600">{t('保存失败，请检查目录路径和保留天数。', 'Save failed. Check the directory and retention period.')}</span>}
+        {saveMut.isError && <span className="text-xs text-red-600">{t('保存失败，请检查设置。', 'Save failed. Please check the settings.')}</span>}
         {saved && <span className="text-xs text-green-700">{t('已保存', 'Saved')}</span>}
         <button disabled={saveMut.isPending} onClick={() => saveMut.mutate()}
           className="rounded-lg bg-primary px-4 py-2 text-sm font-medium text-white hover:bg-primary-deep disabled:opacity-50">
