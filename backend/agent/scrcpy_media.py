@@ -216,12 +216,12 @@ class ScrcpyMediaSession:
             chunk = sock.recv(READ_SIZE)
         except socket.timeout:
             return None
-        except OSError:
+        except OSError as exc:
             if sock.fileno() < 0:
-                return []
+                raise ConnectionError("Scrcpy media socket closed") from exc
             raise
         if not chunk:
-            return []
+            raise ConnectionError("Scrcpy media socket reached EOF")
         packets = parser.feed(chunk)
         if parser.stream_type == "audio" and parser.metadata is not None:
             if parser.metadata.codec_id != SCRCPY_AUDIO_AAC:
@@ -238,8 +238,8 @@ class ScrcpyMediaSession:
             if packets:
                 self._pending_video.extend(packets)
                 return
-            if packets == []:
-                raise RuntimeError("Scrcpy video socket closed before the first packet")
+            # An empty packet list means this TCP chunk was valid but did not
+            # yet contain a complete framed packet; EOF raises ConnectionError.
         raise TimeoutError("Scrcpy video stream did not produce its first packet")
 
     async def start(self) -> None:
