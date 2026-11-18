@@ -33,6 +33,13 @@ function asNumber(value: unknown): string {
   return value === undefined || value === null ? '' : String(value)
 }
 
+function hasValidTapCoordinates(step: ExecutionPlanStep): boolean {
+  const fallbackCoordinates = (step.fallback?.coordinates || {}) as Record<string, unknown>
+  const x = fallbackCoordinates.x ?? step.args?.x
+  const y = fallbackCoordinates.y ?? step.args?.y
+  return [x, y].every(value => value !== undefined && value !== null && value !== '' && Number.isFinite(Number(value)))
+}
+
 export default function ExecutionPlanManager({ suiteId, platform, device }: { suiteId: string; platform: string; device: Device | null }) {
   const t = useT()
   const qc = useQueryClient()
@@ -256,9 +263,12 @@ export default function ExecutionPlanManager({ suiteId, platform, device }: { su
       setEditError(t('至少保留一个执行步骤。', 'Keep at least one execution step.'))
       return
     }
-    const invalid = draftSteps.findIndex(step => !step.action || !step.executor)
+    const invalid = draftSteps.findIndex(step => !step.action || !step.executor || (step.force_coordinate && (!['tap', 'tap_element'].includes(step.action) || !hasValidTapCoordinates(step))))
     if (invalid >= 0) {
-      setEditError(t(`第 ${invalid + 1} 步缺少操作类型或执行策略。第 ${invalid + 1} step needs an action and execution strategy.`, `Step ${invalid + 1} needs an action and execution strategy.`))
+      const invalidStep = draftSteps[invalid]
+      setEditError(invalidStep.force_coordinate
+        ? `第 ${invalid + 1} 步已启用强制坐标点击，但没有有效的 X/Y 坐标，或该操作不是点击。`
+        : `第 ${invalid + 1} 步缺少操作类型或执行策略。`)
       return
     }
     setEditError('')
@@ -408,6 +418,8 @@ export default function ExecutionPlanManager({ suiteId, platform, device }: { su
             </div>
             {draftSteps.map((step, index) => {
               const coords = ((step.fallback as Record<string, unknown> | null)?.coordinates || {}) as Record<string, unknown>
+              const coordinateX = coords.x ?? step.args?.x
+              const coordinateY = coords.y ?? step.args?.y
               const waitMs = step.wait_condition?.type === 'delay' ? step.wait_condition.duration_ms : ''
               return (
                 <div key={step.step_id || index} className="overflow-hidden rounded-lg border border-gray-200">
@@ -454,6 +466,13 @@ export default function ExecutionPlanManager({ suiteId, platform, device }: { su
 
                     {(step.action === 'tap' || step.action === 'tap_element') && (
                       <>
+                        <div className="md:col-span-2 rounded-md border border-gray-200 bg-slate-50 p-3">
+                          <label className="flex items-center gap-2 text-xs font-medium text-gray-700">
+                            <input type="checkbox" checked={!!step.force_coordinate} onChange={e => patchStep(index, { force_coordinate: e.target.checked })} />
+                            {t('强制使用坐标点击', 'Force coordinate tap')}
+                          </label>
+                          <p className="mt-1 text-[11px] text-gray-500">{t('开启后跳过 UI 元素查找，直接使用下方录制坐标；关闭时保持 UI 定位优先、失败后坐标兜底。', 'When enabled, skip UI lookup and tap the recorded coordinates directly. When disabled, keep UI-first lookup with coordinate fallback.')}</p>
+                        </div>
                         <div>
                           <label className={labelClass}>{t('控件文本', 'Visible text')}</label>
                           <input className={fieldClass} value={String(step.locator?.text || '')} onChange={e => patchLocator(index, 'text', e.target.value)} placeholder={t('例如：搜索、确定、登录', 'e.g. Search, Confirm, Login')} />
@@ -464,11 +483,11 @@ export default function ExecutionPlanManager({ suiteId, platform, device }: { su
                         </div>
                         <div>
                           <label className={labelClass}>{t('坐标兜底 X', 'Fallback X')}</label>
-                          <input type="number" className={fieldClass} value={asNumber(coords.x ?? step.args?.x)} onChange={e => patchCoordinate(index, 'x', e.target.value)} placeholder="X" />
+                          <input type="number" className={fieldClass} value={asNumber(coordinateX)} onChange={e => patchCoordinate(index, 'x', e.target.value)} placeholder="X" />
                         </div>
                         <div>
                           <label className={labelClass}>{t('坐标兜底 Y', 'Fallback Y')}</label>
-                          <input type="number" className={fieldClass} value={asNumber(coords.y ?? step.args?.y)} onChange={e => patchCoordinate(index, 'y', e.target.value)} placeholder="Y" />
+                          <input type="number" className={fieldClass} value={asNumber(coordinateY)} onChange={e => patchCoordinate(index, 'y', e.target.value)} placeholder="Y" />
                         </div>
                       </>
                     )}
