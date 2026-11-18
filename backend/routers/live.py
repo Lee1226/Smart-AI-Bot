@@ -195,7 +195,7 @@ async def subscribe_local_adb_recorder(device_id: str, serial: str):
                 bootstrap = hub["stream"].bootstrap
                 if bootstrap:
                     queue.put_nowait(_H264_BOOTSTRAP_START)
-                    queue.put_nowait(bootstrap + b"\\x00\\x00\\x00\\x01")
+                    queue.put_nowait(bootstrap + b"\x00\x00\x00\x01")
                     queue.put_nowait(None)
                     queue.put_nowait(_H264_BOOTSTRAP_END)
                 hub["bootstrap_sent"][consumer_id] = bool(bootstrap)
