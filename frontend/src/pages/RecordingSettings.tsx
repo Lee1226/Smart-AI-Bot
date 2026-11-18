@@ -65,6 +65,7 @@ export default function RecordingSettings() {
       <div>
         <h2 className="text-base font-semibold text-ink">{t('录制设置', 'Recording')}</h2>
         <p className="mt-1 text-xs text-ink-mute">{t('设置对当前账号新启动的测试任务生效。任务开始后录制，任务结束时保存视频。', 'These settings apply to new runs for this account. Recording starts with the run and is finalized when it ends.')}</p>
+        <div className="mt-3 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-800">{t('当前录制能力限制：仅支持后端本机 ADB，并且需要系统只识别到一台在线设备；远程连接、桥接设备及多台 ADB 同时在线时暂不会生成录像。', 'Current limitation: recording requires local ADB with exactly one online device. Remote/bridged devices and multiple simultaneously connected ADB devices are not recorded yet.')}</div>
       </div>
 
       <label className="flex items-center justify-between gap-4 rounded-lg border border-hairline bg-canvas-soft px-4 py-4">
