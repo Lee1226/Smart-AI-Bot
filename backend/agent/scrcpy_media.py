@@ -117,6 +117,21 @@ class ScrcpyMediaSession:
             candidate: socket.socket | None = None
             try:
                 candidate = socket.create_connection(("127.0.0.1", self.port), timeout=1)
+                if label == "video":
+                    # The configured dummy byte proves this is the accepted
+                    # video socket, not an early ADB-forward connection that
+                    # immediately closes before the remote abstract socket is ready.
+                    candidate.settimeout(1.0)
+                    first_byte = candidate.recv(1)
+                    if first_byte != b"\\x00":
+                        last_error = ConnectionError(
+                            "ADB forward did not reach the Scrcpy video socket"
+                        )
+                        candidate.close()
+                        candidate = None
+                        time.sleep(0.2)
+                        continue
+                    self.video_parser.feed(first_byte)
                 candidate.settimeout(0.25)
                 result = candidate
                 candidate = None
