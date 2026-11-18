@@ -51,7 +51,7 @@ def _hash_key(key: str) -> str:
 _RESOURCE_PATHS = (
     (re.compile(r"^/api/devices/([^/]+)"), Device, set()),
     (re.compile(r"^/api/suites/([^/]+)"), TestSuite, {"import", "manual"}),
-    (re.compile(r"^/api/runs/([^/]+)"), TestRun, {"batch", "quick", "tree", "node", "compare"}),
+    (re.compile(r"^/api/runs/([^/]+)"), TestRun, {"batch", "quick", "tree", "node", "compare", "recordings"}),
 )
 
 
