@@ -356,12 +356,6 @@ export default function H264LivePlayer({
         || pendingBytes + inFlightBytes + incoming.data.byteLength > MAX_PENDING_BYTES
 
       if (!waitingForKeyframe && (queueTooOld || queueTooLarge)) {
-        console.warn('[H264] Decoder fell behind; resynchronizing at next IDR', {
-          pendingPackets: pendingWrites.length + (inFlightBytes > 0 ? 1 : 0),
-          pendingBytes: pendingBytes + inFlightBytes,
-          oldestAgeMs: oldestQueuedAt ? Math.round(now - oldestQueuedAt) : 0,
-          transport: 'scrcpy-packet',
-        })
         resyncAtNextKeyframe()
       }
 
@@ -428,11 +422,6 @@ export default function H264LivePlayer({
         || pendingBytes + inFlightBytes + data.byteLength > MAX_PENDING_BYTES
 
       if (!waitingForKeyframe && (queueTooOld || queueTooLarge)) {
-        console.warn('[H264] Decoder fell behind; resynchronizing at next IDR', {
-          pendingPackets: pendingWrites.length + (inFlightBytes > 0 ? 1 : 0),
-          pendingBytes: pendingBytes + inFlightBytes,
-          oldestAgeMs: oldestQueuedAt ? Math.round(now - oldestQueuedAt) : 0,
-        })
         resyncAtNextKeyframe()
       }
 
