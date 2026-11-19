@@ -322,7 +322,8 @@ export default function LivePanel({ device, defaultMode = 'off', storageKey = 'l
                 key={`${device.id}-${reloadKey}`}
                 source={videoSource}
                 renderer={activeRenderer}
-                onFail={activeRenderer === 'webgl' ? webglFailed : videoFailed}
+                onFail={videoFailed}
+                onRendererFail={webglFailed}
                 onVideoSize={forceCanvas2D ? handleVideoSize : undefined}
               />
             ) : (
