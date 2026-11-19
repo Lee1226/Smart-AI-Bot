@@ -168,11 +168,70 @@ export default function H264LivePlayer({
     let timestamp = 0n
     let lastWidth = 0
     let lastHeight = 0
+    type PendingWrite = { packet?: ScrcpyMediaStreamPacket; reset?: true; bytes: number; queuedAt: number }
+    const pendingWrites: PendingWrite[] = []
+    let pendingBytes = 0
+    let writePumpRunning = false
+    let waitingForKeyframe = false
+    let resetQueued = false
+    const MAX_PENDING_PACKETS = 96
+    const MAX_PENDING_BYTES = 16 * 1024 * 1024
+    const MAX_PENDING_AGE_MS = 1000
+
+    const pumpWrites = async () => {
+      if (writePumpRunning || stopped) return
+      writePumpRunning = true
+      try {
+        while (!stopped && pendingWrites.length) {
+          const item = pendingWrites.shift()!
+          pendingBytes = Math.max(0, pendingBytes - item.bytes)
+          if (item.reset) {
+            resetQueued = false
+            disposeDecoder()
+            createDecoder()
+            continue
+          }
+          const activeWriter = writer
+          if (!activeWriter || !item.packet) continue
+          // WritableStream backpressure: only submit the next compressed packet
+          // after the previous write has completed and the sink is ready.
+          await activeWriter.ready
+          await activeWriter.write(item.packet)
+        }
+      } catch (error) {
+        fail(error instanceof Error ? error.message : 'H.264 视频帧提交失败')
+      } finally {
+        writePumpRunning = false
+        if (!stopped && pendingWrites.length) void pumpWrites()
+      }
+    }
+
+    const queuePacket = (packet: ScrcpyMediaStreamPacket) => {
+      const bytes = packet.data.byteLength
+      pendingWrites.push({ packet, bytes, queuedAt: performance.now() })
+      pendingBytes += bytes
+      void pumpWrites()
+    }
+
+    const resyncAtNextKeyframe = () => {
+      pendingWrites.length = 0
+      pendingBytes = 0
+      configuration = null
+      timestamp = 0n
+      waitingForKeyframe = true
+      if (!resetQueued) {
+        pendingWrites.push({ reset: true, bytes: 0, queuedAt: performance.now() })
+        resetQueued = true
+      }
+      void pumpWrites()
+    }
 
     const fail = (message: string) => {
       if (stopped) return
       stopped = true
       stopSource?.()
+      pendingWrites.length = 0
+      pendingBytes = 0
       try { writer?.releaseLock() } catch { /* writer already released */ }
       writer = null
       decoder?.dispose()
@@ -204,15 +263,33 @@ export default function H264LivePlayer({
     const createParser = () => new H264AnnexB((data, key, _sps, nextConfiguration) => {
       if (stopped || !writer) return
 
+      const now = performance.now()
+      const oldest = pendingWrites[0]
+      const queueTooOld = !!oldest && now - oldest.queuedAt > MAX_PENDING_AGE_MS
+      const queueTooLarge = pendingWrites.length >= MAX_PENDING_PACKETS
+        || pendingBytes + data.byteLength > MAX_PENDING_BYTES
+
+      if (!waitingForKeyframe && (queueTooOld || queueTooLarge)) {
+        console.warn('[H264] Decoder fell behind; resynchronizing at next IDR', {
+          pendingPackets: pendingWrites.length,
+          pendingBytes,
+          oldestAgeMs: oldest ? Math.round(now - oldest.queuedAt) : 0,
+        })
+        resyncAtNextKeyframe()
+      }
+
+      // Never discard arbitrary H.264 reference frames. After overload, wait
+      // for an IDR, recreate the decoder, then resume with fresh SPS/PPS.
+      if (waitingForKeyframe && !key) return
+      if (waitingForKeyframe && key) waitingForKeyframe = false
+
       if (key && !sameBytes(configuration, nextConfiguration)) {
         configuration = nextConfiguration.slice()
         const configPacket: ScrcpyMediaStreamPacket = {
           type: 'configuration',
           data: configuration,
         }
-        void writer.write(configPacket).catch(error => {
-          fail(error instanceof Error ? error.message : 'H.264 配置数据提交失败')
-        })
+        queuePacket(configPacket)
       }
 
       // The decoder prepends the configuration packet to the first keyframe.
@@ -227,12 +304,14 @@ export default function H264LivePlayer({
         pts: timestamp,
       }
       timestamp += 31_250n
-      void writer.write(packet).catch(error => {
-        fail(error instanceof Error ? error.message : 'H.264 视频帧提交失败')
-      })
+      queuePacket(packet)
     })
 
     const resetStream = () => {
+      pendingWrites.length = 0
+      pendingBytes = 0
+      waitingForKeyframe = false
+      resetQueued = false
       disposeDecoder()
       configuration = null
       timestamp = 0n
