@@ -489,6 +489,7 @@ export default function H264LivePlayer({
 
     return () => {
       stopped = true
+      window.clearInterval(diagTimer)
       decoderGeneration += 1
       cancelInFlightWrite?.()
       cancelInFlightWrite = null
