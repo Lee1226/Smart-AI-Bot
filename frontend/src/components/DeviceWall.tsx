@@ -50,7 +50,9 @@ export default function DeviceWall({ devices, selectedId, onSelect }: {
         {shown.map(d => <button key={d.id} type="button" aria-label={`${t('预览设备', 'Preview device')} ${d.name}`} aria-pressed={d.id === selectedId}
           onClick={() => onSelect(d.id)} className={`min-w-0 bg-white border rounded-xl p-3 text-left transition-colors ${d.id === selectedId ? 'ring-2 ring-primary border-primary' : 'hover:border-primary'}`}>
           <div className="relative bg-terminal rounded-lg overflow-hidden mx-auto" style={{ aspectRatio: '9 / 19.5', maxWidth: 160 }}>
-            {d.status === 'online' ? <ScreenshotView deviceId={d.id} source="screenshot" />
+            {d.status === 'online' ? d.id === selectedId
+              ? <span className="absolute inset-0 flex items-center justify-center p-3 text-center text-xs text-terminal-mute">{t('当前设备已在右侧实时预览', 'Live preview shown on the right')}</span>
+              : <ScreenshotView deviceId={d.id} source="screenshot" />
               : <span className="absolute inset-0 flex items-center justify-center text-xs text-terminal-mute">{t('设备离线', 'Offline')}</span>}
           </div>
           <div className="flex items-center gap-2 mt-3"><span className={`w-2 h-2 rounded-full shrink-0 ${d.status === 'online' ? 'bg-ok' : 'bg-gray-300'}`} /><span className="text-sm font-medium truncate" title={d.name}>{d.name}</span></div>
