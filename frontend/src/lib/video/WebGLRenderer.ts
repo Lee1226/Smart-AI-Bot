@@ -43,7 +43,9 @@ export class WebGLRenderer {
       depth: false,
       stencil: false,
       preserveDrawingBuffer: false,
-      powerPreference: 'high-performance',
+      powerPreference: 'low-power',
+      desynchronized: true,
+      failIfMajorPerformanceCaveat: true,
     })
     if (!gl) throw new Error('当前浏览器无法创建 WebGL 上下文')
     this.gl = gl
@@ -86,7 +88,6 @@ export class WebGLRenderer {
     gl.vertexAttribPointer(this.positionLocation, 2, gl.FLOAT, false, 0, 0)
 
     gl.bindBuffer(gl.ARRAY_BUFFER, texCoordBuffer)
-    // Flip Y: WebGL texture coordinates and video frame coordinates differ.
     gl.bufferData(gl.ARRAY_BUFFER, new Float32Array([
       0, 1, 1, 1, 0, 0, 1, 0,
     ]), gl.STATIC_DRAW)
@@ -103,7 +104,7 @@ export class WebGLRenderer {
     gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL, 0)
   }
 
-  private compile(type: number, source: string): WebGLShader {
+  private compile(type: number, source: string) {
     const shader = this.gl.createShader(type)
     if (!shader) throw new Error('无法创建 WebGL Shader')
     this.gl.shaderSource(shader, source)
@@ -128,7 +129,6 @@ export class WebGLRenderer {
       this.canvas.width = width
       this.canvas.height = height
       gl.viewport(0, 0, width, height)
-      // Resizing the canvas resets WebGL state bindings on some implementations.
       gl.useProgram(this.program)
       gl.activeTexture(gl.TEXTURE0)
       gl.bindTexture(gl.TEXTURE_2D, this.texture)
@@ -140,6 +140,7 @@ export class WebGLRenderer {
     this.prepareFrame(width, height)
     gl.texSubImage2D(gl.TEXTURE_2D, 0, 0, 0, gl.RGBA, gl.UNSIGNED_BYTE, source)
     gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4)
+    gl.flush()
     return { width, height }
   }
 
@@ -163,11 +164,11 @@ export class WebGLRenderer {
         frame as unknown as TexImageSource,
       )
       gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4)
+      gl.flush()
       if (this.videoFrameUploadSupported === null) {
         const error = gl.getError()
         if (error !== gl.NO_ERROR) {
           this.videoFrameUploadSupported = false
-          // Clear any remaining errors from the failed capability probe.
           while (gl.getError() !== gl.NO_ERROR) { /* drain probe errors */ }
           return false
         }
@@ -179,6 +180,7 @@ export class WebGLRenderer {
       return false
     }
   }
+
   dispose() {
     if (this.disposed) return
     this.disposed = true
@@ -187,7 +189,5 @@ export class WebGLRenderer {
     gl.deleteBuffer(this.positionBuffer)
     gl.deleteBuffer(this.texCoordBuffer)
     gl.deleteProgram(this.program)
-    // Do not force-lose the context here. React StrictMode and source changes
-    // can run effect cleanup while the canvas is about to be initialized again.
   }
 }
