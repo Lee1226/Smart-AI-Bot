@@ -74,6 +74,14 @@ class _H264AnnexBStream:
         self.gop = bytearray()
         self.idr_count = 0
 
+    def reset(self) -> None:
+        """Reset parser state before rebuilding the cache from framed packets."""
+        self.buffer = b""
+        self.sps = b""
+        self.pps = b""
+        self.gop.clear()
+        self.idr_count = 0
+
     @staticmethod
     def _marks(data: bytes):
         marks = []
@@ -295,9 +303,14 @@ async def _run_local_adb_hub(device_id: str, serial: str, hub: dict) -> None:
             return
         close_viewers = []
         async with lock:
-            # Parser/cache update and subscriber fan-out share one lock. This
-            # makes the bootstrap snapshot and following live bytes contiguous.
-            batch = stream.feed(data) if data else stream.flush()
+            # Only legacy Annex-B viewers consume this parser. Native Scrcpy
+            # packet viewers and recorders use the already-framed packets below.
+            # Rebuild the cache when a legacy viewer first subscribes.
+            has_legacy_viewers = any(
+                stream_format != "scrcpy-v1"
+                for stream_format in hub.get("formats", {}).values()
+            )
+            batch = (stream.feed(data) if data else stream.flush()) if has_legacy_viewers else b""
             if recorder_packet is not None:
                 enqueue_recorder_packet_locked("video", recorder_packet)
                 packet_bootstrap = hub["packet_bootstrap"]
@@ -571,6 +584,21 @@ async def _subscribe_local_adb_stream(websocket: WebSocket, device_id: str, seri
                     _local_adb_hubs[device_id] = hub
                     hub["task"] = asyncio.create_task(_run_local_adb_hub(device_id, serial, hub))
                 packet_mode = websocket.query_params.get("format") == "scrcpy-v1"
+                if not packet_mode:
+                    has_legacy_viewer = any(
+                        stream_format != "scrcpy-v1"
+                        for stream_format in hub.get("formats", {}).values()
+                    )
+                    if not has_legacy_viewer:
+                        # The native packet path keeps a bounded keyframe-based
+                        # bootstrap. Replay it once when legacy Annex-B is needed,
+                        # instead of parsing every packet for native-only viewers.
+                        stream = hub["stream"]
+                        stream.reset()
+                        for cached_packet in hub.get("packet_bootstrap", []):
+                            payload = getattr(cached_packet, "payload", b"")
+                            if payload:
+                                stream.feed(payload)
                 queue = asyncio.Queue(maxsize=128 if packet_mode else 64)
                 hub.setdefault("formats", {})[viewer_id] = "scrcpy-v1" if packet_mode else "annexb"
                 bootstrap = hub["stream"].bootstrap
