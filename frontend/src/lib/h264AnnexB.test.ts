@@ -14,6 +14,31 @@ describe('H.264 USB chunk assembly', () => {
       0, 0, 0, 1, ...nals[2], 0, 0, 0, 1, ...nals[3]] })
     expect(frames[1]).toEqual({ key: false, data: [0, 0, 0, 1, ...nals[4]] })
   })
+  it('emits SPS/PPS as a separate Scrcpy configuration packet payload', () => {
+    const output: { data: number[]; key: boolean; config: number[] }[] = []
+    const parser = new H264AnnexB((data, key, _sps, configuration) => {
+      output.push({ data: [...data], key, config: [...configuration] })
+    })
+    const sps = [0x67, 0x42, 0, 0x1f]
+    const pps = [0x68, 0x80]
+    const idr = [0x65, 0x80, 0x11]
+    parser.feed(new Uint8Array([
+      0, 0, 0, 1, ...sps,
+      0, 0, 0, 1, ...pps,
+      0, 0, 0, 1, ...idr,
+      0, 0, 0, 1, 0x09, 0xf0,
+    ]))
+    parser.flushAccessUnit()
+    expect(output).toHaveLength(1)
+    expect(output[0].key).toBe(true)
+    expect(output[0].config).toEqual([
+      0, 0, 0, 1, ...sps, 0, 0, 0, 1, ...pps,
+    ])
+    expect(output[0].data).toEqual([
+      0, 0, 0, 1, ...sps, 0, 0, 0, 1, ...pps, 0, 0, 0, 1, ...idr,
+    ])
+  })
+
   it('bounds corrupt input rather than buffering forever', () => {
     const parser = new H264AnnexB(() => {})
     expect(() => parser.feed(new Uint8Array(16 * 1024 * 1024 + 1))).toThrow()
