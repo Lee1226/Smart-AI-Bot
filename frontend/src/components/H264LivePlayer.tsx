@@ -176,6 +176,7 @@ export default function H264LivePlayer({
     let inFlightToken = 0
     let writePumpRunning = false
     let decoderGeneration = 0
+    let cancelInFlightWrite: (() => void) | null = null
     let waitingForKeyframe = false
     const MAX_PENDING_PACKETS = 96
     const MAX_PENDING_BYTES = 16 * 1024 * 1024
@@ -198,14 +199,25 @@ export default function H264LivePlayer({
             inFlightQueuedAt = 0
             continue
           }
+          let cancel!: () => void
+          const cancelled = new Promise<'cancelled'>(resolve => {
+            cancel = () => resolve('cancelled')
+          })
+          cancelInFlightWrite = cancel
           try {
-            // Keep the in-flight packet in backlog accounting. A reset bumps
-            // decoderGeneration and releases the old writer; its late rejection
-            // must not fail the replacement decoder.
-            await activeWriter.ready
-            if (stopped || generation !== decoderGeneration) continue
-            await activeWriter.write(item.packet)
-            if (stopped || generation !== decoderGeneration) continue
+            // Race each writer operation against generation cancellation. This
+            // prevents a stalled old writer from blocking packets for the new
+            // decoder after an overload resync or stream reconnect.
+            const ready = await Promise.race([
+              activeWriter.ready.then(() => 'ready' as const),
+              cancelled,
+            ])
+            if (ready === 'cancelled' || stopped || generation !== decoderGeneration) continue
+            const written = await Promise.race([
+              activeWriter.write(item.packet).then(() => 'written' as const),
+              cancelled,
+            ])
+            if (written === 'cancelled' || stopped || generation !== decoderGeneration) continue
           } catch (error) {
             if (stopped || generation !== decoderGeneration) continue
             throw error
@@ -213,6 +225,7 @@ export default function H264LivePlayer({
             if (token === inFlightToken) {
               inFlightBytes = 0
               inFlightQueuedAt = 0
+              cancelInFlightWrite = null
             }
           }
         }
@@ -241,6 +254,8 @@ export default function H264LivePlayer({
       // blocked writer.ready/write. The generation change invalidates that
       // in-flight operation and the next IDR starts on a fresh decoder.
       decoderGeneration += 1
+      cancelInFlightWrite?.()
+      cancelInFlightWrite = null
       inFlightToken += 1
       inFlightBytes = 0
       inFlightQueuedAt = 0
