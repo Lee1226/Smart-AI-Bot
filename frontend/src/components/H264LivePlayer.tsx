@@ -162,7 +162,7 @@ export default function H264LivePlayer({
     let stopped = false
     let stopSource: (() => void) | undefined
     let decoder: WebCodecsVideoDecoder | null = null
-    let writer: WritableStreamDefaultWriter<ScrcpyMediaStreamPacket> | null = null
+    let writer: ReturnType<WebCodecsVideoDecoder['writable']['getWriter']> | null = null
     let parser: H264AnnexB
     let configuration: Uint8Array | null = null
     let timestamp = 0n
