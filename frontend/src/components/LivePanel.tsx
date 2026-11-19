@@ -146,8 +146,13 @@ export default function LivePanel({ device, defaultMode = 'off', storageKey = 'l
   }
   const [adbFailed, setAdbFailed] = useState(false)
   const [streamError, setStreamError] = useState('')
-  const [renderer, setRenderer] = useState<'canvas' | 'webgl'>(() => localStorage.getItem('h264-renderer') === 'canvas' ? 'canvas' : 'webgl')
-  const activeRenderer = forceCanvas2D ? 'canvas' : renderer
+  // The debug console keeps its touch-control layout, but prefers WebGL for
+  // lower CPU overhead. If WebGL initialization fails, webglFailed switches it
+  // to Canvas 2D as a safe fallback.
+  const [renderer, setRenderer] = useState<'canvas' | 'webgl'>(() =>
+    forceCanvas2D ? 'webgl' : localStorage.getItem('h264-renderer') === 'canvas' ? 'canvas' : 'webgl'
+  )
+  const activeRenderer = renderer
   const usb = useSyncExternalStore(subscribeUsb, usbSnapshot)
   const localUsb = device?.connection_type === 'browser_usb' && usb.phase === 'online' && usb.deviceId === device.id
   const localAdb = device?.connection_type === 'adb_usb'
