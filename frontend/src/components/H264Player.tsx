@@ -1,6 +1,6 @@
 import { useEffect, useRef } from 'react'
 import JMuxer from 'jmuxer'
-import type { H264StreamSource } from '../lib/h264Stream'
+import type { H264StreamSource, ScrcpyPreviewMetadata, ScrcpyPreviewPacket } from '../lib/h264Stream'
 
 // Both WebSocket and browser USB supply raw H.264; jmuxer wraps it in
 // fragmented MP4 for MSE. Each recording cycle gets a fresh timeline.
@@ -17,6 +17,7 @@ export default function H264Player({ source, onFail }: { source: H264StreamSourc
     let bootstrapPending = false
     let bootstrapHidden = false
     let muxer: JMuxer | undefined
+    let nativeConfiguration: Uint8Array | null = null
 
     // flushingTime must be a positive number: jmuxer does `flushingTime || 1500`,
     // so 0 silently becomes 1500ms → the video only updated every 1.5s (visible
@@ -70,7 +71,29 @@ export default function H264Player({ source, onFail }: { source: H264StreamSourc
     const mediaError = () => fail('浏览器不支持此视频格式，已回落截图')
     node.addEventListener('error', mediaError)
     stopSource = source({
-      reset,
+      reset: () => {
+        nativeConfiguration = null
+        reset()
+      },
+      packetMode: (metadata: ScrcpyPreviewMetadata) => {
+        if (metadata.codecId !== 0x68323634) fail('当前 Scrcpy 视频编码不受支持')
+      },
+      packet: (packet: ScrcpyPreviewPacket) => {
+        if (closedByUs || failed) return
+        if (packet.type === 'configuration') {
+          nativeConfiguration = packet.data.slice()
+          return
+        }
+        // The MSE fallback consumes Annex-B bytes. Reattach separately framed
+        // SPS/PPS at keyframes; WebCodecs remains the primary decode path.
+        let video = packet.data
+        if (packet.keyframe && nativeConfiguration) {
+          video = new Uint8Array(nativeConfiguration.length + packet.data.length)
+          video.set(nativeConfiguration, 0)
+          video.set(packet.data, nativeConfiguration.length)
+        }
+        try { muxer?.feed({ video }) } catch { fail('视频播放失败，已回落截图') }
+      },
       bootstrapStart: () => {
         bootstrapPending = true
         bootstrapHidden = true
