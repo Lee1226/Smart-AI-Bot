@@ -77,6 +77,12 @@ class SwitchableFrameRenderer implements FrameRenderer {
   }
 
   dispose() {
+    // The installed yume-chan 2.1 renderer has no public dispose method.
+    // Explicitly release its WebGL context when this player is torn down.
+    const gl = this.webglCanvas.getContext('webgl2')
+      ?? this.webglCanvas.getContext('webgl')
+    gl?.getExtension('WEBGL_lose_context')?.loseContext()
+    this.webgl = null
     this.webglCanvas.width = 0
     this.webglCanvas.height = 0
     this.canvas2d.setSize(0, 0)
@@ -189,13 +195,19 @@ export default function H264LivePlayer({
     let diagWritePackets = 0
     let diagWriteMsTotal = 0
     let diagWriteMsMax = 0
+    let diagLastDecoderRendered = 0
+    let diagLastDecoderSkipped = 0
     rendererManager.onFrameDraw = () => { diagRenderedFrames += 1 }
     const diagTimer = window.setInterval(() => {
       if (!nativePacketMode) return
+      const decoderRendered = decoder?.framesRendered ?? 0
+      const decoderSkipped = decoder?.framesSkipped ?? 0
       console.info('[H264 DIAG][frontend]', {
         rxPacketsPerSec: Math.round(diagRxPackets / 5),
         rxBytesPerSec: Math.round(diagRxBytes / 5),
-        renderedFps: Number((diagRenderedFrames / 5).toFixed(1)),
+        rendererDrawFps: Number((diagRenderedFrames / 5).toFixed(1)),
+        decoderPresentedFps: Number((Math.max(0, decoderRendered - diagLastDecoderRendered) / 5).toFixed(1)),
+        decoderSkippedPerSec: Number((Math.max(0, decoderSkipped - diagLastDecoderSkipped) / 5).toFixed(1)),
         pendingPackets: pendingWrites.length + (inFlightBytes > 0 ? 1 : 0),
         pendingBytes: pendingBytes + inFlightBytes,
         writePacketsPerSec: Math.round(diagWritePackets / 5),
@@ -203,6 +215,8 @@ export default function H264LivePlayer({
         writeMaxMs: Number(diagWriteMsMax.toFixed(2)),
         waitingForKeyframe,
       })
+      diagLastDecoderRendered = decoderRendered
+      diagLastDecoderSkipped = decoderSkipped
       diagRxPackets = 0
       diagRxBytes = 0
       diagRenderedFrames = 0
