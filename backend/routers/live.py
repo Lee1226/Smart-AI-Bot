@@ -615,9 +615,43 @@ async def _subscribe_local_adb_stream(websocket: WebSocket, device_id: str, seri
             )
             for packet in bootstrap_packets:
                 await websocket.send_bytes(_encode_scrcpy_preview_packet(packet))
+
+            # Low-overhead diagnostics for the native Scrcpy preview path.
+            # These metrics observe transport pressure without changing packet
+            # ordering, queue limits, or recorder fan-out.
+            stats_loop = asyncio.get_running_loop()
+            stats_last = stats_loop.time()
+            stats_packets = 0
+            stats_bytes = 0
+            stats_send_ms_total = 0.0
+            stats_send_ms_max = 0.0
             while True:
                 packet = await queue.get()
-                await websocket.send_bytes(_encode_scrcpy_preview_packet(packet))
+                payload = _encode_scrcpy_preview_packet(packet)
+                send_started = stats_loop.time()
+                await websocket.send_bytes(payload)
+                send_ms = (stats_loop.time() - send_started) * 1000
+                stats_packets += 1
+                stats_bytes += len(payload)
+                stats_send_ms_total += send_ms
+                stats_send_ms_max = max(stats_send_ms_max, send_ms)
+                now = stats_loop.time()
+                if now - stats_last >= 5.0:
+                    elapsed = max(now - stats_last, 0.001)
+                    logger.info(
+                        "[H264 DIAG][backend] device_id=%s viewer=%s "
+                        "rx_packets_per_sec=%.1f bytes_per_sec=%.0f "
+                        "queue_depth=%d send_avg_ms=%.2f send_max_ms=%.2f",
+                        device_id, viewer_id, stats_packets / elapsed,
+                        stats_bytes / elapsed, queue.qsize(),
+                        stats_send_ms_total / max(stats_packets, 1),
+                        stats_send_ms_max,
+                    )
+                    stats_last = now
+                    stats_packets = 0
+                    stats_bytes = 0
+                    stats_send_ms_total = 0.0
+                    stats_send_ms_max = 0.0
         else:
             if packet_mode:
                 # Audio-enabled Scrcpy may fall back to the legacy raw video
