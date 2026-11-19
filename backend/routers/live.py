@@ -268,8 +268,6 @@ async def _run_local_adb_hub(device_id: str, serial: str, hub: dict) -> None:
     stream = hub["stream"]
     lock = _local_adb_hub_lock(device_id)
     total_bytes = 0
-    total_nals = 0
-    last_stats = asyncio.get_running_loop().time()
 
     def enqueue_recorder_packet_locked(kind: str, packet) -> None:
         """Fan out a packet while the device hub lock is already held."""
@@ -294,7 +292,6 @@ async def _run_local_adb_hub(device_id: str, serial: str, hub: dict) -> None:
                 )
 
     async def publish(data: bytes, idle_flush: bool = False, recorder_packet=None) -> None:
-        nonlocal total_nals, last_stats
         if not data and not idle_flush and recorder_packet is None:
             return
         close_viewers = []
@@ -323,7 +320,6 @@ async def _run_local_adb_hub(device_id: str, serial: str, hub: dict) -> None:
                     hub["packet_bootstrap_bytes"] = len(config.payload) if config else 0
             if not batch and not idle_flush and recorder_packet is None:
                 return
-            total_nals += batch.count(b"\x00\x00\x00\x01")
             # Avoid copying the cached GOP on every packet once all viewers
             # have received their initial keyframe.
             needs_bootstrap = any(
@@ -384,14 +380,6 @@ async def _run_local_adb_hub(device_id: str, serial: str, hub: dict) -> None:
                         queue.put_nowait(None)
                     logger.warning("[LIVE HUB] slow consumer dropped: device_id=%s consumer=%s", device_id, viewer_id)
 
-            now = asyncio.get_running_loop().time()
-            if now - last_stats >= 5:
-                logger.info(
-                    "[H264] stream stats: device_id=%s bytes=%d nals=%d idr=%d gop_bytes=%d idle_flush=%s viewers=%d",
-                    device_id, total_bytes, total_nals, stream.idr_count,
-                    len(stream.gop), idle_flush, len(hub["subscribers"]),
-                )
-                last_stats = now
         for ws in close_viewers:
             try:
                 await ws.close(code=4408, reason="Viewer too slow; reconnect for a fresh keyframe")
