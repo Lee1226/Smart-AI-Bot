@@ -19,14 +19,12 @@ export default function H264LivePlayer({
 }) {
   const webglCanvasRef = useRef<HTMLCanvasElement>(null)
   const canvas2dRef = useRef<HTMLCanvasElement>(null)
-  const rendererRef = useRef<RendererMode>(renderer)
   const onFailRef = useRef(onFail)
   const onVideoSizeRef = useRef(onVideoSize)
   const outputRef = useRef<(frame: VideoFrame) => void>(() => {})
   const pipelineRef = useRef<H264DecodePipeline | null>(null)
   const failedRef = useRef(false)
 
-  rendererRef.current = renderer
   onFailRef.current = onFail
   onVideoSizeRef.current = onVideoSize
 
