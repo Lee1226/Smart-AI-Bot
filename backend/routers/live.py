@@ -37,11 +37,7 @@ from agent import local_adb
 from ws.video import VideoSession, sessions
 
 logger = logging.getLogger(__name__)
-_local_adb_streams: set[str] = set()
 _local_adb_sessions: dict[str, object] = {}
-_local_adb_websockets: dict[str, WebSocket] = {}
-_local_adb_claim_locks: dict[str, asyncio.Lock] = {}
-_LOCAL_ADB_TAKEOVER_TIMEOUT = 4.0
 _H264_BOOTSTRAP_START = object()
 _H264_BOOTSTRAP_END = object()
 
@@ -630,42 +626,9 @@ async def _subscribe_local_adb_stream(websocket: WebSocket, device_id: str, seri
             for packet in bootstrap_packets:
                 await websocket.send_bytes(_encode_scrcpy_preview_packet(packet))
 
-            # Low-overhead diagnostics for the native Scrcpy preview path.
-            # These metrics observe transport pressure without changing packet
-            # ordering, queue limits, or recorder fan-out.
-            stats_loop = asyncio.get_running_loop()
-            stats_last = stats_loop.time()
-            stats_packets = 0
-            stats_bytes = 0
-            stats_send_ms_total = 0.0
-            stats_send_ms_max = 0.0
             while True:
                 packet = await queue.get()
-                payload = _encode_scrcpy_preview_packet(packet)
-                send_started = stats_loop.time()
-                await websocket.send_bytes(payload)
-                send_ms = (stats_loop.time() - send_started) * 1000
-                stats_packets += 1
-                stats_bytes += len(payload)
-                stats_send_ms_total += send_ms
-                stats_send_ms_max = max(stats_send_ms_max, send_ms)
-                now = stats_loop.time()
-                if now - stats_last >= 5.0:
-                    elapsed = max(now - stats_last, 0.001)
-                    logger.info(
-                        "[H264 DIAG][backend] device_id=%s viewer=%s "
-                        "tx_packets_per_sec=%.1f bytes_per_sec=%.0f "
-                        "queue_depth=%d send_avg_ms=%.2f send_max_ms=%.2f",
-                        device_id, viewer_id, stats_packets / elapsed,
-                        stats_bytes / elapsed, queue.qsize(),
-                        stats_send_ms_total / max(stats_packets, 1),
-                        stats_send_ms_max,
-                    )
-                    stats_last = now
-                    stats_packets = 0
-                    stats_bytes = 0
-                    stats_send_ms_total = 0.0
-                    stats_send_ms_max = 0.0
+                await websocket.send_bytes(_encode_scrcpy_preview_packet(packet))
         else:
             if hub.get("video_mode") != "annexb":
                 raise RuntimeError("Scrcpy video metadata unavailable for native packet preview")
@@ -717,53 +680,6 @@ async def _subscribe_local_adb_stream(websocket: WebSocket, device_id: str, seri
             await asyncio.gather(task_to_stop, return_exceptions=True)
 
 
-
-def _local_adb_claim_lock(device_id: str) -> asyncio.Lock:
-    # Called on the event loop; no await occurs while creating the lock.
-    lock = _local_adb_claim_locks.get(device_id)
-    if lock is None:
-        lock = asyncio.Lock()
-        _local_adb_claim_locks[device_id] = lock
-    return lock
-
-
-async def _claim_local_adb_stream(websocket: WebSocket, device_id: str) -> bool:
-    """Take over a previous preview and guarantee one active stream per device."""
-    async with _local_adb_claim_lock(device_id):
-        old_websocket = _local_adb_websockets.get(device_id)
-        if device_id in _local_adb_streams and old_websocket is not None:
-            logger.info(
-                "[LIVE] Taking over existing preview: device_id=%s old_client=%s new_client=%s",
-                device_id, old_websocket.client, websocket.client,
-            )
-            try:
-                await old_websocket.close(code=4410, reason="Preview replaced by a new viewer")
-            except Exception:
-                logger.debug("Previous preview WebSocket already closed: device_id=%s", device_id)
-
-            # Closing the browser socket alone may not wake a worker thread
-            # blocked in Scrcpy recv(); stop the underlying session as well.
-            old_session = _local_adb_sessions.get(device_id)
-            if old_session is not None:
-                try:
-                    await old_session.stop()
-                except Exception:
-                    logger.exception("Failed to stop replaced Scrcpy session: device_id=%s", device_id)
-
-            deadline = asyncio.get_running_loop().time() + _LOCAL_ADB_TAKEOVER_TIMEOUT
-            while device_id in _local_adb_streams and asyncio.get_running_loop().time() < deadline:
-                await asyncio.sleep(0.05)
-
-        if device_id in _local_adb_streams:
-            logger.warning(
-                "[LIVE] Preview takeover timed out; existing session still active: device_id=%s",
-                device_id,
-            )
-            return False
-
-        _local_adb_streams.add(device_id)
-        _local_adb_websockets[device_id] = websocket
-        return True
 
 
 async def stop_local_adb_stream(device_id: str) -> None:
