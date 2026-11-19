@@ -43,7 +43,7 @@ export default function H264Canvas({ source, onFail, onVideoSize }: { source: H2
     }
     const pumpDecode = () => {
       if (!decoder || stopped || failed) return
-      while (pendingDecode.length && decoder.decodeQueueSize < 4) {
+      while (pendingDecode.length && decoder.decodeQueueSize < 8) {
         const chunk = pendingDecode.shift()!
         try { decoder.decode(chunk) } catch (error) {
           fail(error instanceof Error ? error.message : '视频解码提交失败')
@@ -62,7 +62,9 @@ export default function H264Canvas({ source, onFail, onVideoSize }: { source: H2
         if (stopped || failed || (!key && !hasKey)) return
         // Keep the preview close to the live edge. A large pending queue
         // makes the screen visibly lag behind touch/control actions.
-        if (pendingDecode.length >= 8) {
+        if (pendingDecode.length >= 30) {
+          // A brief decode slowdown is not a reason to tear down the decoder.
+          // Only enter recovery after a sustained backlog, then resume on IDR.
           pendingDecode = []
           try { decoder?.close() } catch { /* already closed */ }
           decoder = null
