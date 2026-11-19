@@ -102,6 +102,9 @@ class ScrcpyMediaSession:
             "recv_ms_max": 0.0,
             "last_packet_at": None,
             "max_packet_gap_ms": 0.0,
+            "last_pts_us": None,
+            "max_pts_gap_ms": 0.0,
+            "pts_packets": 0,
         }
 
     @staticmethod
@@ -258,6 +261,7 @@ class ScrcpyMediaSession:
         timeout: bool = False,
         chunk_bytes: int = 0,
         packet_count: int = 0,
+        packets: list[ScrcpyPacket] | None = None,
     ) -> None:
         """Aggregate video TCP-read cadence without affecting the media loop."""
         stats = self._video_read_diag
@@ -281,6 +285,20 @@ class ScrcpyMediaSession:
                 stats["last_packet_at"] = now
                 stats["packets"] += packet_count
 
+                # Scrcpy PTS is the device-side frame timestamp. Its cadence
+                # distinguishes encoder/source gaps from TCP delivery bursts.
+                for packet in packets or ():
+                    if packet.pts_us is None:
+                        continue
+                    previous_pts = stats["last_pts_us"]
+                    if previous_pts is not None and packet.pts_us >= previous_pts:
+                        stats["max_pts_gap_ms"] = max(
+                            stats["max_pts_gap_ms"],
+                            (packet.pts_us - previous_pts) / 1000.0,
+                        )
+                    stats["last_pts_us"] = packet.pts_us
+                    stats["pts_packets"] += 1
+
         elapsed_window = now - stats["window_started"]
         if elapsed_window < 5.0:
             return
@@ -294,6 +312,7 @@ class ScrcpyMediaSession:
             "tcp_reads_per_sec=%.1f tcp_bytes_per_sec=%.0f "
             "packets_per_sec=%.1f empty_parse_reads_per_sec=%.1f "
             "recv_avg_ms=%.2f recv_max_ms=%.2f max_packet_gap_ms=%.1f "
+            "max_pts_gap_ms=%.1f pts_packets_per_sec=%.1f "
             "last_packet_age_ms=%.1f parser_buffer_bytes=%d",
             self.serial, self.scid,
             stats["recv_calls"] / elapsed_window,
@@ -305,6 +324,8 @@ class ScrcpyMediaSession:
             stats["recv_ms_total"] / max(stats["recv_calls"], 1),
             stats["recv_ms_max"],
             stats["max_packet_gap_ms"],
+            stats["max_pts_gap_ms"],
+            stats["pts_packets"] / elapsed_window,
             last_packet_age_ms,
             len(self.video_parser.buffer),
         )
@@ -319,6 +340,8 @@ class ScrcpyMediaSession:
             "recv_ms_total": 0.0,
             "recv_ms_max": 0.0,
             "max_packet_gap_ms": 0.0,
+            "max_pts_gap_ms": 0.0,
+            "pts_packets": 0,
         })
 
     def _recv_packets(self, sock: socket.socket | None, parser: ScrcpyMediaStreamParser) -> list[ScrcpyPacket] | None:
@@ -357,6 +380,7 @@ class ScrcpyMediaSession:
                 elapsed_ms=(time.monotonic() - recv_started) * 1000,
                 chunk_bytes=len(chunk),
                 packet_count=len(packets),
+                packets=packets,
             )
         return packets
 
