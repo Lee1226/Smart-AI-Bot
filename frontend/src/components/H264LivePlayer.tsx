@@ -455,6 +455,14 @@ export default function H264LivePlayer({
 
     return () => {
       stopped = true
+      decoderGeneration += 1
+      cancelInFlightWrite?.()
+      cancelInFlightWrite = null
+      inFlightToken += 1
+      pendingWrites.length = 0
+      pendingBytes = 0
+      inFlightBytes = 0
+      inFlightQueuedAt = 0
       stopSource?.()
       disposeDecoder()
     }
