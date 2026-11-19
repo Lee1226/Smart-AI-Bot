@@ -267,6 +267,8 @@ export default function H264LivePlayer({
       if (stopped) return
       stopped = true
       decoderGeneration += 1
+      cancelInFlightWrite?.()
+      cancelInFlightWrite = null
       inFlightToken += 1
       stopSource?.()
       pendingWrites.length = 0
@@ -354,6 +356,8 @@ export default function H264LivePlayer({
       pendingBytes = 0
       waitingForKeyframe = false
       decoderGeneration += 1
+      cancelInFlightWrite?.()
+      cancelInFlightWrite = null
       inFlightToken += 1
       inFlightBytes = 0
       inFlightQueuedAt = 0
