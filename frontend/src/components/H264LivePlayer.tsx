@@ -40,11 +40,28 @@ class Canvas2DFrameRenderer implements FrameRenderer {
  */
 class SwitchableFrameRenderer implements FrameRenderer {
   onFrameDraw?: () => void
+  onRendererFail?: (message: string) => void
   private webgl: WebGLVideoFrameRenderer | null = null
   private canvas2d: Canvas2DFrameRenderer
   private active: FrameRenderer
   private width = 0
   private height = 0
+
+  private handleContextLost = (event: Event) => {
+    event.preventDefault()
+    const wasActive = this.active === this.webgl
+    this.webgl = null
+    if (wasActive) {
+      this.active = this.canvas2d
+      this.onRendererFail?.('WebGL 上下文丢失，已切换到 Canvas 2D')
+    }
+  }
+
+  private handleContextRestored = () => {
+    // Recreate the yume-chan renderer lazily on the next explicit WebGL
+    // selection. The decoder and incoming stream remain untouched.
+    this.webgl = null
+  }
 
   constructor(
     private webglCanvas: HTMLCanvasElement,
@@ -52,6 +69,8 @@ class SwitchableFrameRenderer implements FrameRenderer {
   ) {
     this.canvas2d = new Canvas2DFrameRenderer(canvas2dCanvas)
     this.active = this.canvas2d
+    this.webglCanvas.addEventListener('webglcontextlost', this.handleContextLost)
+    this.webglCanvas.addEventListener('webglcontextrestored', this.handleContextRestored)
   }
 
   setMode(mode: RendererMode) {
@@ -71,17 +90,39 @@ class SwitchableFrameRenderer implements FrameRenderer {
     this.active.setSize(width, height)
   }
 
+  private handleDrawFailure(renderer: FrameRenderer, error: unknown, frame: VideoFrame) {
+    if (renderer !== this.webgl) return
+    const wasActive = this.active === renderer
+    this.webgl = null
+    if (!wasActive) return
+    this.active = this.canvas2d
+    const message = error instanceof Error ? error.message : String(error)
+    this.onRendererFail?.(`WebGL 绘制失败，已切换到 Canvas 2D：${message}`)
+    this.canvas2d.draw(frame)
+  }
+
   draw(frame: VideoFrame) {
     this.onFrameDraw?.()
-    return this.active.draw(frame)
+    const renderer = this.active
+    try {
+      const result = renderer.draw(frame)
+      if (result && typeof (result as Promise<void>).then === 'function') {
+        return (result as Promise<void>).catch(error => {
+          this.handleDrawFailure(renderer, error, frame)
+        })
+      }
+      return result
+    } catch (error) {
+      this.handleDrawFailure(renderer, error, frame)
+      return
+    }
   }
 
   dispose() {
-    // The installed yume-chan 2.1 renderer has no public dispose method.
-    // Explicitly release its WebGL context when this player is torn down.
-    const gl = this.webglCanvas.getContext('webgl2')
-      ?? this.webglCanvas.getContext('webgl')
-    gl?.getExtension('WEBGL_lose_context')?.loseContext()
+    this.webglCanvas.removeEventListener('webglcontextlost', this.handleContextLost)
+    this.webglCanvas.removeEventListener('webglcontextrestored', this.handleContextRestored)
+    // Do not force-lose the context: React StrictMode may immediately mount
+    // another renderer against this same canvas during its effect replay.
     this.webgl = null
     this.webglCanvas.width = 0
     this.webglCanvas.height = 0
@@ -106,20 +147,23 @@ function sameBytes(left: Uint8Array | null, right: Uint8Array) {
 }
 
 export default function H264LivePlayer({
-  source, renderer, onFail, onVideoSize,
+  source, renderer, onFail, onRendererFail, onVideoSize,
 }: {
   source: H264StreamSource
   renderer: RendererMode
   onFail?: (message: string) => void
+  onRendererFail?: (message: string) => void
   onVideoSize?: (width: number, height: number) => void
 }) {
   const webglCanvasRef = useRef<HTMLCanvasElement>(null)
   const canvas2dRef = useRef<HTMLCanvasElement>(null)
   const onFailRef = useRef(onFail)
+  const onRendererFailRef = useRef(onRendererFail)
   const onVideoSizeRef = useRef(onVideoSize)
   const rendererRef = useRef<SwitchableFrameRenderer | null>(null)
 
   onFailRef.current = onFail
+  onRendererFailRef.current = onRendererFail
   onVideoSizeRef.current = onVideoSize
 
   // Renderer instance is stable for the lifetime of the component. Changing
@@ -132,9 +176,10 @@ export default function H264LivePlayer({
     let manager: SwitchableFrameRenderer
     try {
       manager = new SwitchableFrameRenderer(webglCanvas, canvas2d)
+      manager.onRendererFail = message => onRendererFailRef.current?.(message)
       rendererRef.current = manager
     } catch (error) {
-      onFailRef.current?.(error instanceof Error ? error.message : '视频渲染器初始化失败')
+      onRendererFailRef.current?.(error instanceof Error ? error.message : '视频渲染器初始化失败')
       return
     }
 
@@ -148,7 +193,7 @@ export default function H264LivePlayer({
     try {
       rendererRef.current?.setMode(renderer)
     } catch (error) {
-      onFailRef.current?.(error instanceof Error ? error.message : 'WebGL 初始化失败')
+      onRendererFailRef.current?.(error instanceof Error ? error.message : 'WebGL 初始化失败')
     }
   }, [renderer])
 
