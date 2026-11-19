@@ -100,10 +100,13 @@ export default function H264LivePlayer({
 
     outputRef.current = frame => {
       if (disposed) return
+      // Pointer-to-device coordinate mapping needs the decoded frame dimensions
+      // for both renderers. Without this callback the WebGL debug view has no
+      // videoDimensions and intentionally disables touch input.
+      onVideoSizeRef.current?.(frame.displayWidth, frame.displayHeight)
       if (renderer === 'canvas') {
         if (canvas2d!.width !== frame.displayWidth) canvas2d!.width = frame.displayWidth
         if (canvas2d!.height !== frame.displayHeight) canvas2d!.height = frame.displayHeight
-        onVideoSizeRef.current?.(frame.displayWidth, frame.displayHeight)
         context!.drawImage(frame, 0, 0)
         return
       }
