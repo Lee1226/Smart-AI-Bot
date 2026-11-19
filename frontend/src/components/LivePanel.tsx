@@ -36,11 +36,11 @@ const CAN_WEBCODECS =
 type Mode = 'on' | 'off'
 
 // H.264 screenrecord stream over WebSocket (under /v1 — already ws-proxied).
-function h264WsUrl(id: string): string {
+function h264WsUrl(id: string, scrcpyPackets = false): string {
   const proto = location.protocol === 'https:' ? 'wss:' : 'ws:'
   const token = getToken()
   const source = 'device'
-  const qs = `?source=${source}${token ? `&token=${encodeURIComponent(token)}` : ''}`
+  const qs = `?source=${source}${scrcpyPackets ? '&format=scrcpy-v1' : ''}${token ? `&token=${encodeURIComponent(token)}` : ''}`
   return `${proto}//${location.host}/v1/devices/${id}/live${qs}`
 }
 
@@ -210,8 +210,8 @@ export default function LivePanel({ device, defaultMode = 'off', storageKey = 'l
   const usingRemote = wantsVideo && remoteVideo && !localUsb && !localAdb && !adbFailed
   const videoUnavailable = mode === 'on' && (screenshotsOnly || !(usingUsb || usingLocalAdb || usingRemote))
   const videoSource = useMemo(() => device
-    ? localUsb ? browserUsbH264Source(device.id) : websocketH264Source(h264WsUrl(device.id))
-    : undefined, [device?.id, localUsb, mode, reloadKey])
+    ? localUsb ? browserUsbH264Source(device.id) : websocketH264Source(h264WsUrl(device.id, !!localAdb))
+    : undefined, [device?.id, localUsb, localAdb, mode, reloadKey])
   const videoFailed = (message: string) => { setStreamError(message); setAdbFailed(true) }
   const webglFailed = (message: string) => { setStreamError(message); setRenderer('canvas'); localStorage.setItem('h264-renderer', 'canvas') }
   const chooseRenderer = (value: 'canvas' | 'webgl') => { setRenderer(value); localStorage.setItem('h264-renderer', value) }
