@@ -165,6 +165,7 @@ export default function H264LivePlayer({
     let writer: ReturnType<WebCodecsVideoDecoder['writable']['getWriter']> | null = null
     let parser: H264AnnexB
     let configuration: Uint8Array | null = null
+    let decoderHasConfiguration = false
     let nativePacketMode = false
     let timestamp = 0n
     let lastWidth = 0
@@ -249,6 +250,7 @@ export default function H264LivePlayer({
       pendingWrites.length = 0
       pendingBytes = 0
       if (!nativePacketMode) configuration = null
+      decoderHasConfiguration = false
       timestamp = 0n
       waitingForKeyframe = true
       // Reset immediately instead of queueing reset behind a potentially
@@ -285,6 +287,7 @@ export default function H264LivePlayer({
       if (stopped) return
       if (incoming.type === 'configuration') {
         configuration = incoming.data.slice()
+        decoderHasConfiguration = true
         queuePacket({
           type: 'configuration',
           data: incoming.data,
@@ -314,8 +317,9 @@ export default function H264LivePlayer({
       if (waitingForKeyframe && !incoming.keyframe) return
       if (waitingForKeyframe && incoming.keyframe) {
         waitingForKeyframe = false
-        if (configuration) {
+        if (configuration && !decoderHasConfiguration) {
           queuePacket({ type: 'configuration', data: configuration })
+          decoderHasConfiguration = true
         }
       }
 
@@ -329,6 +333,7 @@ export default function H264LivePlayer({
 
     const handlePacketMetadata = (metadata: ScrcpyPreviewMetadata) => {
       nativePacketMode = true
+      waitingForKeyframe = true
       if (metadata.codecId !== 0x68323634) {
         fail(`当前 Scrcpy 视频编码不受支持：0x${metadata.codecId.toString(16)}`)
         return
@@ -422,6 +427,7 @@ export default function H264LivePlayer({
       inFlightQueuedAt = 0
       disposeDecoder()
       configuration = null
+      decoderHasConfiguration = false
       timestamp = 0n
       parser = createParser()
       createDecoder()
