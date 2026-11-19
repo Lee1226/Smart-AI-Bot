@@ -52,7 +52,6 @@ export default function DeviceWall({ devices, selectedId, onSelect }: {
           <div className="relative bg-terminal rounded-lg overflow-hidden mx-auto" style={{ aspectRatio: '9 / 19.5', maxWidth: 160 }}>
             {d.status === 'online' ? <>
               <ScreenshotView deviceId={d.id} source="screenshot" />
-              {d.id === selectedId && <span className="absolute top-2 left-2 rounded-md bg-black/65 px-2 py-1 text-[10px] text-white">{t('正在右侧预览', 'Previewing on right')}</span>}
             </> : <span className="absolute inset-0 flex items-center justify-center text-xs text-terminal-mute">{t('设备离线', 'Offline')}</span>}
           </div>
           <div className="flex items-center gap-2 mt-3"><span className={`w-2 h-2 rounded-full shrink-0 ${d.status === 'online' ? 'bg-ok' : 'bg-gray-300'}`} /><span className="text-sm font-medium truncate" title={d.name}>{d.name}</span></div>
