@@ -4,7 +4,7 @@ import {
   WebCodecsVideoDecoder,
   WebGLVideoFrameRenderer,
 } from '@yume-chan/scrcpy-decoder-webcodecs'
-import type { H264StreamSource } from '../lib/h264Stream'
+import type { H264StreamSource, ScrcpyPreviewPacket, ScrcpyPreviewMetadata } from '../lib/h264Stream'
 import { H264AnnexB } from '../lib/h264AnnexB'
 
 type RendererMode = 'canvas' | 'webgl'
@@ -165,6 +165,7 @@ export default function H264LivePlayer({
     let writer: ReturnType<WebCodecsVideoDecoder['writable']['getWriter']> | null = null
     let parser: H264AnnexB
     let configuration: Uint8Array | null = null
+    let nativePacketMode = false
     let timestamp = 0n
     let lastWidth = 0
     let lastHeight = 0
@@ -247,7 +248,7 @@ export default function H264LivePlayer({
     const resyncAtNextKeyframe = () => {
       pendingWrites.length = 0
       pendingBytes = 0
-      configuration = null
+      if (!nativePacketMode) configuration = null
       timestamp = 0n
       waitingForKeyframe = true
       // Reset immediately instead of queueing reset behind a potentially
@@ -278,6 +279,63 @@ export default function H264LivePlayer({
       decoder?.dispose()
       decoder = null
       onFailRef.current?.(message)
+    }
+
+    const handleNativePacket = (incoming: ScrcpyPreviewPacket) => {
+      if (stopped) return
+      if (incoming.type === 'configuration') {
+        configuration = incoming.data.slice()
+        queuePacket({
+          type: 'configuration',
+          data: incoming.data,
+        })
+        return
+      }
+
+      const now = performance.now()
+      const oldest = pendingWrites[0]
+      const oldestQueuedAt = oldest
+        ? (inFlightQueuedAt ? Math.min(oldest.queuedAt, inFlightQueuedAt) : oldest.queuedAt)
+        : inFlightQueuedAt
+      const queueTooOld = !!oldestQueuedAt && now - oldestQueuedAt > MAX_PENDING_AGE_MS
+      const queueTooLarge = pendingWrites.length + (inFlightBytes > 0 ? 1 : 0) >= MAX_PENDING_PACKETS
+        || pendingBytes + inFlightBytes + incoming.data.byteLength > MAX_PENDING_BYTES
+
+      if (!waitingForKeyframe && (queueTooOld || queueTooLarge)) {
+        console.warn('[H264] Decoder fell behind; resynchronizing at next IDR', {
+          pendingPackets: pendingWrites.length + (inFlightBytes > 0 ? 1 : 0),
+          pendingBytes: pendingBytes + inFlightBytes,
+          oldestAgeMs: oldestQueuedAt ? Math.round(now - oldestQueuedAt) : 0,
+          transport: 'scrcpy-packet',
+        })
+        resyncAtNextKeyframe()
+      }
+
+      if (waitingForKeyframe && !incoming.keyframe) return
+      if (waitingForKeyframe && incoming.keyframe) {
+        waitingForKeyframe = false
+        if (configuration) {
+          queuePacket({ type: 'configuration', data: configuration })
+        }
+      }
+
+      queuePacket({
+        type: 'data',
+        data: incoming.data,
+        keyframe: incoming.keyframe,
+        pts: incoming.pts,
+      })
+    }
+
+    const handlePacketMetadata = (metadata: ScrcpyPreviewMetadata) => {
+      nativePacketMode = true
+      if (metadata.codecId !== ScrcpyVideoCodecId.H264) {
+        fail(`当前 Scrcpy 视频编码不受支持：0x${metadata.codecId.toString(16)}`)
+        return
+      }
+      if (metadata.width > 0 && metadata.height > 0) {
+        onVideoSizeRef.current?.(metadata.width, metadata.height)
+      }
     }
 
     const createDecoder = () => {
@@ -355,6 +413,7 @@ export default function H264LivePlayer({
       pendingWrites.length = 0
       pendingBytes = 0
       waitingForKeyframe = false
+      nativePacketMode = false
       decoderGeneration += 1
       cancelInFlightWrite?.()
       cancelInFlightWrite = null
@@ -372,6 +431,8 @@ export default function H264LivePlayer({
       parser = createParser()
       stopSource = source({
         reset: resetStream,
+        packetMode: handlePacketMetadata,
+        packet: handleNativePacket,
         flush: () => parser.flushAccessUnit(),
         bootstrapStart: resetStream,
         bootstrapEnd: () => parser.flushAccessUnit(),
