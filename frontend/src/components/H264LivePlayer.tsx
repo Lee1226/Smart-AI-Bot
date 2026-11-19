@@ -180,6 +180,30 @@ export default function H264LivePlayer({
     let decoderGeneration = 0
     let cancelInFlightWrite: (() => void) | null = null
     let waitingForKeyframe = false
+    // Diagnostic counters are read-only: they do not alter packet scheduling.
+    let diagRxPackets = 0
+    let diagRxBytes = 0
+    let diagWritePackets = 0
+    let diagWriteMsTotal = 0
+    let diagWriteMsMax = 0
+    const diagTimer = window.setInterval(() => {
+      if (!nativePacketMode) return
+      console.info('[H264 DIAG][frontend]', {
+        rxPacketsPerSec: Math.round(diagRxPackets / 5),
+        rxBytesPerSec: Math.round(diagRxBytes / 5),
+        pendingPackets: pendingWrites.length + (inFlightBytes > 0 ? 1 : 0),
+        pendingBytes: pendingBytes + inFlightBytes,
+        writePacketsPerSec: Math.round(diagWritePackets / 5),
+        writeAvgMs: diagWritePackets ? Number((diagWriteMsTotal / diagWritePackets).toFixed(2)) : 0,
+        writeMaxMs: Number(diagWriteMsMax.toFixed(2)),
+        waitingForKeyframe,
+      })
+      diagRxPackets = 0
+      diagRxBytes = 0
+      diagWritePackets = 0
+      diagWriteMsTotal = 0
+      diagWriteMsMax = 0
+    }, 5000)
     const MAX_PENDING_PACKETS = 96
     const MAX_PENDING_BYTES = 16 * 1024 * 1024
     const MAX_PENDING_AGE_MS = 1000
@@ -215,10 +239,17 @@ export default function H264LivePlayer({
               cancelled,
             ])
             if (ready === 'cancelled' || stopped || generation !== decoderGeneration) continue
+            const writeStarted = performance.now()
             const written = await Promise.race([
               activeWriter.write(item.packet).then(() => 'written' as const),
               cancelled,
             ])
+            if (written === 'written') {
+              const writeMs = performance.now() - writeStarted
+              diagWritePackets += 1
+              diagWriteMsTotal += writeMs
+              diagWriteMsMax = Math.max(diagWriteMsMax, writeMs)
+            }
             if (written === 'cancelled' || stopped || generation !== decoderGeneration) continue
           } catch (error) {
             if (stopped || generation !== decoderGeneration) continue
@@ -269,6 +300,7 @@ export default function H264LivePlayer({
     const fail = (message: string) => {
       if (stopped) return
       stopped = true
+      window.clearInterval(diagTimer)
       decoderGeneration += 1
       cancelInFlightWrite?.()
       cancelInFlightWrite = null
@@ -285,6 +317,8 @@ export default function H264LivePlayer({
 
     const handleNativePacket = (incoming: ScrcpyPreviewPacket) => {
       if (stopped) return
+      diagRxPackets += 1
+      diagRxBytes += incoming.data.byteLength
       if (incoming.type === 'configuration') {
         configuration = incoming.data.slice()
         decoderHasConfiguration = true
