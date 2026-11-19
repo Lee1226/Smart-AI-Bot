@@ -60,6 +60,15 @@ export default function H264Canvas({ source, onFail, onVideoSize }: { source: H2
       hasKey = false
       parser = new H264AnnexB((data, key, sps) => {
         if (stopped || failed || (!key && !hasKey)) return
+        // Keep the preview close to the live edge. A large pending queue
+        // makes the screen visibly lag behind touch/control actions.
+        if (pendingDecode.length >= 8) {
+          pendingDecode = []
+          try { decoder?.close() } catch { /* already closed */ }
+          decoder = null
+          hasKey = false
+          if (!key) return
+        }
         if (!decoder) {
           decoder = new VideoDecoder({
             output: frame => {
@@ -78,7 +87,6 @@ export default function H264Canvas({ source, onFail, onVideoSize }: { source: H2
           decoder.addEventListener('dequeue', pumpDecode)
           decoder.configure({ codec: `avc1.${hex(sps[1])}${hex(sps[2])}${hex(sps[3])}`, optimizeForLatency: true })
         }
-        if (pendingDecode.length >= 1800) throw new Error('视频解码输入缓存超过上限，已回落截图')
         pendingDecode.push(new EncodedVideoChunk({ type: key ? 'key' : 'delta', timestamp, data }))
         timestamp += Math.round(1e6 / 32)
         hasKey ||= key
