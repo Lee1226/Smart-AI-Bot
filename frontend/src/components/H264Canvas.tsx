@@ -43,7 +43,7 @@ export default function H264Canvas({ source, onFail, onVideoSize }: { source: H2
     }
     const pumpDecode = () => {
       if (!decoder || stopped || failed) return
-      while (pendingDecode.length && decoder.decodeQueueSize < 8) {
+      while (pendingDecode.length && decoder.decodeQueueSize < 4) {
         const chunk = pendingDecode.shift()!
         try { decoder.decode(chunk) } catch (error) {
           fail(error instanceof Error ? error.message : '视频解码提交失败')
