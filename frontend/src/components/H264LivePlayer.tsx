@@ -171,9 +171,12 @@ export default function H264LivePlayer({
     type PendingWrite = { packet?: ScrcpyMediaStreamPacket; reset?: true; bytes: number; queuedAt: number }
     const pendingWrites: PendingWrite[] = []
     let pendingBytes = 0
+    let inFlightBytes = 0
+    let inFlightQueuedAt = 0
+    let inFlightToken = 0
     let writePumpRunning = false
+    let decoderGeneration = 0
     let waitingForKeyframe = false
-    let resetQueued = false
     const MAX_PENDING_PACKETS = 96
     const MAX_PENDING_BYTES = 16 * 1024 * 1024
     const MAX_PENDING_AGE_MS = 1000
@@ -185,18 +188,33 @@ export default function H264LivePlayer({
         while (!stopped && pendingWrites.length) {
           const item = pendingWrites.shift()!
           pendingBytes = Math.max(0, pendingBytes - item.bytes)
-          if (item.reset) {
-            resetQueued = false
-            disposeDecoder()
-            createDecoder()
+          const generation = decoderGeneration
+          const token = ++inFlightToken
+          inFlightBytes = item.bytes
+          inFlightQueuedAt = item.queuedAt
+          const activeWriter = writer
+          if (!activeWriter || !item.packet) {
+            inFlightBytes = 0
+            inFlightQueuedAt = 0
             continue
           }
-          const activeWriter = writer
-          if (!activeWriter || !item.packet) continue
-          // WritableStream backpressure: only submit the next compressed packet
-          // after the previous write has completed and the sink is ready.
-          await activeWriter.ready
-          await activeWriter.write(item.packet)
+          try {
+            // Keep the in-flight packet in backlog accounting. A reset bumps
+            // decoderGeneration and releases the old writer; its late rejection
+            // must not fail the replacement decoder.
+            await activeWriter.ready
+            if (stopped || generation !== decoderGeneration) continue
+            await activeWriter.write(item.packet)
+            if (stopped || generation !== decoderGeneration) continue
+          } catch (error) {
+            if (stopped || generation !== decoderGeneration) continue
+            throw error
+          } finally {
+            if (token === inFlightToken) {
+              inFlightBytes = 0
+              inFlightQueuedAt = 0
+            }
+          }
         }
       } catch (error) {
         fail(error instanceof Error ? error.message : 'H.264 视频帧提交失败')
@@ -219,16 +237,22 @@ export default function H264LivePlayer({
       configuration = null
       timestamp = 0n
       waitingForKeyframe = true
-      if (!resetQueued) {
-        pendingWrites.push({ reset: true, bytes: 0, queuedAt: performance.now() })
-        resetQueued = true
-      }
-      void pumpWrites()
+      // Reset immediately instead of queueing reset behind a potentially
+      // blocked writer.ready/write. The generation change invalidates that
+      // in-flight operation and the next IDR starts on a fresh decoder.
+      decoderGeneration += 1
+      inFlightToken += 1
+      inFlightBytes = 0
+      inFlightQueuedAt = 0
+      disposeDecoder()
+      createDecoder()
     }
 
     const fail = (message: string) => {
       if (stopped) return
       stopped = true
+      decoderGeneration += 1
+      inFlightToken += 1
       stopSource?.()
       pendingWrites.length = 0
       pendingBytes = 0
@@ -265,15 +289,18 @@ export default function H264LivePlayer({
 
       const now = performance.now()
       const oldest = pendingWrites[0]
-      const queueTooOld = !!oldest && now - oldest.queuedAt > MAX_PENDING_AGE_MS
-      const queueTooLarge = pendingWrites.length >= MAX_PENDING_PACKETS
-        || pendingBytes + data.byteLength > MAX_PENDING_BYTES
+      const oldestQueuedAt = oldest
+        ? (inFlightQueuedAt ? Math.min(oldest.queuedAt, inFlightQueuedAt) : oldest.queuedAt)
+        : inFlightQueuedAt
+      const queueTooOld = !!oldestQueuedAt && now - oldestQueuedAt > MAX_PENDING_AGE_MS
+      const queueTooLarge = pendingWrites.length + (inFlightBytes > 0 ? 1 : 0) >= MAX_PENDING_PACKETS
+        || pendingBytes + inFlightBytes + data.byteLength > MAX_PENDING_BYTES
 
       if (!waitingForKeyframe && (queueTooOld || queueTooLarge)) {
         console.warn('[H264] Decoder fell behind; resynchronizing at next IDR', {
-          pendingPackets: pendingWrites.length,
-          pendingBytes,
-          oldestAgeMs: oldest ? Math.round(now - oldest.queuedAt) : 0,
+          pendingPackets: pendingWrites.length + (inFlightBytes > 0 ? 1 : 0),
+          pendingBytes: pendingBytes + inFlightBytes,
+          oldestAgeMs: oldestQueuedAt ? Math.round(now - oldestQueuedAt) : 0,
         })
         resyncAtNextKeyframe()
       }
@@ -311,7 +338,10 @@ export default function H264LivePlayer({
       pendingWrites.length = 0
       pendingBytes = 0
       waitingForKeyframe = false
-      resetQueued = false
+      decoderGeneration += 1
+      inFlightToken += 1
+      inFlightBytes = 0
+      inFlightQueuedAt = 0
       disposeDecoder()
       configuration = null
       timestamp = 0n
