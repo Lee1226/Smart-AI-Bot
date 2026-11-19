@@ -329,7 +329,7 @@ export default function H264LivePlayer({
 
     const handlePacketMetadata = (metadata: ScrcpyPreviewMetadata) => {
       nativePacketMode = true
-      if (metadata.codecId !== ScrcpyVideoCodecId.H264) {
+      if (metadata.codecId !== 0x68323634) {
         fail(`当前 Scrcpy 视频编码不受支持：0x${metadata.codecId.toString(16)}`)
         return
       }
