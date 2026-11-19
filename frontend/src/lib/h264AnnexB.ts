@@ -6,7 +6,7 @@ export class H264AnnexB {
   private key = false
   private sps?: Uint8Array
   private pps?: Uint8Array
-  constructor(private output: (data: Uint8Array, key: boolean, sps: Uint8Array) => void) {}
+  constructor(private output: (data: Uint8Array, key: boolean, sps: Uint8Array, configuration: Uint8Array) => void) {}
 
   private emit() {
     if (!this.slices.length) return
@@ -15,7 +15,15 @@ export class H264AnnexB {
       const data = new Uint8Array(nals.reduce((n, nal) => n + 4 + nal.length, 0))
       let offset = 0
       for (const nal of nals) { data.set([0, 0, 0, 1], offset); data.set(nal, offset + 4); offset += 4 + nal.length }
-      this.output(data, this.key, this.sps)
+
+      // Scrcpy's decoder package accepts SPS/PPS as a separate configuration
+      // packet, then prepends it to the first keyframe internally.
+      const configuration = new Uint8Array(8 + this.sps.length + this.pps.length)
+      configuration.set([0, 0, 0, 1], 0)
+      configuration.set(this.sps, 4)
+      configuration.set([0, 0, 0, 1], 4 + this.sps.length)
+      configuration.set(this.pps, 8 + this.sps.length)
+      this.output(data, this.key, this.sps, configuration)
     }
     this.slices = []
     this.key = false
