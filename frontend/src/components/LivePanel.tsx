@@ -2,8 +2,7 @@ import { useState, useEffect, useRef, useMemo, useSyncExternalStore } from 'reac
 import { useMutation, useQuery } from '@tanstack/react-query'
 import { fetchDeviceCapabilities, controlDevice, Device, getToken } from '../lib/api'
 import { useT } from '../lib/i18n'
-import H264Canvas from './H264Canvas'
-import H264WebGLPlayer from './H264WebGLPlayer'
+import H264LivePlayer from './H264LivePlayer'
 import H264Player from './H264Player'
 import { browserUsbH264Source, subscribeUsb, usbSnapshot } from '../lib/browserUsb'
 import { websocketH264Source } from '../lib/h264Stream'
@@ -210,7 +209,7 @@ export default function LivePanel({ device, defaultMode = 'off', storageKey = 'l
     : undefined, [device?.id, localUsb, mode, reloadKey])
   const videoFailed = (message: string) => { setStreamError(message); setAdbFailed(true) }
   const webglFailed = (message: string) => { setStreamError(message); setRenderer('canvas'); localStorage.setItem('h264-renderer', 'canvas') }
-  const chooseRenderer = (value: 'canvas' | 'webgl') => { setRenderer(value); localStorage.setItem('h264-renderer', value); setReloadKey(k => k + 1) }
+  const chooseRenderer = (value: 'canvas' | 'webgl') => { setRenderer(value); localStorage.setItem('h264-renderer', value) }
   const canStream = !!device && mode === 'on' && online
   const supportsManualControl = !!device && online && ['portal', 'adb_usb', 'adb_bridge'].includes(device.connection_type)
   const mapPointer = (event: React.PointerEvent<HTMLDivElement>) => {
@@ -314,10 +313,11 @@ export default function LivePanel({ device, defaultMode = 'off', storageKey = 'l
             <Placeholder text={streamError || (screenshotsOnly ? t('当前连接方式暂不支持实时视频', 'Live video is not supported by this connection type') : t('实时视频流不可用。远程 App 请先在手机开启远程视频并授权录屏。', 'Live video is unavailable. Enable remote video and authorize screen capture in the phone app.'))} />
           ) : (usingUsb || usingLocalAdb || usingRemote) && videoSource ? (
             CAN_WEBCODECS ? (
-              activeRenderer === 'webgl' ? <H264WebGLPlayer key={`${device.id}-webgl-${reloadKey}`} source={videoSource} onFail={webglFailed} /> : <H264Canvas
-                key={`${device.id}-h264-${reloadKey}`}
+              <H264LivePlayer
+                key={`${device.id}-${reloadKey}`}
                 source={videoSource}
-                onFail={videoFailed}
+                renderer={activeRenderer}
+                onFail={activeRenderer === 'webgl' ? webglFailed : videoFailed}
                 onVideoSize={forceCanvas2D ? handleVideoSize : undefined}
               />
             ) : (
