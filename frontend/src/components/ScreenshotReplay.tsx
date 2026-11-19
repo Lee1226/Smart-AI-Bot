@@ -17,7 +17,7 @@ export default function ScreenshotReplay({
   const frames = useMemo<Frame[]>(() => {
     const f: Frame[] = steps
       .filter(s => s.screenshot_b64)
-      .map(s => ({ b64: s.screenshot_b64, label: `Step ${s.step}`, fn: s.action.match(/^\w+/)?.[0] ?? '' }))
+      .map(s => ({ b64: s.screenshot_b64, label: `Step ${s.step}`, fn: s.action.match(/^\\w+/)?.[0] ?? '' }))
     if (finalShot) f.push({ b64: finalShot, label: 'Final', fn: '' })
     return f
   }, [steps, finalShot])
@@ -71,16 +71,14 @@ export default function ScreenshotReplay({
           <video
             src={videoUrl}
             controls
-            autoPlay
-            muted
-            loop
             playsInline
+            preload="metadata"
             className="absolute inset-0 w-full h-full object-contain bg-black"
           />
         ) : !hasSelection ? (
           <Center text={t('选择左侧一个用例查看回放', 'Select a case on the left to view its replay')} />
         ) : frames.length === 0 ? (
-          <Center text={t('该用例无截图帧', 'This case has no screenshot frames')} />
+          <Center text={t('该用例无截图帧', 'No screenshot frames for this case')} />
         ) : (
           <img
             src={`data:image/png;base64,${cur.b64}`}
