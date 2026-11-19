@@ -640,7 +640,7 @@ async def _subscribe_local_adb_stream(websocket: WebSocket, device_id: str, seri
                     elapsed = max(now - stats_last, 0.001)
                     logger.info(
                         "[H264 DIAG][backend] device_id=%s viewer=%s "
-                        "rx_packets_per_sec=%.1f bytes_per_sec=%.0f "
+                        "tx_packets_per_sec=%.1f bytes_per_sec=%.0f "
                         "queue_depth=%d send_avg_ms=%.2f send_max_ms=%.2f",
                         device_id, viewer_id, stats_packets / elapsed,
                         stats_bytes / elapsed, queue.qsize(),
