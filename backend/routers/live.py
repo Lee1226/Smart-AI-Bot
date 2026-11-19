@@ -633,21 +633,21 @@ async def _subscribe_local_adb_stream(websocket: WebSocket, device_id: str, seri
                     bootstrap = hub["stream"].bootstrap
                     if bootstrap:
                         queue.put_nowait(_H264_BOOTSTRAP_START)
-                        queue.put_nowait(bootstrap + b"\\x00\\x00\\x00\\x01")
+                        queue.put_nowait(bootstrap + b"\x00\x00\x00\x01")
                         queue.put_nowait(None)
                         queue.put_nowait(_H264_BOOTSTRAP_END)
                         hub["bootstrap_sent"][viewer_id] = True
                 await websocket.send_text("h264_annexb")
             while True:
                 chunk = await queue.get()
-            if chunk is _H264_BOOTSTRAP_START:
-                await websocket.send_text("h264_bootstrap_start")
-            elif chunk is _H264_BOOTSTRAP_END:
-                await websocket.send_text("h264_bootstrap_end")
-            elif chunk is None:
-                await websocket.send_text("h264_flush")
-            else:
-                await websocket.send_bytes(chunk)
+                if chunk is _H264_BOOTSTRAP_START:
+                    await websocket.send_text("h264_bootstrap_start")
+                elif chunk is _H264_BOOTSTRAP_END:
+                    await websocket.send_text("h264_bootstrap_end")
+                elif chunk is None:
+                    await websocket.send_text("h264_flush")
+                else:
+                    await websocket.send_bytes(chunk)
     except (WebSocketDisconnect, RuntimeError, asyncio.CancelledError, OSError) as exc:
         logger.info("[LIVE HUB] viewer send ended: device_id=%s viewer=%s error=%s",
                     device_id, viewer_id, exc)
