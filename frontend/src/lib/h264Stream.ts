@@ -90,18 +90,16 @@ export function websocketH264Source(url: string): H264StreamSource {
         clearTimeout(firstFrame)
         if (stopped || ws !== current) return
 
-        // The backend allows only one viewer per device. During React StrictMode
-        // development remounts, the previous socket can still be releasing its
-        // Scrcpy session when the replacement socket arrives (close code 4409).
-        // Treat that short-lived lock as retryable instead of immediately
-        // falling back to screenshots.
-        const permanent = e.code === 4404 || e.code === 4401 || e.code === 4403 || e.code === 4410
+        // The remote video provider allows one viewer per device. A 4409
+        // response is retryable because the previous preview may still be
+        // releasing its session.
+        const permanent = e.code === 4404 || e.code === 4401 || e.code === 4403
         // 1006 (aborted handshake) and 1012 (backend restart / failed Scrcpy
         // producer) are transient. Retry long enough for the backend to release
         // the old session and start a fresh producer.
         const maxRetries = e.code === 4409 ? 10 : 12
         if (permanent || ++retryCount > maxRetries) {
-          handlers.fail(e.code === 4410 ? '视频预览已在其他连接中接管' : e.code === 4409 ? '视频设备正在被其他连接占用' : '视频流不可用')
+          handlers.fail(e.code === 4409 ? '视频设备正在被其他连接占用' : '视频流不可用')
           return
         }
         const delay = e.code === 4409
