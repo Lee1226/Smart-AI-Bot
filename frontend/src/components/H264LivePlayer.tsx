@@ -72,7 +72,6 @@ export default function H264LivePlayer({
       stopSource?.()
       pipeline.dispose()
       if (pipelineRef.current === pipeline) pipelineRef.current = null
-      outputRef.current = () => {}
     }
   }, [source])
 
