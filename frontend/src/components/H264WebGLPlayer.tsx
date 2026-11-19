@@ -65,6 +65,15 @@ export default function H264WebGLPlayer({
       hasKey = false
       parser = new H264AnnexB((data, key, sps) => {
         if (stopped || failed || (!key && !hasKey)) return
+        // Bound queued access units so rendering stays near the live edge.
+        // On overload, discard stale deltas and resume from the next IDR.
+        if (pendingDecode.length >= 8) {
+          pendingDecode = []
+          try { decoder?.close() } catch { /* already closed */ }
+          decoder = null
+          hasKey = false
+          if (!key) return
+        }
         if (!decoder) {
           decoder = new VideoDecoder({
             output: frame => {
@@ -118,16 +127,6 @@ export default function H264WebGLPlayer({
             codec: `avc1.${hex(sps[1])}${hex(sps[2])}${hex(sps[3])}`,
             optimizeForLatency: true,
           })
-        }
-        if (pendingDecode.length >= 24) {
-          // A decode backlog above roughly 750 ms means playback is no longer
-          // real-time. Drop the queued GOP and wait for the next keyframe instead of rendering
-          // seconds of stale interaction feedback.
-          pendingDecode = []
-          try { decoder?.close() } catch { /* decoder may already be closed */ }
-          decoder = null
-          hasKey = false
-          if (!key) return
         }
         pendingDecode.push(new EncodedVideoChunk({
           type: key ? 'key' : 'delta',
