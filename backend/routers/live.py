@@ -211,10 +211,10 @@ async def subscribe_local_adb_recorder(device_id: str, serial: str):
                         "session": None,
                         "task": None,
                         "error": None,
+                        "video_mode": "starting",
                         "stream": _H264AnnexBStream(),
                         "packet_bootstrap": [],
                         "packet_bootstrap_bytes": 0,
-                        "formats": {},
                         "bootstrap_sent": {},
                         "stopping": False,
                     }
@@ -303,14 +303,11 @@ async def _run_local_adb_hub(device_id: str, serial: str, hub: dict) -> None:
             return
         close_viewers = []
         async with lock:
-            # Only legacy Annex-B viewers consume this parser. Native Scrcpy
-            # packet viewers and recorders use the already-framed packets below.
-            # Rebuild the cache when a legacy viewer first subscribes.
-            has_legacy_viewers = any(
-                stream_format != "scrcpy-v1"
-                for stream_format in hub.get("formats", {}).values()
-            )
-            batch = (stream.feed(data) if data else stream.flush()) if has_legacy_viewers else b""
+            # The normal A/V Scrcpy session already provides framed packets.
+            # Parse Annex-B only when Scrcpy had to fall back to its raw video-only
+            # stream; this is a transport fallback, not a legacy-client path.
+            uses_raw_fallback = hub.get("video_mode") == "annexb"
+            batch = (stream.feed(data) if data else stream.flush()) if uses_raw_fallback else b""
             if recorder_packet is not None:
                 enqueue_recorder_packet_locked("video", recorder_packet)
                 packet_bootstrap = hub["packet_bootstrap"]
@@ -340,7 +337,7 @@ async def _run_local_adb_hub(device_id: str, serial: str, hub: dict) -> None:
             bootstrap = stream.bootstrap if needs_bootstrap else b""
             for viewer_id, queue in list(hub["subscribers"].items()):
                 try:
-                    if hub.get("formats", {}).get(viewer_id) == "scrcpy-v1":
+                    if hub.get("video_mode") == "scrcpy-v1":
                         if recorder_packet is not None:
                             queue.put_nowait(recorder_packet)
                         continue
@@ -461,6 +458,9 @@ async def _run_local_adb_hub(device_id: str, serial: str, hub: dict) -> None:
 
     try:
         await session.start()
+        hub["video_mode"] = (
+            "annexb" if session._video_only_fallback is not None else "scrcpy-v1"
+        )
         hub["media_metadata"] = {
             "video": session.video_metadata,
             "audio_codec_id": session.audio_codec_id,
@@ -556,6 +556,10 @@ async def _run_local_adb_hub(device_id: str, serial: str, hub: dict) -> None:
 
 
 async def _subscribe_local_adb_stream(websocket: WebSocket, device_id: str, serial: str) -> None:
+    if websocket.query_params.get("format") != "scrcpy-v1":
+        await websocket.close(code=4403, reason="Native Scrcpy preview protocol required")
+        return
+
     viewer_id = uuid.uuid4().hex
     lock = _local_adb_hub_lock(device_id)
     while True:
@@ -574,41 +578,24 @@ async def _subscribe_local_adb_stream(websocket: WebSocket, device_id: str, seri
                         "session": None,
                         "task": None,
                         "error": None,
+                        "video_mode": "starting",
                         "stream": _H264AnnexBStream(),
                         "packet_bootstrap": [],
                         "packet_bootstrap_bytes": 0,
-                        "formats": {},
                         "bootstrap_sent": {},
                         "stopping": False,
                     }
                     _local_adb_hubs[device_id] = hub
                     hub["task"] = asyncio.create_task(_run_local_adb_hub(device_id, serial, hub))
-                packet_mode = websocket.query_params.get("format") == "scrcpy-v1"
-                if not packet_mode:
-                    has_legacy_viewer = any(
-                        stream_format != "scrcpy-v1"
-                        for stream_format in hub.get("formats", {}).values()
-                    )
-                    if not has_legacy_viewer:
-                        # The native packet path keeps a bounded keyframe-based
-                        # bootstrap. Replay it once when legacy Annex-B is needed,
-                        # instead of parsing every packet for native-only viewers.
-                        stream = hub["stream"]
-                        stream.reset()
-                        for cached_packet in hub.get("packet_bootstrap", []):
-                            payload = getattr(cached_packet, "payload", b"")
-                            if payload:
-                                stream.feed(payload)
-                queue = asyncio.Queue(maxsize=128 if packet_mode else 64)
-                hub.setdefault("formats", {})[viewer_id] = "scrcpy-v1" if packet_mode else "annexb"
-                bootstrap = hub["stream"].bootstrap
+                queue = asyncio.Queue(maxsize=128)
+                # In raw fallback mode, the parser has been running since the
+                # producer started, so a late viewer can receive a valid GOP.
+                bootstrap = hub["stream"].bootstrap if hub.get("video_mode") == "annexb" else b""
                 if bootstrap:
                     queue.put_nowait(_H264_BOOTSTRAP_START)
                     queue.put_nowait(bootstrap + b"\x00\x00\x00\x01")
-                    queue.put_nowait(None)  # flush the final cached access unit
+                    queue.put_nowait(None)
                     queue.put_nowait(_H264_BOOTSTRAP_END)
-                # If the first IDR has not arrived yet, the producer will replace
-                # queued deltas with bootstrap as soon as SPS/PPS + IDR are complete.
                 hub["bootstrap_sent"][viewer_id] = bool(bootstrap)
                 hub["subscribers"][viewer_id] = queue
                 hub["websockets"][viewer_id] = websocket
@@ -627,10 +614,9 @@ async def _subscribe_local_adb_stream(websocket: WebSocket, device_id: str, seri
         if hub["error"]:
             await websocket.close(code=1012, reason="Scrcpy producer failed; reconnect")
             return
-        packet_mode = websocket.query_params.get("format") == "scrcpy-v1"
         metadata = hub.get("media_metadata", {})
         video_metadata = metadata.get("video") if isinstance(metadata, dict) else None
-        if packet_mode and video_metadata is not None:
+        if hub.get("video_mode") == "scrcpy-v1" and video_metadata is not None:
             async with lock:
                 bootstrap_packets = list(hub.get("packet_bootstrap", []))
                 while not queue.empty():
@@ -681,25 +667,24 @@ async def _subscribe_local_adb_stream(websocket: WebSocket, device_id: str, seri
                     stats_send_ms_total = 0.0
                     stats_send_ms_max = 0.0
         else:
-            if packet_mode:
-                # Audio-enabled Scrcpy may fall back to the legacy raw video
-                # producer. Keep that path on Annex-B rather than pretending
-                # arbitrary raw chunks are framed Scrcpy packets.
-                async with lock:
-                    hub.setdefault("formats", {})[viewer_id] = "annexb"
-                    while not queue.empty():
-                        try:
-                            queue.get_nowait()
-                        except asyncio.QueueEmpty:
-                            break
-                    bootstrap = hub["stream"].bootstrap
-                    if bootstrap:
-                        queue.put_nowait(_H264_BOOTSTRAP_START)
-                        queue.put_nowait(bootstrap + b"\x00\x00\x00\x01")
-                        queue.put_nowait(None)
-                        queue.put_nowait(_H264_BOOTSTRAP_END)
-                        hub["bootstrap_sent"][viewer_id] = True
-                await websocket.send_text("h264_annexb")
+            if hub.get("video_mode") != "annexb":
+                raise RuntimeError("Scrcpy video metadata unavailable for native packet preview")
+            # The current client understands this raw H.264 fallback when the
+            # audio/video Scrcpy session cannot start and video-only mode is used.
+            async with lock:
+                while not queue.empty():
+                    try:
+                        queue.get_nowait()
+                    except asyncio.QueueEmpty:
+                        break
+                bootstrap = hub["stream"].bootstrap
+                if bootstrap:
+                    queue.put_nowait(_H264_BOOTSTRAP_START)
+                    queue.put_nowait(bootstrap + b"\x00\x00\x00\x01")
+                    queue.put_nowait(None)
+                    queue.put_nowait(_H264_BOOTSTRAP_END)
+                    hub["bootstrap_sent"][viewer_id] = True
+            await websocket.send_text("h264_annexb")
             while True:
                 chunk = await queue.get()
                 if chunk is _H264_BOOTSTRAP_START:
@@ -724,7 +709,6 @@ async def _subscribe_local_adb_stream(websocket: WebSocket, device_id: str, seri
             hub["subscribers"].pop(viewer_id, None)
             hub["websockets"].pop(viewer_id, None)
             hub.get("bootstrap_sent", {}).pop(viewer_id, None)
-            hub.get("formats", {}).pop(viewer_id, None)
             if not hub["subscribers"] and not hub.get("recorders") and _local_adb_hubs.get(device_id) is hub:
                 hub["stopping"] = True
                 task_to_stop = hub["task"]
