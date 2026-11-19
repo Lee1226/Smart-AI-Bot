@@ -39,6 +39,7 @@ class Canvas2DFrameRenderer implements FrameRenderer {
  * not recreated when the output canvas changes.
  */
 class SwitchableFrameRenderer implements FrameRenderer {
+  onFrameDraw?: () => void
   private webgl: WebGLVideoFrameRenderer | null = null
   private canvas2d: Canvas2DFrameRenderer
   private active: FrameRenderer
@@ -71,6 +72,7 @@ class SwitchableFrameRenderer implements FrameRenderer {
   }
 
   draw(frame: VideoFrame) {
+    this.onFrameDraw?.()
     return this.active.draw(frame)
   }
 
@@ -183,14 +185,17 @@ export default function H264LivePlayer({
     // Diagnostic counters are read-only: they do not alter packet scheduling.
     let diagRxPackets = 0
     let diagRxBytes = 0
+    let diagRenderedFrames = 0
     let diagWritePackets = 0
     let diagWriteMsTotal = 0
     let diagWriteMsMax = 0
+    rendererManager.onFrameDraw = () => { diagRenderedFrames += 1 }
     const diagTimer = window.setInterval(() => {
       if (!nativePacketMode) return
       console.info('[H264 DIAG][frontend]', {
         rxPacketsPerSec: Math.round(diagRxPackets / 5),
         rxBytesPerSec: Math.round(diagRxBytes / 5),
+        renderedFps: Number((diagRenderedFrames / 5).toFixed(1)),
         pendingPackets: pendingWrites.length + (inFlightBytes > 0 ? 1 : 0),
         pendingBytes: pendingBytes + inFlightBytes,
         writePacketsPerSec: Math.round(diagWritePackets / 5),
@@ -200,6 +205,7 @@ export default function H264LivePlayer({
       })
       diagRxPackets = 0
       diagRxBytes = 0
+      diagRenderedFrames = 0
       diagWritePackets = 0
       diagWriteMsTotal = 0
       diagWriteMsMax = 0
@@ -301,6 +307,7 @@ export default function H264LivePlayer({
       if (stopped) return
       stopped = true
       window.clearInterval(diagTimer)
+      rendererManager.onFrameDraw = undefined
       decoderGeneration += 1
       cancelInFlightWrite?.()
       cancelInFlightWrite = null
@@ -490,6 +497,7 @@ export default function H264LivePlayer({
     return () => {
       stopped = true
       window.clearInterval(diagTimer)
+      rendererManager.onFrameDraw = undefined
       decoderGeneration += 1
       cancelInFlightWrite?.()
       cancelInFlightWrite = null
