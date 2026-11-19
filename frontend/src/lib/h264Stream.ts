@@ -1,5 +1,20 @@
+export type ScrcpyPreviewPacket = {
+  type: 'configuration' | 'data'
+  data: Uint8Array
+  keyframe: boolean
+  pts?: bigint
+}
+
+export type ScrcpyPreviewMetadata = {
+  codecId: number
+  width: number
+  height: number
+}
+
 export type H264StreamHandlers = {
   data: (chunk: Uint8Array) => void
+  packet?: (packet: ScrcpyPreviewPacket) => void
+  packetMode?: (metadata: ScrcpyPreviewMetadata) => void
   flush?: () => void
   bootstrapStart?: () => void
   bootstrapEnd?: () => void
@@ -32,7 +47,37 @@ export function websocketH264Source(url: string): H264StreamSource {
         if (e.data instanceof ArrayBuffer) {
           clearTimeout(firstFrame)
           retryCount = 0
-          handlers.data(new Uint8Array(e.data))
+          const bytes = new Uint8Array(e.data)
+          if (bytes.length >= 20
+            && bytes[0] === 0x53 && bytes[1] === 0x43
+            && bytes[2] === 0x50 && bytes[3] === 0x31) {
+            const view = new DataView(e.data)
+            const kind = view.getUint8(4)
+            const flags = view.getUint8(5)
+            const pts = view.getBigUint64(8, false)
+            const size = view.getUint32(16, false)
+            if ((kind !== 0 && kind !== 1) || size !== bytes.length - 20) {
+              handlers.fail('Scrcpy 视频数据包格式无效')
+              current.close()
+              return
+            }
+            handlers.packet?.({
+              type: kind === 0 ? 'configuration' : 'data',
+              data: bytes.subarray(20),
+              keyframe: (flags & 1) !== 0,
+              pts: kind === 0 ? undefined : pts,
+            })
+          } else {
+            handlers.data(bytes)
+          }
+        } else if (typeof e.data === 'string' && e.data.startsWith('scrcpy_v1:')) {
+          const values = e.data.slice('scrcpy_v1:'.length).split(':').map(Number)
+          if (values.length !== 3 || values.some(value => !Number.isFinite(value))) {
+            handlers.fail('Scrcpy 视频元数据格式无效')
+            current.close()
+            return
+          }
+          handlers.packetMode?.({ codecId: values[0], width: values[1], height: values[2] })
         } else if (e.data === 'h264_flush') {
           handlers.flush?.()
         } else if (e.data === 'h264_bootstrap_start') {
