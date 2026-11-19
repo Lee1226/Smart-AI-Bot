@@ -3,7 +3,7 @@ import { api, type Device } from '../lib/api'
 
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import {
-  updateExecutionPlan, ExecutionPlanStep,
+  updateExecutionPlan, ExecutionPlanStep, ExecutionPlanIntent,
   fetchAppCatalog, fetchExecutionPlans, fetchSuiteCases, importLegacyExecutionPlan, runExecutionPlan,
 } from '../lib/api'
 import { useT } from '../lib/i18n'
@@ -157,10 +157,10 @@ export default function ExecutionPlanManager({ suiteId, platform, device }: { su
     const step = draftSteps[index]
     patchStep(index, { locator: { ...(step.locator || {}), [key]: value } })
   }
-  const patchIntent = (index: number, patch: Record<string, unknown>) => {
+  const patchIntent = (index: number, patch: Partial<ExecutionPlanIntent>) => {
     const step = draftSteps[index]
-    const current = (step.intent || { description: '', expected_result: '', source: 'legacy_import', status: 'needs_confirmation' }) as Record<string, unknown>
-    const contentEdited = Object.keys(patch).some(key => key === 'description' || key === 'expected_result')
+    const current: ExecutionPlanIntent = step.intent || { description: '', expected_result: '', source: 'legacy_import', status: 'needs_confirmation' }
+    const contentEdited = patch.description !== undefined || patch.expected_result !== undefined
     patchStep(index, { intent: { ...current, ...patch, ...(contentEdited ? { source: 'user_edited', status: 'needs_confirmation' } : {}) } })
   }
   const patchCoordinate = (index: number, key: string, value: string) => {

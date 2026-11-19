@@ -184,7 +184,7 @@ export default function Recorder() {
               ...(nearbySnapshot ? {
                 ui_observation: {
                   phase: 'post_event_poll_approximate',
-                  quality: 'approximate',
+                  quality: 'approximate' as const,
                   ui_text: nearbySnapshot.ui_text,
                   elements: nearbySnapshot.elements,
                   screen: {
