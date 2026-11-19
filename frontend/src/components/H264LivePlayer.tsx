@@ -241,7 +241,6 @@ export default function H264LivePlayer({
     }
 
     try {
-      createDecoder()
       parser = createParser()
       stopSource = source({
         reset: resetStream,
