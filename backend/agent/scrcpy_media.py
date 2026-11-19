@@ -88,6 +88,21 @@ class ScrcpyMediaSession:
             send_codec_meta=True,
         )
         self._pending_video: deque[ScrcpyPacket] = deque()
+        # Low-overhead, video-socket-only diagnostics. These counters observe
+        # TCP reads and parser output; they never alter packet delivery.
+        self._video_read_diag = {
+            "window_started": time.monotonic(),
+            "recv_calls": 0,
+            "timeouts": 0,
+            "tcp_reads": 0,
+            "tcp_bytes": 0,
+            "empty_parse_reads": 0,
+            "packets": 0,
+            "recv_ms_total": 0.0,
+            "recv_ms_max": 0.0,
+            "last_packet_at": None,
+            "max_packet_gap_ms": 0.0,
+        }
 
     @staticmethod
     def _free_port() -> int:
@@ -236,12 +251,88 @@ class ScrcpyMediaSession:
         recent = " | ".join(list(self.server_logs)[-12:])
         return RuntimeError(f"{message}; recent server logs: {recent}" if recent else message)
 
+    def _record_video_read(
+        self,
+        *,
+        elapsed_ms: float,
+        timeout: bool = False,
+        chunk_bytes: int = 0,
+        packet_count: int = 0,
+    ) -> None:
+        """Aggregate video TCP-read cadence without affecting the media loop."""
+        stats = self._video_read_diag
+        now = time.monotonic()
+        stats["recv_calls"] += 1
+        stats["recv_ms_total"] += elapsed_ms
+        stats["recv_ms_max"] = max(stats["recv_ms_max"], elapsed_ms)
+        if timeout:
+            stats["timeouts"] += 1
+        else:
+            stats["tcp_reads"] += 1
+            stats["tcp_bytes"] += chunk_bytes
+            if packet_count == 0:
+                stats["empty_parse_reads"] += 1
+            else:
+                previous = stats["last_packet_at"]
+                if previous is not None:
+                    stats["max_packet_gap_ms"] = max(
+                        stats["max_packet_gap_ms"], (now - previous) * 1000
+                    )
+                stats["last_packet_at"] = now
+                stats["packets"] += packet_count
+
+        elapsed_window = now - stats["window_started"]
+        if elapsed_window < 5.0:
+            return
+        last_packet_at = stats["last_packet_at"]
+        last_packet_age_ms = (
+            (now - last_packet_at) * 1000 if last_packet_at is not None else -1.0
+        )
+        logger.info(
+            "[SCRCPY DIAG][video-read] serial=%s scid=%s "
+            "recv_calls_per_sec=%.1f timeouts_per_sec=%.1f "
+            "tcp_reads_per_sec=%.1f tcp_bytes_per_sec=%.0f "
+            "packets_per_sec=%.1f empty_parse_reads_per_sec=%.1f "
+            "recv_avg_ms=%.2f recv_max_ms=%.2f max_packet_gap_ms=%.1f "
+            "last_packet_age_ms=%.1f parser_buffer_bytes=%d",
+            self.serial, self.scid,
+            stats["recv_calls"] / elapsed_window,
+            stats["timeouts"] / elapsed_window,
+            stats["tcp_reads"] / elapsed_window,
+            stats["tcp_bytes"] / elapsed_window,
+            stats["packets"] / elapsed_window,
+            stats["empty_parse_reads"] / elapsed_window,
+            stats["recv_ms_total"] / max(stats["recv_calls"], 1),
+            stats["recv_ms_max"],
+            stats["max_packet_gap_ms"],
+            last_packet_age_ms,
+            len(self.video_parser.buffer),
+        )
+        stats.update({
+            "window_started": now,
+            "recv_calls": 0,
+            "timeouts": 0,
+            "tcp_reads": 0,
+            "tcp_bytes": 0,
+            "empty_parse_reads": 0,
+            "packets": 0,
+            "recv_ms_total": 0.0,
+            "recv_ms_max": 0.0,
+            "max_packet_gap_ms": 0.0,
+        })
+
     def _recv_packets(self, sock: socket.socket | None, parser: ScrcpyMediaStreamParser) -> list[ScrcpyPacket] | None:
         if sock is None:
             raise RuntimeError("Scrcpy media socket is not connected")
+        recv_started = time.monotonic()
         try:
             chunk = sock.recv(READ_SIZE)
         except socket.timeout:
+            if parser.stream_type == "video":
+                self._record_video_read(
+                    elapsed_ms=(time.monotonic() - recv_started) * 1000,
+                    timeout=True,
+                )
             return None
         except OSError as exc:
             if sock.fileno() < 0:
@@ -261,6 +352,12 @@ class ScrcpyMediaSession:
                     "Scrcpy video codec is unsupported: "
                     f"codec_id=0x{parser.metadata.codec_id:08x} (H.264 required)"
                 )
+        if parser.stream_type == "video":
+            self._record_video_read(
+                elapsed_ms=(time.monotonic() - recv_started) * 1000,
+                chunk_bytes=len(chunk),
+                packet_count=len(packets),
+            )
         return packets
 
     def _read_video_until_packet(self) -> None:
