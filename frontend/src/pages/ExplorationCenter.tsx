@@ -1,12 +1,13 @@
 import { useMemo, useState } from 'react'
-import { Link, useLocation, useNavigate } from 'react-router-dom'
+import { Link, useLocation, useNavigate, useSearchParams } from 'react-router-dom'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { api, fetchDevices, type Device } from '../lib/api'
 import { useT } from '../lib/i18n'
 
 type ExploreSession = {
   id: string; title: string; goal: string; expected_result: string; device_id: string
-  platform: string; status: string; summary: string; created_at: string; steps?: ExploreStep[]
+  platform: string; status: string; summary: string; created_at: string
+  steps?: { id: string; sequence: number; event_type: string; title: string; detail: string; action: string; status: string; duration_ms: number }[]
 }
 type ExploreKnowledge = {
   id: string; title: string; category: string; description: string; status: string
@@ -51,6 +52,7 @@ export default function ExplorationCenter() {
   const t = useT()
   const { pathname } = useLocation()
   const navigate = useNavigate()
+  const [searchParams, setSearchParams] = useSearchParams()
   const qc = useQueryClient()
   const current = navItems.find(item => item.to === pathname)?.to || '/exploration'
   const isNew = current === '/exploration/new'
@@ -66,6 +68,12 @@ export default function ExplorationCenter() {
   const [timeoutSeconds, setTimeoutSeconds] = useState(300)
   const { data: overview } = useQuery({ queryKey: ['exploration-overview'], queryFn: async () => (await api.get<Overview>('/exploration/overview')).data })
   const { data: devices = [] } = useQuery({ queryKey: ['devices'], queryFn: fetchDevices, enabled: isNew, refetchInterval: 5000 })
+  const selectedSessionId = isHistory ? searchParams.get('session') || '' : ''
+  const { data: selectedSession } = useQuery({
+    queryKey: ['exploration-session', selectedSessionId],
+    queryFn: async () => (await api.get<ExploreSession>(`/exploration/sessions/${selectedSessionId}`)).data,
+    enabled: !!selectedSessionId,
+  })
   const { data: sessions = [], isLoading: sessionsLoading } = useQuery({
     queryKey: ['exploration-sessions'], queryFn: async () => (await api.get<ExploreSession[]>('/exploration/sessions')).data,
     enabled: isHistory,
@@ -145,7 +153,13 @@ export default function ExplorationCenter() {
 
     {isHistory && <>
       <PageTitle title="探索历史" desc="查看已创建的探索会话及其状态。" />
-      {sessionsLoading ? <div className="py-10 text-center text-sm text-ink-faint">正在读取探索记录…</div> : sessions.length === 0 ? <Empty title="暂无探索历史" desc="创建探索会话后，记录会显示在这里。" action={<Link to="/exploration/new" className="text-sm text-primary">新建探索</Link>} /> : <div className="overflow-hidden rounded-xl border border-hairline bg-white"><div className="grid grid-cols-[minmax(0,1fr)_120px_160px] gap-3 border-b border-hairline bg-canvas-soft px-4 py-3 text-xs font-medium text-ink-mute"><span>探索目标</span><span>状态</span><span>创建时间</span></div>{sessions.map(row => <div key={row.id} className="grid grid-cols-[minmax(0,1fr)_120px_160px] items-center gap-3 border-b border-hairline px-4 py-4 last:border-0"><div className="min-w-0"><div className="truncate text-sm font-medium">{row.title}</div><div className="mt-1 truncate text-xs text-ink-mute">{row.goal}</div></div><Status value={row.status} /><span className="text-xs text-ink-mute">{new Date(row.created_at).toLocaleString()}</span></div>)}</div>}
+      {sessionsLoading ? <div className="py-10 text-center text-sm text-ink-faint">正在读取探索记录…</div> : sessions.length === 0 ? <Empty title="暂无探索历史" desc="创建探索会话后，记录会显示在这里。" action={<Link to="/exploration/new" className="text-sm text-primary">新建探索</Link>} /> : <div className="overflow-hidden rounded-xl border border-hairline bg-white"><div className="grid grid-cols-[minmax(0,1fr)_120px_160px] gap-3 border-b border-hairline bg-canvas-soft px-4 py-3 text-xs font-medium text-ink-mute"><span>探索目标</span><span>状态</span><span>创建时间</span></div>{sessions.map(row => <button key={row.id} onClick={() => setSearchParams({ session: row.id })} className={`grid w-full grid-cols-[minmax(0,1fr)_120px_160px] items-center gap-3 border-b border-hairline px-4 py-4 text-left last:border-0 hover:bg-canvas-soft ${selectedSessionId === row.id ? 'bg-primary-soft/40' : ''}`}><div className="min-w-0"><div className="truncate text-sm font-medium">{row.title}</div><div className="mt-1 truncate text-xs text-ink-mute">{row.goal}</div></div><Status value={row.status} /><span className="text-xs text-ink-mute">{new Date(row.created_at).toLocaleString()}</span></button>)}</div>}
+      {selectedSession && <section className="rounded-xl border border-hairline bg-white p-4">
+        <div className="flex flex-wrap items-start justify-between gap-3"><div><div className="text-sm font-semibold">{selectedSession.title}</div><p className="mt-1 text-xs text-ink-mute">{selectedSession.goal}</p></div><Status value={selectedSession.status} /></div>
+        {selectedSession.expected_result && <div className="mt-3 rounded-lg bg-canvas-soft p-3 text-xs"><strong>预期结果：</strong>{selectedSession.expected_result}</div>}
+        <div className="mt-4 flex items-center justify-between"><h3 className="text-sm font-semibold">探索轨迹</h3><span className="text-xs text-ink-faint">{selectedSession.steps?.length || 0} 个事件</span></div>
+        {!selectedSession.steps?.length ? <p className="mt-3 text-xs text-ink-faint">当前会话尚未记录操作步骤。自动探索执行链路接入后，步骤、页面状态和截图证据会显示在这里。</p> : <ol className="mt-3 space-y-3">{selectedSession.steps.map(step => <li key={step.id} className="flex gap-3 border-l-2 border-primary/30 pl-3"><div className="min-w-0 flex-1"><div className="text-xs font-semibold">{step.sequence}. {step.title || step.action || step.event_type}</div>{step.detail && <p className="mt-1 text-xs text-ink-mute">{step.detail}</p>}</div><span className="text-[11px] text-ink-faint">{step.duration_ms} ms</span></li>)}</ol>}
+      </section>}
     </>}
 
     {isKnowledge && <>
