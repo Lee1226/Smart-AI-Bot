@@ -6,6 +6,7 @@ shares that deployment boundary (one backend worker).
 """
 import asyncio
 import logging
+from contextlib import asynccontextmanager
 from datetime import datetime
 
 from sqlalchemy import select, update
@@ -124,3 +125,17 @@ async def cancel(run_id):
         if state:
             await state.finish()
     return True
+
+
+@asynccontextmanager
+async def device_ownership(device_id: str, owner: str):
+    """Share the exact per-device lock used by regular test runs."""
+    lock = locks.setdefault(device_id, asyncio.Lock())
+    await lock.acquire()
+    owners[device_id] = owner
+    try:
+        yield
+    finally:
+        if owners.get(device_id) == owner:
+            owners.pop(device_id, None)
+        lock.release()
