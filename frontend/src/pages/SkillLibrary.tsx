@@ -1,5 +1,5 @@
 import { useMemo, useState } from 'react'
-import { useState } from 'react'\nimport { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { api } from '../lib/api'
 
 type ExploreSession = { id: string; title: string; goal: string; status: string; platform: string; app_package: string; created_at: string }
@@ -25,7 +25,9 @@ const statusText: Record<string, string> = {
 
 function SkillCard({ skill }: { skill: Skill }) {
   const qc = useQueryClient()
-  const [expanded, setExpanded] = useState(false)\n  const validationsQuery = useQuery({ queryKey: ['skill-validations', skill.id], queryFn: () => api.get<Validation[]>(`/skills/${skill.id}/validations`).then(r => r.data), enabled: expanded })\n  const validate = useMutation({ mutationFn: () => api.post<Validation>(`/skills/${skill.id}/validate-structure`).then(r => r.data), onSuccess: () => qc.invalidateQueries({ queryKey: ['skill-validations', skill.id] }) })
+  const [expanded, setExpanded] = useState(false)
+  const validationsQuery = useQuery({ queryKey: ['skill-validations', skill.id], queryFn: () => api.get<Validation[]>(`/skills/${skill.id}/validations`).then(r => r.data), enabled: expanded })
+  const validate = useMutation({ mutationFn: () => api.post<Validation>(`/skills/${skill.id}/validate-structure`).then(r => r.data), onSuccess: () => qc.invalidateQueries({ queryKey: ['skill-validations', skill.id] }) })
   const review = useMutation({
     mutationFn: (status: string) => api.patch(`/skills/${skill.id}`, { status }).then(r => r.data),
     onSuccess: () => qc.invalidateQueries({ queryKey: ['reusable-skills'] }),
