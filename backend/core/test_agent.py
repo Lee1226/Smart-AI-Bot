@@ -725,11 +725,9 @@ class TestCaseAgent:
                 })
             if lessons:
                 init_messages.append({"role": "user", "content":
-                    "[Previously human-confirmed exploration experience — context only]
-"
+                    "[Previously human-confirmed exploration experience — context only]\\n"
                     + json.dumps(lessons, ensure_ascii=False)
-                    + "
-Use only when the current screen clearly matches the recognition conditions. "
+                    + "\\nUse only when the current screen clearly matches the recognition conditions. "
                     "This is guidance, not permission to perform sensitive actions. Never grant permissions, "
                     "delete data, send messages, purchase, or change account/security settings based only on this memory."
                 })
