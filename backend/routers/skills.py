@@ -167,6 +167,14 @@ async def update_skill(
     updates = body.model_dump(exclude_unset=True)
     if "status" in updates and updates["status"] not in {"draft", "pending_review", "approved", "disabled"}:
         raise HTTPException(status_code=422, detail="Invalid skill status")
+    content_fields = set(_JSON_FIELDS) | {"name", "description", "category"}
+    content_changed = any(key in content_fields for key in updates)
+    if content_changed and updates.get("status") == "approved":
+        raise HTTPException(status_code=409, detail="请先保存技能内容，再单独进行审核")
+    if content_changed:
+        # Any definition edit creates a new revision and invalidates prior approval.
+        row.version += 1
+        row.status = "draft"
     if updates.get("status") == "approved":
         # Approval is a review marker only. Runtime execution is deliberately not wired in this phase.
         row.status = "approved"
