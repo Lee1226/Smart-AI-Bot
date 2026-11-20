@@ -7,6 +7,7 @@ import hashlib
 import json
 import logging
 import re
+import time
 from datetime import datetime
 from pathlib import Path
 
@@ -165,10 +166,12 @@ async def run_exploration(session_id: str, account_id: str) -> None:
 
             evidence_root = Path(__file__).resolve().parent.parent / "data" / "explorations" / session_id / "evidence"
             action_sequence = 0
+            action_started_at = 0.0
 
             async def observe_action(stage, llm_step, fn_name, args, before, result_text):
-                nonlocal action_sequence
+                nonlocal action_sequence, action_started_at
                 if stage == "before":
+                    action_started_at = time.perf_counter()
                     return await _capture_exploration_snapshot(
                         device, evidence_root, f"{action_sequence + 1:03d}_before"
                     )
@@ -202,7 +205,7 @@ async def run_exploration(session_id: str, account_id: str) -> None:
                         }, ensure_ascii=False),
                         evidence_json=json.dumps(evidence, ensure_ascii=False),
                         status="failed" if str(result_text).startswith("ERROR") else "completed",
-                        duration_ms=0,
+                        duration_ms=max(0, int((time.perf_counter() - action_started_at) * 1000)) if action_started_at else 0,
                     ))
                     scene = _classify_exploration_scene(after)
                     if scene:
@@ -238,6 +241,17 @@ async def run_exploration(session_id: str, account_id: str) -> None:
                     await db.commit()
                 return after
 
+            confirmed_rows = (await db.execute(select(ExploreKnowledge).where(
+                ExploreKnowledge.account_id == account_id,
+                ExploreKnowledge.status == "confirmed",
+                ExploreKnowledge.platform.in_([config["platform"], ""]),
+                ExploreKnowledge.app_package.in_([config["app_package"], ""]),
+            ).order_by(ExploreKnowledge.updated_at.desc()).limit(8))).scalars().all()
+            confirmed_knowledge = [{
+                "title": item.title, "risk_level": item.risk_level,
+                "recognition_rules": json.loads(item.recognition_rules_json or "{}"),
+                "handling_rules": json.loads(item.handling_rules_json or "{}"),
+            } for item in confirmed_rows]
             agent = TestCaseAgent(
                 device=device, provider=provider, model=model, api_key=api_key,
                 api_base=api_base, max_steps=config["max_steps"], step_delay=0.8,
@@ -247,6 +261,7 @@ async def run_exploration(session_id: str, account_id: str) -> None:
                 allow_subagents=False, language=resolve_language(settings),
                 target_package=config["app_package"],
                 action_observer=observe_action,
+                exploration_knowledge=confirmed_knowledge,
             )
             # Exploration intentionally excludes package installation and other
             # non-essential tools. Device actions still go through TestCaseAgent's
