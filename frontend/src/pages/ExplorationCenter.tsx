@@ -8,7 +8,6 @@ type ExploreSession = {
   id: string; title: string; goal: string; expected_result: string; device_id: string
   platform: string; status: string; summary: string; created_at: string; steps?: ExploreStep[]
 }
-type ExploreStep = { id: string; sequence: number; event_type: string; title: string; detail: string; action: string; status: string; duration_ms: number }
 type ExploreKnowledge = {
   id: string; title: string; category: string; description: string; status: string
   app_package: string; platform: string; risk_level: string; source_session_id: string
