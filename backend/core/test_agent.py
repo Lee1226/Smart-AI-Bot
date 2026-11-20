@@ -319,8 +319,10 @@ class TestCaseAgent:
         language: str = "",  # AI output language; defaults to the global setting
         login_context=None,
         target_package: str = "",  # the app under test — tell the agent which app to launch
+        action_observer=None,  # optional async observer used only by exploration
     ):
         self.login_context = login_context
+        self.action_observer = action_observer
         self.device = device
         self.platform = getattr(device, "platform", "android")
         self.provider = provider
@@ -1251,6 +1253,14 @@ class TestCaseAgent:
                             )
                             result_text = f"Marked as {status}"
                     else:
+                        _explore_before = None
+                        if self.action_observer:
+                            try:
+                                _explore_before = await self.action_observer(
+                                    "before", steps + 1, fn_name, args, None, ""
+                                )
+                            except Exception as observer_error:
+                                logger.warning("Exploration before-observer failed: %s", observer_error)
                         try:
                             result_text = await self._dispatch(fn_name, args)
                         except (ValueError, KeyError) as e:
@@ -1272,6 +1282,14 @@ class TestCaseAgent:
                             result_text = f"ERROR: {e}"
                             await self._log(f"  ✗ Tool error: {e}")
                             log_lines.append(f"[{steps}] TOOL_ERROR: {e}")
+
+                        if self.action_observer:
+                            try:
+                                await self.action_observer(
+                                    "after", steps + 1, fn_name, args, _explore_before, result_text
+                                )
+                            except Exception as observer_error:
+                                logger.warning("Exploration after-observer failed: %s", observer_error)
 
                         if not result_text.startswith("ERROR"):
                             await self._log(f"    ↳ {result_text}")
