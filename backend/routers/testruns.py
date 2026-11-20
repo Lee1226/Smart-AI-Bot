@@ -8,7 +8,7 @@ from typing import List, Optional
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from fastapi.responses import FileResponse, HTMLResponse, StreamingResponse
 from pydantic import BaseModel
-from sqlalchemy import delete, func, select, update
+from sqlalchemy import delete, func, or_, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from auth.access import require_device, require_node, require_run, require_suite
@@ -326,21 +326,50 @@ async def create_batch_run(req: StartBatchRunRequest, request: Request, db: Asyn
 async def list_runs(
     request: Request,
     suite_id: Optional[str] = None,
+    status: str = Query("all", pattern="^(all|active|done|problem)$"),
+    device_id: Optional[str] = None,
+    q: str = "",
     page: int = Query(1, ge=1),
     page_size: int = Query(20, ge=10, le=100),
     db: AsyncSession = Depends(get_db),
 ):
-    """List runs with database pagination."""
-    q = select(TestRun)
+    """List account-owned runs with database pagination and server-side filters."""
+    stmt = select(TestRun)
     if suite_id:
-        q = q.where(TestRun.suite_id == suite_id)
+        stmt = stmt.where(TestRun.suite_id == suite_id)
     if request.state.account_id:
-        q = q.where(TestRun.account_id == request.state.account_id)
-    total = await db.scalar(select(func.count()).select_from(q.subquery())) or 0
+        stmt = stmt.where(TestRun.account_id == request.state.account_id)
+    if device_id:
+        stmt = stmt.where(TestRun.device_id == device_id)
+    if status == "active":
+        stmt = stmt.where(TestRun.status.in_(["queued", "preparing", "pending", "running"]))
+    elif status == "done":
+        stmt = stmt.where(TestRun.status == "done")
+    elif status == "problem":
+        stmt = stmt.where(TestRun.status.in_(["error", "interrupted"]))
+    search = q.strip()
+    if search:
+        stmt = stmt.outerjoin(TestSuite, TestSuite.id == TestRun.suite_id).where(or_(
+            TestRun.id.ilike(f"%{search}%"),
+            TestRun.provider.ilike(f"%{search}%"),
+            TestRun.model.ilike(f"%{search}%"),
+            TestSuite.name.ilike(f"%{search}%"),
+        ))
+    total = await db.scalar(select(func.count()).select_from(stmt.subquery())) or 0
     rows = (await db.execute(
-        q.order_by(TestRun.created_at.desc()).offset((page - 1) * page_size).limit(page_size)
+        stmt.order_by(TestRun.created_at.desc()).offset((page - 1) * page_size).limit(page_size)
     )).scalars().all()
-    return {"items": [await _run_out(run, db) for run in rows], "total": total}
+    active_stmt = select(func.count()).select_from(TestRun).where(
+        TestRun.status.in_(["queued", "preparing", "pending", "running"])
+    )
+    if request.state.account_id:
+        active_stmt = active_stmt.where(TestRun.account_id == request.state.account_id)
+    has_active = (await db.scalar(active_stmt) or 0) > 0
+    return {
+        "items": [await _run_out(run, db) for run in rows],
+        "total": total,
+        "has_active": has_active,
+    }
 
 
 @router.post("/quick", response_model=RunOut, status_code=201)
@@ -547,33 +576,61 @@ async def compare_runs(
 @router.get("/recordings")
 async def list_recordings(
     request: Request,
+    q: str = "",
     page: int = Query(1, ge=1),
     page_size: int = Query(20, ge=10, le=100),
     db: AsyncSession = Depends(get_db),
 ):
-    """List account-owned recordings; paginate returned metadata, not video bytes."""
+    """List account-owned recording metadata with search and pagination."""
     from db.models import Device
 
-    q = select(TestRun).order_by(TestRun.created_at.desc())
+    stmt = select(TestRun).order_by(TestRun.created_at.desc())
     if request.state.account_id:
-        q = q.where(TestRun.account_id == request.state.account_id)
-    runs = (await db.execute(q)).scalars().all()
+        stmt = stmt.where(TestRun.account_id == request.state.account_id)
+    runs = (await db.execute(stmt)).scalars().all()
     items = []
     total_bytes = 0
     total = 0
+    search = q.strip().lower()
     start = (page - 1) * page_size
     end = start + page_size
+    suite_cache = {}
+    device_cache = {}
     for run in runs:
         run_settings = await load_settings(run.account_id or "")
         path = recording_path(run.id, recording_directory(run_settings))
         if not path.is_file() or path.stat().st_size <= 0:
             continue
         stat = path.stat()
+        suite = None
+        device = None
+        if search:
+            if run.suite_id not in suite_cache:
+                suite_cache[run.suite_id] = await db.get(TestSuite, run.suite_id)
+            if run.device_id not in device_cache:
+                device_cache[run.device_id] = await db.get(Device, run.device_id)
+            suite = suite_cache[run.suite_id]
+            device = device_cache[run.device_id]
+            searchable = " ".join([
+                run.id, run.device_id, path.name,
+                suite.name if suite else "",
+                device.name if device else "",
+            ]).lower()
+            if search not in searchable:
+                continue
         total += 1
         total_bytes += stat.st_size
         if start <= total - 1 < end:
-            suite = await db.get(TestSuite, run.suite_id)
-            device = await db.get(Device, run.device_id)
+            if suite is None:
+                suite = suite_cache.get(run.suite_id)
+                if suite is None:
+                    suite = await db.get(TestSuite, run.suite_id)
+                    suite_cache[run.suite_id] = suite
+            if device is None:
+                device = device_cache.get(run.device_id)
+                if device is None:
+                    device = await db.get(Device, run.device_id)
+                    device_cache[run.device_id] = device
             items.append({
                 "run_id": run.id,
                 "task_name": suite.name if suite else "测试任务",
