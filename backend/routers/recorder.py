@@ -546,7 +546,7 @@ async def execute_recorder_gesture(req: ActionRequest, request: Request):
                 pre_ui_text, pre_elements = await device.get_ui_state()
             except Exception:
                 pre_ui_text, pre_elements = "", []
-            await execute_manual_device_control(
+            result = await execute_manual_device_control(
                 req.device_id, device, req.action,
                 x=args.get("x") if req.action == "tap" else args.get("x1"),
                 y=args.get("y") if req.action == "tap" else args.get("y1"),
@@ -555,7 +555,6 @@ async def execute_recorder_gesture(req: ActionRequest, request: Request):
                 duration_ms=args.get("duration_ms", 450),
                 coordinate_space=coordinate_space or "model_image_px",
             )
-            result = f"{req.action} dispatched"
         except Exception as exc:
             raise HTTPException(status_code=500, detail=str(exc))
         description = _step_description(req.action, args, [])
