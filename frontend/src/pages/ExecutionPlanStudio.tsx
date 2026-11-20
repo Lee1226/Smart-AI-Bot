@@ -20,11 +20,12 @@ export default function ExecutionPlanStudio() {
     queryKey: ['execution-plan-studio-suites'],
     queryFn: () => fetchSuites({ page: 1, page_size: 100 }),
   })
-  const recordedSuites = useMemo(
-    () => (data?.items || []).filter(suite => suite.source_format === 'recorded'),
+  // Both recorded suites and AI exploration suites can own execution plans.
+  const planSuites = useMemo(
+    () => (data?.items || []).filter(suite => ['recorded', 'exploration'].includes(suite.source_format)),
     [data],
   )
-  const selectedSuite = recordedSuites.find(suite => suite.id === requestedSuiteId) || recordedSuites[0]
+  const selectedSuite = planSuites.find(suite => suite.id === requestedSuiteId) || planSuites[0]
 
   useEffect(() => {
     if (selectedSuite && selectedSuite.id !== requestedSuiteId) {
@@ -75,10 +76,10 @@ export default function ExecutionPlanStudio() {
         <div className="mb-3 flex flex-wrap items-center justify-between gap-3">
           <div>
             <h2 className="text-sm font-semibold text-ink">{t('选择调试对象', 'Select a plan source')}</h2>
-            <p className="mt-1 text-xs text-ink-mute">{t('目前从已录制的用例套件中选择用例并生成执行计划。', 'Select a recorded suite to import and edit its execution plans.')}</p>
+            <p className="mt-1 text-xs text-ink-mute">{t('选择录制用例或 AI 探索生成的用例套件，查看和编辑对应执行计划。', 'Select a recorded suite to import and edit its execution plans.')}</p>
           </div>
           <span className="rounded-full bg-primary-soft px-2.5 py-1 text-xs font-medium text-primary-deep">
-            {recordedSuites.length} {t('个录制套件', 'recorded suites')}
+            {planSuites.length} {t('个可管理套件', 'available suites')}
           </span>
         </div>
 
@@ -90,8 +91,8 @@ export default function ExecutionPlanStudio() {
           </div>
         ) : recordedSuites.length === 0 ? (
           <div className="rounded-lg border border-dashed border-hairline bg-canvas-soft px-4 py-10 text-center">
-            <div className="text-sm font-semibold text-ink">{t('暂时没有录制用例套件', 'No recorded suites yet')}</div>
-            <p className="mx-auto mt-1 max-w-md text-xs leading-5 text-ink-mute">{t('先到录制工作台完成一次录制并保存为用例套件，然后回来生成执行计划。', 'Record and save a case suite in the recorder first, then return here to create an execution plan.')}</p>
+            <div className="text-sm font-semibold text-ink">{t('暂时没有可管理的用例套件', 'No recorded suites yet')}</div>
+            <p className="mx-auto mt-1 max-w-md text-xs leading-5 text-ink-mute">{t('先完成一次录制或 AI 探索，再回来管理对应的执行计划。', 'Record and save a case suite in the recorder first, then return here to create an execution plan.')}</p>
             <Link to="/recorder" className="mt-4 inline-flex rounded-lg bg-primary px-4 py-2 text-sm font-medium text-white hover:opacity-90">
               {t('前往录制工作台', 'Go to recorder')}
             </Link>
@@ -105,8 +106,8 @@ export default function ExecutionPlanStudio() {
                 value={selectedSuite?.id || ''}
                 onChange={event => selectSuite(event.target.value)}
               >
-                {recordedSuites.map(suite => (
-                  <option key={suite.id} value={suite.id}>{suite.name} · {suite.case_count} {t('条用例', 'cases')}</option>
+                {planSuites.map(suite => (
+                  <option key={suite.id} value={suite.id}>{suite.name} · {suite.case_count} {t('条用例', 'cases')} · {suite.source_format === 'exploration' ? 'AI 探索' : '录制'}</option>
                 ))}
               </select>
             </div>
