@@ -1,11 +1,16 @@
-import { useState, useEffect, useRef, useMemo, type PointerEvent } from 'react'
+import { useState, useEffect, useRef, useMemo, useSyncExternalStore, type PointerEvent } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { useNavigate } from 'react-router-dom'
-import { api, fetchDevices, fetchDeviceApps, getToken } from '../lib/api'
-import H264Canvas from '../components/H264Canvas'
+import { api, fetchDevices, fetchDeviceApps, fetchDeviceCapabilities, getToken } from '../lib/api'
+import H264LivePlayer from '../components/H264LivePlayer'
+import H264Player from '../components/H264Player'
 import LifecycleActionEditor, { type LifecycleAction } from '../components/LifecycleActionEditor'
-import { websocketH264Source } from '../lib/h264Stream'
+import { browserUsbH264Source, subscribeUsb, usbSnapshot } from '../lib/browserUsb'
+import { deviceH264WebSocketUrl, websocketH264Source } from '../lib/h264Stream'
 import { useT } from '../lib/i18n'
+
+const CAN_WEBCODECS =
+  typeof window !== 'undefined' && window.isSecureContext && 'VideoDecoder' in window
 
 interface Element {
   index: number
@@ -122,6 +127,14 @@ export default function Recorder() {
   const [pressKey, setPressKey] = useState('KEYCODE_BACK')
   const { data: deviceApps = [] } = useQuery({ queryKey: ['device-apps', deviceId], queryFn: () => fetchDeviceApps(deviceId), enabled: !!deviceId })
 
+  const usb = useSyncExternalStore(subscribeUsb, usbSnapshot)
+  const { data: deviceCapabilities } = useQuery({
+    queryKey: ['device-caps', deviceId],
+    queryFn: () => fetchDeviceCapabilities(deviceId),
+    enabled: !!deviceId,
+    refetchInterval: 5000,
+  })
+
   // Save form
   const [suiteName, setSuiteName] = useState('')
   const [caseName, setCaseName] = useState('')
@@ -138,7 +151,8 @@ export default function Recorder() {
   const [selectedEventIndex, setSelectedEventIndex] = useState(0)
   const [previewSize, setPreviewSize] = useState({ width: 0, height: 0 })
   const [screenSize, setScreenSize] = useState({ width: 1080, height: 2400 })
-  const [videoAvailable, setVideoAvailable] = useState(false)
+  const [videoFailed, setVideoFailed] = useState(false)
+  const [renderer, setRenderer] = useState<'canvas' | 'webgl'>(() => localStorage.getItem('h264-renderer') === 'canvas' ? 'canvas' : 'webgl')
   const [videoFrameSize, setVideoFrameSize] = useState<{ width: number; height: number } | null>(null)
   const pointerStart = useRef<{ x: number; y: number } | null>(null)
   const screenRef = useRef<HTMLDivElement>(null)
@@ -245,6 +259,12 @@ export default function Recorder() {
   const selectedDevice = allDevices.find(d => d.id === deviceId)
   const ios = selectedDevice?.connection_type === 'ios_bridge'
   const harmony = selectedDevice?.connection_type === 'hdc_bridge'
+  const localUsb = selectedDevice?.connection_type === 'browser_usb'
+    && usb.phase === 'online' && usb.deviceId === deviceId
+  const localAdb = selectedDevice?.connection_type === 'adb_usb'
+  const videoSupported = !!selectedDevice && !ios && !harmony
+    && (localUsb || localAdb || !!deviceCapabilities?.video_available)
+  const videoAvailable = videoSupported && !videoFailed
 
   const applySnapshot = (data: SnapshotData) => {
     setScreenshot(data.screenshot_b64)
@@ -254,20 +274,15 @@ export default function Recorder() {
 
   const liveVideoSource = useMemo(() => {
     if (!deviceId) return undefined
-    const protocol = location.protocol === 'https:' ? 'wss:' : 'ws:'
-    const token = getToken()
-    const query = `?source=device${token ? `&token=${encodeURIComponent(token)}` : ''}`
-    return websocketH264Source(`${protocol}//${location.host}/v1/devices/${deviceId}/live${query}`)
-  }, [deviceId])
+    return localUsb
+      ? browserUsbH264Source(deviceId)
+      : websocketH264Source(deviceH264WebSocketUrl(deviceId, !!localAdb, getToken()))
+  }, [deviceId, localUsb, localAdb])
 
   useEffect(() => {
-    if (!deviceId) { setVideoAvailable(false); return }
-    let alive = true
-    api.get<{ video_available?: boolean }>(`/devices/${deviceId}/capabilities`)
-      .then(({ data }) => { if (alive) setVideoAvailable(!!data.video_available) })
-      .catch(() => { if (alive) setVideoAvailable(false) })
-    return () => { alive = false }
-  }, [deviceId])
+    setVideoFailed(false)
+    setVideoFrameSize(null)
+  }, [deviceId, localUsb, localAdb])
 
   // Screenshot fallback is serial: schedule the next refresh only after the
   // current full snapshot has completed. This avoids a backlog when a device's
@@ -308,8 +323,8 @@ export default function Recorder() {
     const rect = event.currentTarget.getBoundingClientRect()
     if (rect.width <= 0 || rect.height <= 0) return null
 
-    // H264Canvas is an absolutely positioned object-contain canvas. Its decoded
-    // frame may not have exactly the same aspect ratio as the preview container,
+    // Live H.264 renderers use object-contain. The decoded frame may not have
+    // exactly the same aspect ratio as the preview container,
     // so map pointer coordinates against the visible frame, not the letterbox.
     // Screenshot fallback uses object-fill and therefore occupies the full box.
     const frame = videoAvailable && videoFrameSize?.width && videoFrameSize?.height
@@ -799,9 +814,20 @@ export default function Recorder() {
               <div className="mb-3 rounded-xl border border-slate-200 bg-slate-100 p-3">
                 <div className="mb-2 flex flex-wrap items-center justify-between gap-2 text-xs text-slate-600">
                   <span>{t('实时手机画面 · 鼠标直接操作', 'Live device screen · click or drag to control')}</span>
-                  <span>{screenSize.width} × {screenSize.height} · Canvas 2D</span></div>
+                  <span>{screenSize.width} × {screenSize.height} · {CAN_WEBCODECS ? (renderer === 'webgl' ? 'WebGL' : 'Canvas 2D') : 'MSE'}</span></div>
                 <div ref={screenRef} className="relative mx-auto overflow-hidden rounded-lg bg-black touch-none select-none" style={{ aspectRatio: `${screenSize.width} / ${screenSize.height}`, width: 'min(100%, 640px)' }} onPointerDown={handleScreenPointerDown} onPointerUp={handleScreenPointerUp} onPointerCancel={() => { pointerStart.current = null }} onLostPointerCapture={() => { pointerStart.current = null }}>
-                  {videoAvailable && liveVideoSource ? <H264Canvas source={liveVideoSource} onVideoSize={(width, height) => setVideoFrameSize(current => current?.width === width && current?.height === height ? current : { width, height })} onFail={() => { setVideoAvailable(false); setVideoFrameSize(null) }} /> : screenshot ? <img src={`data:image/png;base64,${screenshot}`} alt="device screen" draggable={false} onDragStart={event => event.preventDefault()} className="absolute inset-0 h-full w-full object-fill" /> : null}
+                  {videoAvailable && liveVideoSource ? (CAN_WEBCODECS ? <H264LivePlayer
+                    key={`${deviceId}-${localUsb ? 'browser-usb' : localAdb ? 'adb-usb' : 'device'}`}
+                    source={liveVideoSource}
+                    renderer={renderer}
+                    onVideoSize={(width, height) => setVideoFrameSize(current => current?.width === width && current?.height === height ? current : { width, height })}
+                    onFail={() => { setVideoFailed(true); setVideoFrameSize(null) }}
+                    onRendererFail={() => { setRenderer('canvas'); localStorage.setItem('h264-renderer', 'canvas') }}
+                  /> : <H264Player
+                    key={`${deviceId}-mse`}
+                    source={liveVideoSource}
+                    onFail={() => { setVideoFailed(true); setVideoFrameSize(null) }}
+                  />) : screenshot ? <img src={`data:image/png;base64,${screenshot}`} alt="device screen" draggable={false} onDragStart={event => event.preventDefault()} className="absolute inset-0 h-full w-full object-fill" /> : null}
                   {!videoAvailable && !screenshot && <div className="absolute inset-0 flex items-center justify-center text-sm text-slate-400">{t('正在获取手机画面…', 'Waiting for device screen…')}</div>}
                   {!recording && <div className="absolute inset-0 flex items-center justify-center bg-black/35 text-sm text-white">{t('开始录制后可用鼠标操作手机', 'Start recording to control the phone with your mouse')}</div>}
                 </div>
