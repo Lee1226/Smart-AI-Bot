@@ -291,6 +291,42 @@ async def run_exploration(session_id: str, account_id: str) -> None:
                             evidence_json=json.dumps(evidence, ensure_ascii=False),
                             status="recorded", duration_ms=0,
                         ))
+                        # Detect transient dialogs at observation time too; a popup
+                        # may be visible to the model and disappear before the next action.
+                        scene = _classify_exploration_scene(current_observation)
+                        if scene:
+                            category, title, suggestion = scene
+                            existing = (await db.execute(select(ExploreKnowledge).where(
+                                ExploreKnowledge.account_id == account_id,
+                                ExploreKnowledge.source_session_id == session_id,
+                                ExploreKnowledge.category == category,
+                            ))).scalar_one_or_none()
+                            if not existing:
+                                knowledge_evidence = {
+                                    "after_screenshot": evidence.get("screenshot", ""),
+                                    "after_sha256": evidence.get("sha256", ""),
+                                }
+                                db.add(ExploreKnowledge(
+                                    account_id=account_id, source_session_id=session_id,
+                                    title=title, category=category, description=suggestion,
+                                    trigger_conditions_json=json.dumps({
+                                        "app_package": config["app_package"],
+                                        "platform": config["platform"],
+                                    }, ensure_ascii=False),
+                                    recognition_rules_json=json.dumps({
+                                        "matched_ui_text": ui_text[:3000],
+                                        "matched_elements": safe_elements[:80],
+                                        "page_change": page_change,
+                                    }, ensure_ascii=False),
+                                    handling_rules_json=json.dumps({
+                                        "mode": "manual_review", "suggestion": suggestion,
+                                        "auto_execute": False,
+                                    }, ensure_ascii=False),
+                                    evidence_json=json.dumps(knowledge_evidence, ensure_ascii=False),
+                                    app_package=config["app_package"], platform=config["platform"],
+                                    risk_level="high" if category == "permission_dialog" else "normal",
+                                    status="pending_review",
+                                ))
                         await db.commit()
                     last_observation_snapshot = current_observation
                     return {**current_observation, "change_summary": page_change, **evidence}
