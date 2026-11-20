@@ -849,6 +849,18 @@ class TestCaseAgent:
                 if self.login_context:
                     ui_text = self.login_context.redact(ui_text)
 
+                # Exploration event capture reuses this perception pass; it does
+                # not request another screenshot or open another device channel.
+                if self.action_observer:
+                    try:
+                        await self.action_observer(
+                            "observation", steps + 1, "", {},
+                            {"image_bytes": img_bytes, "ui_text": ui_text, "elements": _ui_elements},
+                            "本轮页面观察已采集，供 AI 判断下一步操作",
+                        )
+                    except Exception as observer_error:
+                        logger.warning("Exploration observation capture failed: %s", observer_error)
+
                 # Annotate screenshot only when we'll send it to the LLM.
                 # For text-only steps, save the raw resized screenshot for replay only.
                 tree_ok_pre = _is_tree_sufficient(_ui_elements)
@@ -1128,6 +1140,15 @@ class TestCaseAgent:
                         args = json.loads(tc.function.arguments or "{}")
                     except json.JSONDecodeError:
                         args = {}
+
+                    if self.action_observer:
+                        try:
+                            await self.action_observer(
+                                "decision", steps + 1, fn_name, args, None,
+                                f"AI 选择调用工具 {fn_name}",
+                            )
+                        except Exception as observer_error:
+                            logger.warning("Exploration decision capture failed: %s", observer_error)
 
                     await self._log(f"  → {fn_name}({args})")
                     log_lines.append(f"[{steps}] {fn_name}({args})")
