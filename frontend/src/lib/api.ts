@@ -404,8 +404,9 @@ export const fetchTrends = (suiteId: string) =>
 
 // ── Runs ─────────────────────────────────────────────────────────────────────
 
-export const fetchRuns = (suiteId?: string) =>
-  api.get<Run[]>('/runs', { params: suiteId ? { suite_id: suiteId } : {} }).then(r => r.data)
+export interface RunPage { items: Run[]; total: number }
+export const fetchRuns = (params: { suite_id?: string; page?: number; page_size?: number } = {}) =>
+  api.get<RunPage>('/runs', { params }).then(r => r.data)
 export const fetchRun = (id: string) => api.get<Run>(`/runs/${id}`).then(r => r.data)
 export interface RecordingItem {
   run_id: string
@@ -420,7 +421,7 @@ export interface RecordingItem {
   download_url: string
 }
 export interface RecordingLibrary { items: RecordingItem[]; total: number; total_bytes: number; storage_dir: string }
-export const fetchRecordings = () => api.get<RecordingLibrary>("/runs/recordings").then(r => r.data)
+export const fetchRecordings = (params: { page?: number; page_size?: number } = {}) => api.get<RecordingLibrary>("/runs/recordings", { params }).then(r => r.data)
 export const deleteRecording = (runId: string) => api.delete(`/runs/recordings/${runId}`)
 
 export const fetchResults = (runId: string) =>
