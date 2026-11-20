@@ -46,7 +46,7 @@ export default function ExecutionPlanStudio() {
           </div>
           <h1 className="text-2xl font-bold text-ink">{t('执行计划调试工作台', 'Execution Plan Studio')}</h1>
           <p className="mt-1 max-w-3xl text-sm text-ink-mute">
-            {t('集中管理录制用例的执行计划，检查每一步的执行器、定位条件和验证规则。保存会创建新版本，不覆盖历史计划。', 'Manage recorded-case plans, inspect executors, locators and verification rules. Saving creates a new version without overwriting history.')}
+            {t('集中管理录制用例与 AI 探索生成的执行计划，检查每一步的执行器、定位条件和验证规则。保存会创建新版本，不覆盖历史计划。', 'Manage recorded and AI-exploration plans, inspect executors, locators and verification rules. Saving creates a new version without overwriting history.')}
           </p>
         </div>
         <Link to="/recorder" className="inline-flex items-center gap-2 rounded-lg border border-hairline bg-white px-3 py-2 text-sm font-medium text-ink-secondary shadow-sm hover:bg-canvas-cool">
@@ -100,7 +100,7 @@ export default function ExecutionPlanStudio() {
         ) : (
           <div className="grid grid-cols-1 gap-3 md:grid-cols-3">
             <div>
-              <label className="mb-1.5 block text-xs font-medium text-ink-secondary">{t('录制用例套件', 'Recorded suite')}</label>
+              <label className="mb-1.5 block text-xs font-medium text-ink-secondary">{t('计划来源套件', 'Plan source suite')}</label>
               <select
                 className="w-full rounded-lg border border-hairline bg-white px-3 py-2.5 text-sm text-ink outline-none focus:border-primary"
                 value={selectedSuite?.id || ''}
