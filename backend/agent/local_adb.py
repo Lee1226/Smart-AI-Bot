@@ -117,8 +117,8 @@ async def _shell(serial: str, *args: str, timeout: float = 20) -> str:
 
 def parse_screen_size(output: str) -> tuple[int, int]:
     """Parse Android wm size, preferring an active override."""
-    override = re.search(r"Override size:\\s*(\\d+)x(\\d+)", output or "")
-    physical = re.search(r"Physical size:\\s*(\\d+)x(\\d+)", output or "")
+    override = re.search(r"Override size:\s*(\d+)x(\d+)", output or "")
+    physical = re.search(r"Physical size:\s*(\d+)x(\d+)", output or "")
     match = override or physical
     if not match:
         raise RuntimeError(f"无法解析 Android 屏幕分辨率：{output!r}")
