@@ -29,7 +29,8 @@ def _scene_title(snapshot: dict[str, Any], fallback: str) -> str:
     for line in lines:
         if len(line) >= 2 and not line.startswith(("resource-id", "class:", "bounds:")):
             return line[:72]
-    for item in snapshot.get("elements", [])[:120]:
+    elements = snapshot.get("elements") if isinstance(snapshot.get("elements"), list) else []
+    for item in elements[:120]:
         if isinstance(item, dict):
             label = str(item.get("text") or item.get("contentDescription") or "").strip()
             if label:
@@ -61,6 +62,7 @@ def build_scene_timeline(steps: list[dict[str, Any]]) -> dict[str, Any]:
                 "observation_count": 0,
                 "event_ids": [],
                 "actions": [],
+                "screenshot": "",
             }
             scenes.append(current)
         return current
@@ -72,6 +74,7 @@ def build_scene_timeline(steps: list[dict[str, Any]]) -> dict[str, Any]:
             scene = ensure_scene(step.get("page_after") or {}, f"页面 {len(scenes) + 1}")
             if scene:
                 scene["observation_count"] += 1
+                scene["screenshot"] = (step.get("evidence") or {}).get("screenshot", "") or scene["screenshot"]
         elif event_type == "action":
             before = step.get("page_before") or {}
             after = step.get("page_after") or {}
@@ -79,6 +82,8 @@ def build_scene_timeline(steps: list[dict[str, Any]]) -> dict[str, Any]:
             if before_identity and (current is None or current["identity"] != before_identity):
                 current = ensure_scene(before, f"操作前页面 {len(scenes) + 1}")
             source = current
+            if source and not source.get("screenshot"):
+                source["screenshot"] = (step.get("evidence") or {}).get("before_screenshot", "")
             if source:
                 source["actions"].append({
                     "step_id": step.get("id"),
@@ -91,6 +96,8 @@ def build_scene_timeline(steps: list[dict[str, Any]]) -> dict[str, Any]:
             after_identity = _snapshot_identity(after)
             if after_identity and (source is None or source["identity"] != after_identity):
                 target = ensure_scene(after, f"操作后页面 {len(scenes) + 1}")
+                if target:
+                    target["screenshot"] = (step.get("evidence") or {}).get("after_screenshot", "") or target.get("screenshot", "")
                 if source and target:
                     transitions.append({
                         "id": f"transition-{len(transitions) + 1}",
