@@ -296,7 +296,7 @@ async def run_exploration(session_id: str, account_id: str) -> None:
                         db.add(ExploreStep(
                             account_id=account_id, session_id=session_id, sequence=event_sequence,
                             event_type="decision", title=f"AI 选择操作：{fn_name}",
-                            detail=f"基于当前页面观察，AI 选择调用 {fn_name} 工具；此处记录可审计的工具选择，不保存模型内部推理。",
+                            detail=(str(result_text or f"AI 选择调用 {fn_name} 工具；记录的是模型公开输出的简短说明，不是内部隐式推理。")[:2000]),
                             action=fn_name, executor="ai",
                             action_args_json=json.dumps(safe_args, ensure_ascii=False),
                             page_before_json="{}", page_after_json="{}", evidence_json="{}",
