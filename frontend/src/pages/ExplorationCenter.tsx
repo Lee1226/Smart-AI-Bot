@@ -73,10 +73,12 @@ export default function ExplorationCenter() {
     queryKey: ['exploration-session', selectedSessionId],
     queryFn: async () => (await api.get<ExploreSession>(`/exploration/sessions/${selectedSessionId}`)).data,
     enabled: !!selectedSessionId,
+    refetchInterval: query => ['queued', 'running'].includes(query.state.data?.status || '') ? 1500 : false,
   })
   const { data: sessions = [], isLoading: sessionsLoading } = useQuery({
     queryKey: ['exploration-sessions'], queryFn: async () => (await api.get<ExploreSession[]>('/exploration/sessions')).data,
     enabled: isHistory,
+    refetchInterval: 3000,
   })
   const { data: knowledge = [], isLoading: knowledgeLoading } = useQuery({
     queryKey: ['exploration-knowledge'], queryFn: async () => (await api.get<ExploreKnowledge[]>('/exploration/knowledge')).data,
@@ -88,9 +90,16 @@ export default function ExplorationCenter() {
       platform, app_package: appPackage, max_steps: maxSteps, timeout_seconds: timeoutSeconds,
     })).data,
     onSuccess: async row => {
-      await qc.invalidateQueries({ queryKey: ['exploration-overview'] })
-      await qc.invalidateQueries({ queryKey: ['exploration-sessions'] })
-      navigate(`/exploration/history?session=${row.id}`)
+      try {
+        await api.post(`/exploration/sessions/${row.id}/start`)
+        await qc.invalidateQueries({ queryKey: ['exploration-overview'] })
+        await qc.invalidateQueries({ queryKey: ['exploration-sessions'] })
+        navigate(`/exploration/history?session=${row.id}`)
+      } catch (error) {
+        await qc.invalidateQueries({ queryKey: ['exploration-sessions'] })
+        navigate(`/exploration/history?session=${row.id}`)
+        throw error
+      }
     },
   })
   const reviewKnowledge = useMutation({
@@ -127,7 +136,7 @@ export default function ExplorationCenter() {
     </>}
 
     {isNew && <>
-      <PageTitle title="新建探索" desc="描述希望 AI 在设备上完成的目标。保存后先建立探索会话；当前版本不会自动操作设备。" />
+      <PageTitle title="新建探索" desc="描述希望 AI 在设备上完成的目标。创建会话后会立即排队执行；设备忙碌时会等待设备空闲。" />
       <div className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_320px]">
         <section className="space-y-4 rounded-xl border border-hairline bg-white p-5">
           <div><label className="mb-1.5 block text-sm font-medium">探索目标 <span className="text-red-500">*</span></label><textarea value={goal} onChange={e => setGoal(e.target.value)} rows={4} maxLength={10000} placeholder="例如：打开 YOYO 助手，询问今天的天气，并确认助手返回了天气信息。" className="w-full rounded-lg border border-hairline px-3 py-2.5 text-sm outline-none focus:border-primary" /><div className="mt-1 text-right text-[11px] text-ink-faint">{goal.length}/10000</div></div>
@@ -146,7 +155,7 @@ export default function ExplorationCenter() {
         </section>
         <aside className="space-y-3">
           <div className="rounded-xl border border-hairline bg-white p-4"><h3 className="text-sm font-semibold">探索流程</h3><ol className="mt-3 space-y-3 text-xs text-ink-mute"><li>01 · 观察设备页面与 UI 层级</li><li>02 · AI 规划并执行下一步操作</li><li>03 · 记录操作前后状态与证据</li><li>04 · 识别可复用的弹窗和异常处理经验</li><li>05 · 生成计划并进行确定性回放验证</li></ol></div>
-          <div className="rounded-xl border border-amber-200 bg-amber-50/70 p-4 text-xs leading-5 text-amber-900"><strong>注意：</strong>本阶段仅创建并保存会话配置，不会向设备发送操作指令。自动探索接入后会增加暂停、停止和人工接管控制。</div>
+          <div className="rounded-xl border border-amber-200 bg-amber-50/70 p-4 text-xs leading-5 text-amber-900"><strong>注意：</strong>探索会通过现有设备控制通道执行，并与普通测试任务共用设备独占锁。请确保手机处于可操作状态。</div>
         </aside>
       </div>
     </>}
@@ -158,7 +167,7 @@ export default function ExplorationCenter() {
         <div className="flex flex-wrap items-start justify-between gap-3"><div><div className="text-sm font-semibold">{selectedSession.title}</div><p className="mt-1 text-xs text-ink-mute">{selectedSession.goal}</p></div><Status value={selectedSession.status} /></div>
         {selectedSession.expected_result && <div className="mt-3 rounded-lg bg-canvas-soft p-3 text-xs"><strong>预期结果：</strong>{selectedSession.expected_result}</div>}
         <div className="mt-4 flex items-center justify-between"><h3 className="text-sm font-semibold">探索轨迹</h3><span className="text-xs text-ink-faint">{selectedSession.steps?.length || 0} 个事件</span></div>
-        {!selectedSession.steps?.length ? <p className="mt-3 text-xs text-ink-faint">当前会话尚未记录操作步骤。自动探索执行链路接入后，步骤、页面状态和截图证据会显示在这里。</p> : <ol className="mt-3 space-y-3">{selectedSession.steps.map(step => <li key={step.id} className="flex gap-3 border-l-2 border-primary/30 pl-3"><div className="min-w-0 flex-1"><div className="text-xs font-semibold">{step.sequence}. {step.title || step.action || step.event_type}</div>{step.detail && <p className="mt-1 text-xs text-ink-mute">{step.detail}</p>}</div><span className="text-[11px] text-ink-faint">{step.duration_ms} ms</span></li>)}</ol>}
+        {!selectedSession.steps?.length ? <p className="mt-3 text-xs text-ink-faint">正在等待探索步骤，页面会自动刷新。</p> : <ol className="mt-3 space-y-3">{selectedSession.steps.map(step => <li key={step.id} className="flex gap-3 border-l-2 border-primary/30 pl-3"><div className="min-w-0 flex-1"><div className="text-xs font-semibold">{step.sequence}. {step.title || step.action || step.event_type}</div>{step.detail && <p className="mt-1 text-xs text-ink-mute">{step.detail}</p>}</div><span className="text-[11px] text-ink-faint">{step.duration_ms} ms</span></li>)}</ol>}
       </section>}
     </>}
 
