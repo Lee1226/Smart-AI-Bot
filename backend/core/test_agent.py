@@ -1062,10 +1062,9 @@ class TestCaseAgent:
                 if not tool_calls:
                     if self.action_observer:
                         try:
-                            _no_action_summary = self.login_context.redact(msg_content) if self.login_context else msg_content
                             await self.action_observer(
                                 "decision", steps + 1, "no_tool_call", {}, None,
-                                f"本轮模型未发起设备工具调用。公开说明：{_no_action_summary[:500]}" if _no_action_summary else "本轮模型未发起设备工具调用",
+                                "本轮模型未发起设备工具调用，随后由 Agent 按既有策略请求结构化工具调用。",
                             )
                         except Exception as observer_error:
                             logger.warning("Exploration no-action decision capture failed: %s", observer_error)
@@ -1170,7 +1169,7 @@ class TestCaseAgent:
                         try:
                             await self.action_observer(
                                 "decision", steps + 1, fn_name, args, None,
-                                f"AI 选择调用工具 {fn_name}；模型公开说明：{(self.login_context.redact(_step_thought) if self.login_context else _step_thought)[:500]}" if _step_thought else f"AI 选择调用工具 {fn_name}",
+                                f"AI 选择调用工具 {fn_name}；记录工具选择和参数，不保存模型内部推理。",
                             )
                         except Exception as observer_error:
                             logger.warning("Exploration decision capture failed: %s", observer_error)
