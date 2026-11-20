@@ -1161,7 +1161,7 @@ class TestCaseAgent:
                         try:
                             await self.action_observer(
                                 "decision", steps + 1, fn_name, args, None,
-                                f"AI 选择调用工具 {fn_name}",
+                                f"AI 选择调用工具 {fn_name}；模型公开说明：{(self.login_context.redact(_step_thought) if self.login_context else _step_thought)[:500]}" if _step_thought else f"AI 选择调用工具 {fn_name}",
                             )
                         except Exception as observer_error:
                             logger.warning("Exploration decision capture failed: %s", observer_error)
