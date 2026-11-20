@@ -407,9 +407,20 @@ async def get_session_evidence(session_id: str, filename: str, request: Request)
         ))).scalar_one_or_none()
         if not session:
             raise HTTPException(status_code=404, detail="Exploration session not found")
-    root = (Path(__file__).resolve().parent.parent / "data" / "explorations" / session_id / "evidence").resolve()
-    target = (root / filename).resolve()
-    if target.parent != root or not target.is_file():
+    if "/" in filename or "\\" in filename:
+        raise HTTPException(status_code=404, detail="Evidence not found")
+    session_root = (Path(__file__).resolve().parent.parent / "data" / "explorations" / session_id).resolve()
+    target = None
+    # Current exploration writes to evidence/; older persisted traces may refer to screenshots/.
+    for directory_name in ("evidence", "screenshots"):
+        evidence_dir = (session_root / directory_name).resolve()
+        if evidence_dir.parent != session_root:
+            continue
+        candidate = (evidence_dir / filename).resolve()
+        if candidate.parent == evidence_dir and candidate.is_file():
+            target = candidate
+            break
+    if target is None:
         raise HTTPException(status_code=404, detail="Evidence not found")
     media_type = mimetypes.guess_type(target.name)[0] or "application/octet-stream"
     return FileResponse(target, media_type=media_type)
