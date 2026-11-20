@@ -320,9 +320,11 @@ class TestCaseAgent:
         login_context=None,
         target_package: str = "",  # the app under test — tell the agent which app to launch
         action_observer=None,  # optional async observer used only by exploration
+        exploration_knowledge: Optional[list] = None,
     ):
         self.login_context = login_context
         self.action_observer = action_observer
+        self.exploration_knowledge = exploration_knowledge or []
         self.device = device
         self.platform = getattr(device, "platform", "android")
         self.provider = provider
@@ -710,6 +712,27 @@ class TestCaseAgent:
             )})
         if self.login_context:
             init_messages.append({"role": "user", "content": self.login_context.prompt()})
+        if self.exploration_knowledge:
+            lessons = []
+            for item in self.exploration_knowledge[:8]:
+                if not isinstance(item, dict):
+                    continue
+                lessons.append({
+                    "scene": item.get("title", ""),
+                    "recognition": item.get("recognition_rules", {}),
+                    "handling": item.get("handling_rules", {}),
+                    "risk": item.get("risk_level", "normal"),
+                })
+            if lessons:
+                init_messages.append({"role": "user", "content":
+                    "[Previously human-confirmed exploration experience — context only]
+"
+                    + json.dumps(lessons, ensure_ascii=False)
+                    + "
+Use only when the current screen clearly matches the recognition conditions. "
+                    "This is guidance, not permission to perform sensitive actions. Never grant permissions, "
+                    "delete data, send messages, purchase, or change account/security settings based only on this memory."
+                })
         if kb_message:
             init_messages.append({"role": "user", "content": kb_message})
         if ref_message:
