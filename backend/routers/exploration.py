@@ -438,8 +438,9 @@ async def generate_execution_plan(session_id: str, request: Request, db: AsyncSe
             continue
         if action == "input_text" and str(args.get("text", "")).startswith("[已隐藏"):
             warnings.append(f"步骤 {index}: 输入内容已脱敏，需要人工补录")
-        executor = "system" if action in {"start_app", "global_action", "press_key"} else "deterministic"
+        executor = "ai"
         import_status = "ready"
+        import_status = "needs_confirmation"
         if action == "tap" and not locator and not all(k in args for k in ("x", "y")):
             import_status = "needs_locator"
         if action == "tap_element" or (trace.action == "tap_element" and not locator):
@@ -451,7 +452,7 @@ async def generate_execution_plan(session_id: str, request: Request, db: AsyncSe
         steps.append({
             "step_id": f"explore_{trace.id}", "sequence": len(steps) + 1,
             "action": action, "args": args, "executor": executor,
-            "execution_channel": "system_api" if executor == "system" else "ui_automation",
+            "execution_channel": "ai_agent",
             "locator": locator, "fallback": None, "precondition": None,
             "wait_condition": None, "timing": {}, "verification": None,
             "on_failure": "fail",
