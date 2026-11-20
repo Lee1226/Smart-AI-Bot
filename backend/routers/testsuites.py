@@ -141,7 +141,7 @@ async def list_suites(
     q: str = "",
     tag: str = "",
     page: int = 1,
-    page_size: int = 50,
+    page_size: int = 20,
     db: AsyncSession = Depends(get_db),
 ):
     """List suites with optional name search (q), tag filter, and pagination."""
@@ -153,7 +153,7 @@ async def list_suites(
     if tag:
         stmt = stmt.where(TestSuite.tag == tag)
 
-    total = len((await db.execute(stmt)).scalars().all())
+    total = await db.scalar(select(func.count()).select_from(stmt.subquery())) or 0
 
     offset = (page - 1) * page_size
     result = await db.execute(
