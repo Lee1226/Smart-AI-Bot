@@ -26,6 +26,7 @@ import AutomationCatalog from './pages/AutomationCatalog'
 import DebugConsole from './pages/DebugConsole'
 import ExecutionPlanStudio from './pages/ExecutionPlanStudio'
 import AppManagement from './pages/AppManagement'
+import ExplorationCenter from './pages/ExplorationCenter'
 
 type NavigationItem = { to: string; label: { zh: string; en: string }; icon: string; paths: string[] }
 const NAV_GROUPS: { label: { zh: string; en: string }; items: NavigationItem[] }[] = [
@@ -37,6 +38,9 @@ const NAV_GROUPS: { label: { zh: string; en: string }; items: NavigationItem[] }
     { to: '/suites', label: { zh: '用例中心', en: 'Cases' }, icon: '🧪', paths: ['/suites', '/library', '/automation', '/recorder', '/knowledge', '/execution-plans', '/apps'] },
     { to: '/runs', label: { zh: '测试任务', en: 'Test tasks' }, icon: '▶', paths: ['/runs'] },
     { to: '/recordings', label: { zh: '录像文件', en: 'Recordings' }, icon: '▣', paths: ['/recordings'] },
+  ] },
+  { label: { zh: 'AI 探索', en: 'AI exploration' }, items: [
+    { to: '/exploration', label: { zh: 'AI 探索中心', en: 'Exploration center' }, icon: '✧', paths: ['/exploration'] },
   ] },
   { label: { zh: '管理', en: 'Manage' }, items: [
     { to: '/settings', label: { zh: '设置与账号', en: 'Settings & account' }, icon: '⚙', paths: ['/settings', '/account'] },
@@ -218,6 +222,11 @@ function AppLayout() {
             <Route path="/" element={<Workbench />} />
             <Route path="/devices" element={<Devices />} />
             <Route path="/debug" element={<DebugConsole />} />
+            <Route path="/exploration" element={<ExplorationCenter />} />
+            <Route path="/exploration/new" element={<ExplorationCenter />} />
+            <Route path="/exploration/history" element={<ExplorationCenter />} />
+            <Route path="/exploration/knowledge" element={<ExplorationCenter />} />
+            <Route path="/exploration/plans" element={<ExplorationCenter />} />
             <Route path="/quick" element={<PageTabs section="execution"><QuickRun /></PageTabs>} />
             <Route path="/recorder" element={<PageTabs section="cases"><Recorder /></PageTabs>} />
             <Route path="/execution-plans" element={<PageTabs section="cases"><ExecutionPlanStudio /></PageTabs>} />
