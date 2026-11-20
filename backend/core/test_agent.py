@@ -1060,6 +1060,15 @@ class TestCaseAgent:
                 # structured tool call. Force one by re-running the SAME step with
                 # tool_choice="required" before wasting a step on a nudge.
                 if not tool_calls:
+                    if self.action_observer:
+                        try:
+                            _no_action_summary = self.login_context.redact(msg_content) if self.login_context else msg_content
+                            await self.action_observer(
+                                "decision", steps + 1, "no_tool_call", {}, None,
+                                f"本轮模型未发起设备工具调用。公开说明：{_no_action_summary[:500]}" if _no_action_summary else "本轮模型未发起设备工具调用",
+                            )
+                        except Exception as observer_error:
+                            logger.warning("Exploration no-action decision capture failed: %s", observer_error)
                     await self._log("  No structured tool call — retrying with tool_choice=required…")
                     memory.messages.pop()  # drop the narration-only turn
                     try:
