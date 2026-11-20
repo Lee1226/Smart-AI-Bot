@@ -119,7 +119,7 @@ def _classify_exploration_scene(snapshot: dict) -> tuple[str, str, str] | None:
         ("login_expired", ("登录已过期", "重新登录", "会话已过期", "session expired", "sign in again", "login expired"), "检测到登录失效提示。请人工确认账号状态后决定是否重新登录。"),
         ("network_error", ("网络连接失败", "网络异常", "无法连接网络", "连接超时", "network error", "no internet", "connection failed", "try again"), "检测到网络异常提示。请先确认网络状态，再决定是否重试。"),
         ("advertisement", ("广告", "跳过广告", "广告剩余", "sponsored", "skip ad", "advertisement"), "检测到疑似广告页面。请人工判断是否关闭或等待，不自动点击。"),
-        ("system_dialog", ("android.permissioncontroller", "系统界面", "system ui", "稍后", "取消", "确定"), "检测到疑似系统弹窗。请人工检查弹窗内容及影响后处理。"),
+        ("system_dialog", ("android.permissioncontroller", "系统界面", "system ui", "系统提示", "系统弹窗"), "检测到疑似系统弹窗。请人工检查弹窗内容及影响后处理。"),
     ]
     for category, needles, suggestion in rules:
         if any(needle in text for needle in needles):
