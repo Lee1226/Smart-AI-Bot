@@ -49,6 +49,6 @@ def test_page_change_handles_missing_snapshots():
 
 
 def test_image_extension_matches_screenshot_bytes():
-    assert _image_extension(b"\\xff\\xd8\\xffpayload") == "jpg"
+    assert _image_extension(b"\xff\xd8\xffpayload") == "jpg"
     assert _image_extension(b"RIFFxxxxWEBPpayload") == "webp"
-    assert _image_extension(b"\\x89PNG\\r\\n\\x1a\\npayload") == "png"
+    assert _image_extension(b"\x89PNG\r\n\\x1a\npayload") == "png"
