@@ -56,7 +56,8 @@ function EvidenceImage({ sessionId, filename, label }: { sessionId: string; file
   if (!filename) return null
   return <div className="min-w-0"><div className="mb-1 text-[11px] text-ink-faint">{label}</div>{url ? <a href={url} target="_blank" rel="noreferrer"><img src={url} alt={label} className="max-h-80 w-full rounded-lg border border-hairline object-contain bg-black/5" /></a> : <div className="rounded-lg bg-canvas-soft p-3 text-xs text-ink-faint">证据读取中或暂不可用</div>}</div>
 }
-\nfunction Status({ value }: { value: string }) {
+
+function Status({ value }: { value: string }) {
   return <span className={`inline-flex rounded-full px-2 py-1 text-xs ${statusClass[value] || 'bg-slate-100 text-slate-600'}`}>{statusLabel[value] || value}</span>
 }
 function PageTitle({ title, desc, action }: { title: string; desc: string; action?: React.ReactNode }) {
@@ -83,7 +84,8 @@ export default function ExplorationCenter() {
   const [platform, setPlatform] = useState('android')
   const [appPackage, setAppPackage] = useState('')
   const [maxSteps, setMaxSteps] = useState(20)
-  const [timeoutSeconds, setTimeoutSeconds] = useState(300)\n  const [generatedPlanId, setGeneratedPlanId] = useState('')
+  const [timeoutSeconds, setTimeoutSeconds] = useState(300)
+  const [generatedPlanId, setGeneratedPlanId] = useState('')
   const { data: overview } = useQuery({ queryKey: ['exploration-overview'], queryFn: async () => (await api.get<Overview>('/exploration/overview')).data })
   const { data: devices = [] } = useQuery({ queryKey: ['devices'], queryFn: fetchDevices, enabled: isNew, refetchInterval: 5000 })
   const selectedSessionId = isHistory ? searchParams.get('session') || '' : ''
@@ -133,7 +135,7 @@ export default function ExplorationCenter() {
     mutationFn: async (id: string) => (await api.post<{ plan_id: string; warnings: string[]; message: string }>(`/exploration/sessions/${id}/generate-plan`)).data,
     onSuccess: result => setGeneratedPlanId(result.plan_id),
   })
-    const reviewKnowledge = useMutation({
+  const reviewKnowledge = useMutation({
     mutationFn: async ({ id, status }: { id: string; status: string }) => api.patch(`/exploration/knowledge/${id}`, { status }),
     onSuccess: () => qc.invalidateQueries({ queryKey: ['exploration-knowledge'] }),
   })
