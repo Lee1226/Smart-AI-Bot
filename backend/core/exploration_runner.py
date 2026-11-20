@@ -253,7 +253,7 @@ async def run_exploration(session_id: str, account_id: str) -> None:
                     ExploreKnowledge.app_package.in_([config["app_package"], ""]),
                 ).order_by(ExploreKnowledge.updated_at.desc()).limit(8))).scalars().all()
                 confirmed_knowledge = [{
-                    "title": item.title, "risk_level": item.risk_level,
+                    "title": item.title, "description": item.description, "risk_level": item.risk_level,
                     "recognition_rules": json.loads(item.recognition_rules_json or "{}"),
                     "handling_rules": json.loads(item.handling_rules_json or "{}"),
                 } for item in confirmed_rows]
