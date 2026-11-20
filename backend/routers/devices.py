@@ -1,7 +1,6 @@
 """Device management — list connected devices, generate tokens, delete."""
 import asyncio
 import secrets
-import time
 import re
 from datetime import datetime
 from typing import List, Literal
@@ -16,30 +15,16 @@ from db.models import Device, DeviceApp, AppCatalog, DeviceAppInstallation
 from ws.portal_ws import connected_devices
 from agent.ws_device import WebSocketDevice
 from agent import local_adb
+from core.device_control import (
+    _screen_dimensions_cache,
+    cache_screen_dimensions as _cache_screen_dimensions,
+    refresh_local_screen_dimensions as _refresh_local_screen_dimensions,
+    execute_manual_device_control,
+)
 
 router = APIRouter(prefix="/api/devices", tags=["devices"])
 
-# Cache logical dimensions across short-lived adapters. Local ADB dimensions
-# are populated on attach/reconnect; manual tap/swipe must not dump the UI tree.
-_SCREEN_DIMENSIONS_TTL = 60.0  # Legacy remote-bridge cache policy.
-_screen_dimensions_cache: dict[str, tuple[int, int, float]] = {}
-
-
-def _cache_screen_dimensions(device_id: str, width: int, height: int) -> None:
-    if width > 0 and height > 0:
-        _screen_dimensions_cache[device_id] = (width, height, time.monotonic())
-
-
-async def _refresh_local_screen_dimensions(device_id: str) -> bool:
-    if not local_adb.is_bound(device_id):
-        return False
-    try:
-        width, height = await local_adb.get_screen_size(device_id)
-    except Exception:
-        return False
-    _cache_screen_dimensions(device_id, width, height)
-    return True
-
+# Screen-dimension cache and refresh helpers are shared with recorder gestures.
 
 async def get_db():
     async with AsyncSessionLocal() as session:
@@ -511,65 +496,12 @@ async def control_device(device_id: str, req: DeviceControlRequest, request: Req
                 required = (req.x, req.y) if req.action == "tap" else (req.x, req.y, req.x2, req.y2)
                 if any(value is None for value in required):
                     raise HTTPException(status_code=422, detail="触控坐标缺失")
-                points = [(req.x, req.y)] if req.action == "tap" else [(req.x, req.y), (req.x2, req.y2)]
-                cached = _screen_dimensions_cache.get(device_id)
-                source_ratio = (req.source_width / req.source_height) if req.source_width and req.source_height else 0
-
-                if local_adb.is_bound(device_id):
-                    # Native ADB uses a lightweight wm size query on cache miss;
-                    # it never invokes uiautomator just to prepare manual input.
-                    if not cached:
-                        await _refresh_local_screen_dimensions(device_id)
-                        cached = _screen_dimensions_cache.get(device_id)
-                    native_w, native_h = (
-                        (cached[0], cached[1]) if cached
-                        else (transport.screen_width, transport.screen_height)
-                    )
-                    if native_w <= 0 or native_h <= 0:
-                        native_w, native_h = req.source_width or 0, req.source_height or 0
-
-                    # wm size is the base logical resolution. The decoded frame
-                    # reflects current rotation, so swap axes when aspect ratios
-                    # clearly indicate the inverse orientation.
-                    cached_ratio = native_w / native_h if native_h else 0
-                    if source_ratio and cached_ratio:
-                        same = abs(source_ratio - cached_ratio) <= 0.08
-                        inverse = abs(source_ratio - 1 / cached_ratio) <= 0.08
-                        if inverse and not same:
-                            native_w, native_h = native_h, native_w
-                            _cache_screen_dimensions(device_id, native_w, native_h)
-                else:
-                    # Keep existing behavior for Portal/other remote bridges.
-                    native_w, native_h = transport.screen_width, transport.screen_height
-                    if cached and (time.monotonic() - cached[2]) < _SCREEN_DIMENSIONS_TTL:
-                        native_w, native_h = cached[0], cached[1]
-                    if native_w <= 0 or native_h <= 0 or not cached or (time.monotonic() - cached[2]) >= _SCREEN_DIMENSIONS_TTL:
-                        try:
-                            await transport.get_ui_state()
-                            if transport.screen_width > 0 and transport.screen_height > 0:
-                                native_w, native_h = transport.screen_width, transport.screen_height
-                                _cache_screen_dimensions(device_id, native_w, native_h)
-                        except Exception:
-                            if cached and cached[0] > 0 and cached[1] > 0:
-                                native_w, native_h = cached[0], cached[1]
-                if req.source_width and req.source_height and native_w > 0 and native_h > 0:
-                    points = [
-                        (round(x * native_w / req.source_width), round(y * native_h / req.source_height))
-                        for x, y in points
-                    ]
-                    points = [
-                        (max(0, min(native_w - 1, x)), max(0, min(native_h - 1, y)))
-                        for x, y in points
-                    ]
-                if req.action == "tap":
-                    await transport.tap_absolute(*points[0])
-                else:
-                    await transport.swipe_absolute(
-                        *points[0], *points[1], max(80, min(req.duration_ms, 2000))
-                    )
-            else:
-                key = {"back": "back", "home": "home", "recent": "recent", "power": "power"}[req.action]
-                await transport.press_key(key)
+            await execute_manual_device_control(
+                device_id, transport, req.action,
+                x=req.x, y=req.y, x2=req.x2, y2=req.y2,
+                source_width=req.source_width, source_height=req.source_height,
+                duration_ms=req.duration_ms,
+            )
     except HTTPException:
         raise
     except Exception as exc:
