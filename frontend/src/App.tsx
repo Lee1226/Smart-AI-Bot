@@ -27,6 +27,7 @@ import DebugConsole from './pages/DebugConsole'
 import ExecutionPlanStudio from './pages/ExecutionPlanStudio'
 import AppManagement from './pages/AppManagement'
 import ExplorationCenter from './pages/ExplorationCenter'
+import SkillLibrary from './pages/SkillLibrary'
 
 type NavigationItem = { to: string; label: { zh: string; en: string }; icon: string; paths: string[] }
 const NAV_GROUPS: { label: { zh: string; en: string }; items: NavigationItem[] }[] = [
@@ -41,6 +42,7 @@ const NAV_GROUPS: { label: { zh: string; en: string }; items: NavigationItem[] }
   ] },
   { label: { zh: 'AI 探索', en: 'AI exploration' }, items: [
     { to: '/exploration', label: { zh: 'AI 探索中心', en: 'Exploration center' }, icon: '✧', paths: ['/exploration'] },
+    { to: '/skills', label: { zh: '技能库', en: 'Skill library' }, icon: '◇', paths: ['/skills'] },
   ] },
   { label: { zh: '管理', en: 'Manage' }, items: [
     { to: '/settings', label: { zh: '设置与账号', en: 'Settings & account' }, icon: '⚙', paths: ['/settings', '/account'] },
@@ -227,6 +229,7 @@ function AppLayout() {
             <Route path="/exploration/history" element={<ExplorationCenter />} />
             <Route path="/exploration/knowledge" element={<ExplorationCenter />} />
             <Route path="/exploration/plans" element={<ExplorationCenter />} />
+            <Route path="/skills" element={<SkillLibrary />} />
             <Route path="/quick" element={<PageTabs section="execution"><QuickRun /></PageTabs>} />
             <Route path="/recorder" element={<PageTabs section="cases"><Recorder /></PageTabs>} />
             <Route path="/execution-plans" element={<PageTabs section="cases"><ExecutionPlanStudio /></PageTabs>} />
