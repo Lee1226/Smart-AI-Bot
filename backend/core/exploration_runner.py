@@ -33,7 +33,7 @@ def _safe_filename(value: str) -> str:
 
 
 def _image_extension(data: bytes) -> str:
-    if data.startswith(b"\\xff\\xd8\\xff"):
+    if data.startswith(b"\xff\xd8\xff"):
         return "jpg"
     if data.startswith(b"RIFF") and data[8:12] == b"WEBP":
         return "webp"
