@@ -50,20 +50,45 @@ const statusClass: Record<string, string> = {
 
 
 function EvidenceImage({ sessionId, filename, label }: { sessionId: string; filename?: string; label: string }) {
-  const [url, setUrl] = useState('')
+  const [evidence, setEvidence] = useState<{ status: 'loading' | 'ready' | 'missing' | 'error'; url: string; message?: string }>({ status: 'loading', url: '' })
+  const [retryKey, setRetryKey] = useState(0)
   useEffect(() => {
     let objectUrl = ''
     let active = true
-    if (!filename) { setUrl(''); return }
+    if (!filename) {
+      setEvidence({ status: 'missing', url: '', message: '没有关联截图文件' })
+      return
+    }
+    setEvidence({ status: 'loading', url: '' })
     api.get(`/exploration/sessions/${sessionId}/evidence/${encodeURIComponent(filename)}`, { responseType: 'blob' })
       .then(response => {
         objectUrl = URL.createObjectURL(response.data)
-        if (active) setUrl(objectUrl)
-      }).catch(() => { if (active) setUrl('') })
+        if (active) setEvidence({ status: 'ready', url: objectUrl })
+      }).catch(error => {
+        if (!active) return
+        const status = (error as { response?: { status?: number } })?.response?.status
+        setEvidence({
+          status: status === 404 ? 'missing' : 'error',
+          url: '',
+          message: status ? `HTTP ${status}` : '网络或服务异常',
+        })
+      })
     return () => { active = false; if (objectUrl) URL.revokeObjectURL(objectUrl) }
-  }, [sessionId, filename])
+  }, [sessionId, filename, retryKey])
   if (!filename) return null
-  return <div className="min-w-0"><div className="mb-1 text-[11px] text-ink-faint">{label}</div>{url ? <a href={url} target="_blank" rel="noreferrer"><img src={url} alt={label} className="max-h-80 w-full rounded-lg border border-hairline object-contain bg-black/5" /></a> : <div className="rounded-lg bg-canvas-soft p-3 text-xs text-ink-faint">证据读取中或暂不可用</div>}</div>
+  return <div className="min-w-0">
+    <div className="mb-1 text-[11px] text-ink-faint">{label}</div>
+    {evidence.status === 'ready' && evidence.url ?
+      <a href={evidence.url} target="_blank" rel="noreferrer"><img src={evidence.url} alt={label} className="max-h-80 w-full rounded-lg border border-hairline object-contain bg-black/5" /></a> :
+      evidence.status === 'loading' ?
+        <div role="status" className="rounded-lg bg-canvas-soft p-3 text-xs text-ink-faint">正在读取截图…</div> :
+        evidence.status === 'missing' ?
+          <div className="rounded-lg bg-amber-50 p-3 text-xs text-amber-800">截图文件不存在或已被清理</div> :
+          <div className="flex items-center justify-between gap-3 rounded-lg bg-red-50 p-3 text-xs text-red-700">
+            <span>截图读取失败（{evidence.message || '未知错误'}）</span>
+            <button type="button" onClick={() => setRetryKey(value => value + 1)} className="shrink-0 underline">重试</button>
+          </div>}
+  </div>
 }
 
 function Status({ value }: { value: string }) {
