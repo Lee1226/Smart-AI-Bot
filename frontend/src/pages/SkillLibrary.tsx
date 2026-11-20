@@ -1,7 +1,6 @@
 import { useMemo, useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { api } from '../lib/api'
-import { useT } from '../lib/i18n'
 
 type ExploreSession = { id: string; title: string; goal: string; status: string; platform: string; app_package: string; created_at: string }
 type Skill = {
@@ -19,7 +18,6 @@ const statusText: Record<string, string> = {
 }
 
 function SkillCard({ skill }: { skill: Skill }) {
-  const t = useT()
   const qc = useQueryClient()
   const [expanded, setExpanded] = useState(false)
   const review = useMutation({
