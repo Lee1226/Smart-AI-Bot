@@ -89,7 +89,7 @@ export default function ExecutionPlanStudio() {
           <div className="rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-700">
             {t('读取用例套件失败：', 'Failed to load suites: ')}{String((error as Error)?.message || error)}
           </div>
-        ) : recordedSuites.length === 0 ? (
+        ) : planSuites.length === 0 ? (
           <div className="rounded-lg border border-dashed border-hairline bg-canvas-soft px-4 py-10 text-center">
             <div className="text-sm font-semibold text-ink">{t('暂时没有可管理的用例套件', 'No recorded suites yet')}</div>
             <p className="mx-auto mt-1 max-w-md text-xs leading-5 text-ink-mute">{t('先完成一次录制或 AI 探索，再回来管理对应的执行计划。', 'Record and save a case suite in the recorder first, then return here to create an execution plan.')}</p>
