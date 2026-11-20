@@ -187,6 +187,7 @@ function PlanReviewWorkspace() {
           !selectedCase ? <Empty title="套件中没有用例" desc="该探索套件没有关联用例，请返回探索记录重新生成草稿。" /> :
           !selectedPlan ? <Empty title="该探索用例尚无执行计划" desc="请前往执行计划编辑器生成或检查计划。" action={<Link to={`/execution-plans?suite=${encodeURIComponent(selectedSuite.id)}`} className="text-primary underline">打开执行计划编辑器</Link>} /> :
           <div className="mt-4 space-y-4">
+            <div className="rounded-lg bg-canvas-soft p-3"><div className="text-xs font-medium text-ink">探索目标</div><p className="mt-1 text-sm">{selectedCase.path || '未记录目标'}</p><div className="mt-2 text-xs font-medium text-ink">预期结果</div><p className="mt-1 text-xs text-ink-mute">{selectedCase.expected || '未设置最终预期；需确认各步骤的验证条件'}</p></div>
             <div className="flex flex-wrap items-center gap-2 text-xs">
               <span className="rounded-full bg-slate-100 px-2.5 py-1">{selectedPlan.status === 'validated' ? '已验证' : '待整理'}</span>
               <span className="text-ink-faint">版本 v{selectedPlan.version} · {steps.length} 个步骤</span>
