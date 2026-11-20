@@ -17,6 +17,9 @@ async def run_lifecycle_actions(device, actions: list, phase: str, emit: Callabl
         action = str(item.get("action") or "").strip().lower()
         args = item.get("args") if isinstance(item.get("args"), dict) else {}
         try:
+            wait_after_ms = float(item.get("wait_after_ms", 0) or 0)
+            if not 0 <= wait_after_ms <= 60000:
+                raise ValueError("操作后等待时间必须在 0..60000 毫秒之间")
             if action == "stop_app":
                 package = str(args.get("package_name") or args.get("package") or "").strip()
                 if not package:
@@ -57,6 +60,9 @@ async def run_lifecycle_actions(device, actions: list, phase: str, emit: Callabl
             else:
                 raise ValueError(f"不支持的生命周期操作：{action or '(empty)'}")
             await emit(f"  ✓ {index + 1}/{len(enabled)} {action}：{result}")
+            if wait_after_ms > 0:
+                await asyncio.sleep(wait_after_ms / 1000)
+                await emit(f"    · 操作后等待 {wait_after_ms:g} ms 完成")
         except Exception as exc:
             await emit(f"  ✗ {index + 1}/{len(enabled)} {action}：{exc}")
             if str(item.get("on_failure") or "stop").lower() != "continue":
