@@ -304,13 +304,13 @@ export default function ExplorationCenter() {
     queryKey: ['exploration-session', selectedSessionId],
     queryFn: async () => (await api.get<ExploreSession>(`/exploration/sessions/${selectedSessionId}`)).data,
     enabled: !!selectedSessionId,
-    refetchInterval: ['queued', 'running'].includes(selectedSession?.status || '') ? 1500 : false,
+    refetchInterval: query => ['queued', 'running'].includes(query.state.data?.status || '') ? 1500 : false,
   })
   const { data: sceneTimeline } = useQuery({
     queryKey: ['exploration-timeline', selectedSessionId],
     queryFn: async () => (await api.get<SceneTimeline>(`/exploration/sessions/${selectedSessionId}/timeline`)).data,
     enabled: !!selectedSessionId,
-    refetchInterval: ['queued', 'running'].includes(selectedSession?.status || '') ? 1500 : false,
+    refetchInterval: query => ['queued', 'running'].includes(query.state.data?.status || '') ? 1500 : false,
   })
   const { data: sessions = [], isLoading: sessionsLoading } = useQuery({
     queryKey: ['exploration-sessions'], queryFn: async () => (await api.get<ExploreSession[]>('/exploration/sessions')).data,
