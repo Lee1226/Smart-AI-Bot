@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import asyncio
 import base64
+import hashlib
 import json
 import logging
 import re
@@ -79,6 +80,52 @@ async def _persist_result(session_id: str, account_id: str, result) -> None:
         await db.commit()
 
 
+
+
+async def _capture_exploration_snapshot(device: WebSocketDevice, root: Path, name: str) -> dict:
+    """Capture a paired screenshot and accessibility snapshot for one action."""
+    image = await device.screenshot()
+    ui_text, elements = await device.get_ui_state()
+    root.mkdir(parents=True, exist_ok=True)
+    filename = f"{name}.png"
+    (root / filename).write_bytes(image)
+    safe_elements = []
+    for item in (elements or [])[:300]:
+        if not isinstance(item, dict):
+            continue
+        safe_elements.append({
+            key: item.get(key) for key in (
+                "index", "text", "resourceId", "contentDescription", "className",
+                "bounds", "visible", "enabled", "clickable"
+            ) if item.get(key) is not None
+        })
+    return {
+        "screenshot": str(Path("evidence") / filename),
+        "sha256": hashlib.sha256(image).hexdigest(),
+        "ui_text": str(ui_text or "")[:16000],
+        "elements": safe_elements,
+    }
+
+
+def _classify_exploration_scene(snapshot: dict) -> tuple[str, str, str] | None:
+    parts = [snapshot.get("ui_text", "")]
+    for item in snapshot.get("elements", []):
+        if isinstance(item, dict):
+            parts.extend(str(item.get(key) or "") for key in ("text", "contentDescription", "resourceId"))
+    text = " ".join(parts).lower()
+    rules = [
+        ("permission_dialog", ("允许", "仅在使用中允许", "仅此次允许", "不允许", "allow", "while using the app", "only this time", "don't allow"), "检测到系统权限请求。请人工判断是否符合本次测试授权范围；探索不会自动授予权限。"),
+        ("login_expired", ("登录已过期", "重新登录", "会话已过期", "session expired", "sign in again", "login expired"), "检测到登录失效提示。请人工确认账号状态后决定是否重新登录。"),
+        ("network_error", ("网络连接失败", "网络异常", "无法连接网络", "连接超时", "network error", "no internet", "connection failed", "try again"), "检测到网络异常提示。请先确认网络状态，再决定是否重试。"),
+        ("advertisement", ("广告", "跳过广告", "广告剩余", "sponsored", "skip ad", "advertisement"), "检测到疑似广告页面。请人工判断是否关闭或等待，不自动点击。"),
+        ("system_dialog", ("android.permissioncontroller", "系统界面", "system ui", "稍后", "取消", "确定"), "检测到疑似系统弹窗。请人工检查弹窗内容及影响后处理。"),
+    ]
+    for category, needles, suggestion in rules:
+        if any(needle in text for needle in needles):
+            return category, category.replace("_", " ").title(), suggestion
+    return None
+
+
 async def run_exploration(session_id: str, account_id: str) -> None:
     acquired = False
     try:
@@ -116,6 +163,81 @@ async def run_exploration(session_id: str, account_id: str) -> None:
                 # can show the most recent activity without a second event system.
                 await _set_session(session_id, summary=str(message)[:2000])
 
+            evidence_root = Path(__file__).resolve().parent.parent / "data" / "explorations" / session_id / "evidence"
+            action_sequence = 0
+
+            async def observe_action(stage, llm_step, fn_name, args, before, result_text):
+                nonlocal action_sequence
+                if stage == "before":
+                    return await _capture_exploration_snapshot(
+                        device, evidence_root, f"{action_sequence + 1:03d}_before"
+                    )
+                action_sequence += 1
+                after = await _capture_exploration_snapshot(
+                    device, evidence_root, f"{action_sequence:03d}_after"
+                )
+                safe_args = dict(args) if isinstance(args, dict) else {}
+                if fn_name == "input_text" and "text" in safe_args:
+                    safe_args["text"] = "[已隐藏：输入内容不写入探索记录]"
+                before = before if isinstance(before, dict) else {}
+                evidence = {
+                    "before_screenshot": before.get("screenshot", ""),
+                    "after_screenshot": after.get("screenshot", ""),
+                    "before_sha256": before.get("sha256", ""),
+                    "after_sha256": after.get("sha256", ""),
+                }
+                async with AsyncSessionLocal() as db:
+                    db.add(ExploreStep(
+                        account_id=account_id, session_id=session_id, sequence=action_sequence,
+                        event_type="action", title=fn_name or f"Step {action_sequence}",
+                        detail=str(result_text or "")[:4000], action=fn_name, executor="ai",
+                        action_args_json=json.dumps(safe_args, ensure_ascii=False),
+                        page_before_json=json.dumps({
+                            "ui_text": before.get("ui_text", ""),
+                            "elements": before.get("elements", []),
+                        }, ensure_ascii=False),
+                        page_after_json=json.dumps({
+                            "ui_text": after.get("ui_text", ""),
+                            "elements": after.get("elements", []),
+                        }, ensure_ascii=False),
+                        evidence_json=json.dumps(evidence, ensure_ascii=False),
+                        status="failed" if str(result_text).startswith("ERROR") else "completed",
+                        duration_ms=0,
+                    ))
+                    scene = _classify_exploration_scene(after)
+                    if scene:
+                        category, title, suggestion = scene
+                        existing = (await db.execute(select(ExploreKnowledge).where(
+                            ExploreKnowledge.account_id == account_id,
+                            ExploreKnowledge.source_session_id == session_id,
+                            ExploreKnowledge.category == category,
+                        ))).scalar_one_or_none()
+                        if not existing:
+                            db.add(ExploreKnowledge(
+                                account_id=account_id, source_session_id=session_id,
+                                title=title, category=category,
+                                description=suggestion,
+                                trigger_conditions_json=json.dumps({
+                                    "app_package": config["app_package"],
+                                    "platform": config["platform"],
+                                }, ensure_ascii=False),
+                                recognition_rules_json=json.dumps({
+                                    "matched_ui_text": after.get("ui_text", "")[:3000],
+                                    "matched_elements": after.get("elements", [])[:80],
+                                }, ensure_ascii=False),
+                                handling_rules_json=json.dumps({
+                                    "mode": "manual_review",
+                                    "suggestion": suggestion,
+                                    "auto_execute": False,
+                                }, ensure_ascii=False),
+                                evidence_json=json.dumps(evidence, ensure_ascii=False),
+                                app_package=config["app_package"], platform=config["platform"],
+                                risk_level="high" if category == "permission_dialog" else "normal",
+                                status="pending_review",
+                            ))
+                    await db.commit()
+                return after
+
             agent = TestCaseAgent(
                 device=device, provider=provider, model=model, api_key=api_key,
                 api_base=api_base, max_steps=config["max_steps"], step_delay=0.8,
@@ -124,6 +246,7 @@ async def run_exploration(session_id: str, account_id: str) -> None:
                 verifier_api_base=verifier[3], fallbacks=fallbacks,
                 allow_subagents=False, language=resolve_language(settings),
                 target_package=config["app_package"],
+                action_observer=observe_action,
             )
             # Exploration intentionally excludes package installation and other
             # non-essential tools. Device actions still go through TestCaseAgent's
@@ -144,7 +267,6 @@ async def run_exploration(session_id: str, account_id: str) -> None:
                 expected=expected,
             )
             result = await asyncio.wait_for(agent.run(case), timeout=config["timeout_seconds"])
-            await _persist_result(session_id, account_id, result)
             status = "completed" if result.status == "pass" else "failed"
             await _set_session(session_id, status=status, finished_at=datetime.utcnow(),
                                summary=result.reason or f"探索结束：{result.status}",
