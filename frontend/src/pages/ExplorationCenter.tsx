@@ -27,7 +27,7 @@ const navItems = [
   { to: '/exploration/plans', zh: '计划生成与验证', en: 'Plan review', icon: '✓' },
 ]
 const statusLabel: Record<string, string> = {
-  draft: '草稿', running: '探索中', paused: '已暂停', completed: '已完成',
+  draft: '草稿', queued: '排队中', running: '探索中', paused: '已暂停', completed: '已完成',
   failed: '失败', cancelled: '已取消', discovered: '待整理', pending_review: '待审核',
   validated: '已验证', confirmed: '已确认', invalidated: '已失效', disabled: '已停用',
 }
@@ -102,6 +102,14 @@ export default function ExplorationCenter() {
       }
     },
   })
+  const stopSession = useMutation({
+    mutationFn: async (id: string) => api.post(`/exploration/sessions/${id}/stop`),
+    onSuccess: async () => {
+      await qc.invalidateQueries({ queryKey: ['exploration-session', selectedSessionId] })
+      await qc.invalidateQueries({ queryKey: ['exploration-sessions'] })
+      await qc.invalidateQueries({ queryKey: ['exploration-overview'] })
+    },
+  })
   const reviewKnowledge = useMutation({
     mutationFn: async ({ id, status }: { id: string; status: string }) => api.patch(`/exploration/knowledge/${id}`, { status }),
     onSuccess: () => qc.invalidateQueries({ queryKey: ['exploration-knowledge'] }),
@@ -164,8 +172,8 @@ export default function ExplorationCenter() {
       <PageTitle title="探索历史" desc="查看已创建的探索会话及其状态。" />
       {sessionsLoading ? <div className="py-10 text-center text-sm text-ink-faint">正在读取探索记录…</div> : sessions.length === 0 ? <Empty title="暂无探索历史" desc="创建探索会话后，记录会显示在这里。" action={<Link to="/exploration/new" className="text-sm text-primary">新建探索</Link>} /> : <div className="overflow-hidden rounded-xl border border-hairline bg-white"><div className="grid grid-cols-[minmax(0,1fr)_120px_160px] gap-3 border-b border-hairline bg-canvas-soft px-4 py-3 text-xs font-medium text-ink-mute"><span>探索目标</span><span>状态</span><span>创建时间</span></div>{sessions.map(row => <button key={row.id} onClick={() => setSearchParams({ session: row.id })} className={`grid w-full grid-cols-[minmax(0,1fr)_120px_160px] items-center gap-3 border-b border-hairline px-4 py-4 text-left last:border-0 hover:bg-canvas-soft ${selectedSessionId === row.id ? 'bg-primary-soft/40' : ''}`}><div className="min-w-0"><div className="truncate text-sm font-medium">{row.title}</div><div className="mt-1 truncate text-xs text-ink-mute">{row.goal}</div></div><Status value={row.status} /><span className="text-xs text-ink-mute">{new Date(row.created_at).toLocaleString()}</span></button>)}</div>}
       {selectedSession && <section className="rounded-xl border border-hairline bg-white p-4">
-        <div className="flex flex-wrap items-start justify-between gap-3"><div><div className="text-sm font-semibold">{selectedSession.title}</div><p className="mt-1 text-xs text-ink-mute">{selectedSession.goal}</p></div><Status value={selectedSession.status} /></div>
-        {selectedSession.expected_result && <div className="mt-3 rounded-lg bg-canvas-soft p-3 text-xs"><strong>预期结果：</strong>{selectedSession.expected_result}</div>}
+        <div className="flex flex-wrap items-start justify-between gap-3"><div><div className="text-sm font-semibold">{selectedSession.title}</div><p className="mt-1 text-xs text-ink-mute">{selectedSession.goal}</p></div><div className="flex items-center gap-2"><Status value={selectedSession.status} />{['queued', 'running'].includes(selectedSession.status) && <button onClick={() => stopSession.mutate(selectedSession.id)} disabled={stopSession.isPending} className="rounded-md border border-red-200 px-3 py-1.5 text-xs text-red-600 disabled:opacity-50">停止探索</button>}</div></div>
+        {selectedSession.expected_result && <div className="mt-3 rounded-lg bg-canvas-soft p-3 text-xs"><strong>预期结果：</strong>{selectedSession.expected_result}</div>}{selectedSession.summary && <div className="mt-3 rounded-lg bg-blue-50 p-3 text-xs text-blue-900">{selectedSession.summary}</div>}{selectedSession.error_message && <div className="mt-3 rounded-lg bg-red-50 p-3 text-xs text-red-700">{selectedSession.error_message}</div>}
         <div className="mt-4 flex items-center justify-between"><h3 className="text-sm font-semibold">探索轨迹</h3><span className="text-xs text-ink-faint">{selectedSession.steps?.length || 0} 个事件</span></div>
         {!selectedSession.steps?.length ? <p className="mt-3 text-xs text-ink-faint">正在等待探索步骤，页面会自动刷新。</p> : <ol className="mt-3 space-y-3">{selectedSession.steps.map(step => <li key={step.id} className="flex gap-3 border-l-2 border-primary/30 pl-3"><div className="min-w-0 flex-1"><div className="text-xs font-semibold">{step.sequence}. {step.title || step.action || step.event_type}</div>{step.detail && <p className="mt-1 text-xs text-ink-mute">{step.detail}</p>}</div><span className="text-[11px] text-ink-faint">{step.duration_ms} ms</span></li>)}</ol>}
       </section>}
