@@ -115,6 +115,31 @@ async def _shell(serial: str, *args: str, timeout: float = 20) -> str:
     return str(await _exec("-s", serial, "shell", *args, timeout=timeout))
 
 
+def parse_screen_size(output: str) -> tuple[int, int]:
+    """Parse Android wm size, preferring an active override."""
+    override = re.search(r"Override size:\\s*(\\d+)x(\\d+)", output or "")
+    physical = re.search(r"Physical size:\\s*(\\d+)x(\\d+)", output or "")
+    match = override or physical
+    if not match:
+        raise RuntimeError(f"无法解析 Android 屏幕分辨率：{output!r}")
+    width, height = map(int, match.groups())
+    if width <= 0 or height <= 0:
+        raise RuntimeError(f"Android 屏幕分辨率无效：{width}x{height}")
+    return width, height
+
+
+async def get_screen_size(device_id: str) -> tuple[int, int]:
+    """Read logical dimensions without collecting the accessibility tree."""
+    serial = serial_for(device_id)
+    if not serial:
+        raise RuntimeError(f"本地 ADB 设备 {device_id} 未绑定")
+    lock = _SERIAL_LOCKS.setdefault(serial, asyncio.Lock())
+    async with lock:
+        output = await _shell(serial, "wm", "size", timeout=5)
+    return parse_screen_size(output)
+
+
+
 def _node(element: ET.Element) -> dict[str, Any]:
     bounds = element.attrib.get("bounds", "")
     match = re.match(r"\[(\d+),(\d+)\]\[(\d+),(\d+)\]", bounds)
