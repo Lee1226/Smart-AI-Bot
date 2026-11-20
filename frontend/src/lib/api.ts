@@ -405,8 +405,35 @@ export const fetchTrends = (suiteId: string) =>
 // ── Runs ─────────────────────────────────────────────────────────────────────
 
 export interface RunPage { items: Run[]; total: number; has_active: boolean }
-export const fetchRuns = (params: { suite_id?: string; status?: 'all' | 'active' | 'done' | 'problem'; device_id?: string; q?: string; page?: number; page_size?: number } = {}) =>
+export interface RunQueryParams {
+  suite_id?: string
+  status?: 'all' | 'active' | 'done' | 'problem'
+  device_id?: string
+  q?: string
+  page?: number
+  page_size?: number
+}
+
+/** Paginated API used by the Runs page. */
+export const fetchRunsPage = (params: RunQueryParams = {}) =>
   api.get<RunPage>('/runs', { params }).then(r => r.data)
+
+/**
+ * Backward-compatible array API for dashboards and detail pages.
+ * Fetch every page so existing callers keep seeing the complete run history.
+ */
+export const fetchRuns = async (suiteId?: string): Promise<Run[]> => {
+  const pageSize = 100
+  const first = await fetchRunsPage({ suite_id: suiteId, page: 1, page_size: pageSize })
+  if (first.total <= first.items.length) return first.items
+  const pageCount = Math.ceil(first.total / pageSize)
+  const remaining = await Promise.all(
+    Array.from({ length: pageCount - 1 }, (_, index) =>
+      fetchRunsPage({ suite_id: suiteId, page: index + 2, page_size: pageSize })
+    )
+  )
+  return [...first.items, ...remaining.flatMap(page => page.items)]
+}
 export const fetchRun = (id: string) => api.get<Run>(`/runs/${id}`).then(r => r.data)
 export interface RecordingItem {
   run_id: string
