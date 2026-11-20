@@ -8,7 +8,7 @@ from typing import List, Optional
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from fastapi.responses import FileResponse, HTMLResponse, StreamingResponse
 from pydantic import BaseModel
-from sqlalchemy import delete, select, update
+from sqlalchemy import delete, func, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from auth.access import require_device, require_node, require_run, require_suite
@@ -322,21 +322,25 @@ async def create_batch_run(req: StartBatchRunRequest, request: Request, db: Asyn
     return await _run_out(run, db)
 
 
-@router.get("", response_model=List[RunOut])
+@router.get("")
 async def list_runs(
     request: Request,
     suite_id: Optional[str] = None,
+    page: int = Query(1, ge=1),
+    page_size: int = Query(20, ge=10, le=100),
     db: AsyncSession = Depends(get_db),
 ):
-    q = select(TestRun).order_by(TestRun.created_at.desc())
+    """List runs with database pagination."""
+    q = select(TestRun)
     if suite_id:
         q = q.where(TestRun.suite_id == suite_id)
-    # Filter by account when authenticated
     if request.state.account_id:
         q = q.where(TestRun.account_id == request.state.account_id)
-    res = await db.execute(q)
-    runs = res.scalars().all()
-    return [await _run_out(r, db) for r in runs]
+    total = await db.scalar(select(func.count()).select_from(q.subquery())) or 0
+    rows = (await db.execute(
+        q.order_by(TestRun.created_at.desc()).offset((page - 1) * page_size).limit(page_size)
+    )).scalars().all()
+    return {"items": [await _run_out(run, db) for run in rows], "total": total}
 
 
 @router.post("/quick", response_model=RunOut, status_code=201)
@@ -541,8 +545,13 @@ async def compare_runs(
 
 
 @router.get("/recordings")
-async def list_recordings(request: Request, db: AsyncSession = Depends(get_db)):
-    """List completed local recordings belonging to the current account."""
+async def list_recordings(
+    request: Request,
+    page: int = Query(1, ge=1),
+    page_size: int = Query(20, ge=10, le=100),
+    db: AsyncSession = Depends(get_db),
+):
+    """List account-owned recordings; paginate returned metadata, not video bytes."""
     from db.models import Device
 
     q = select(TestRun).order_by(TestRun.created_at.desc())
@@ -551,31 +560,35 @@ async def list_recordings(request: Request, db: AsyncSession = Depends(get_db)):
     runs = (await db.execute(q)).scalars().all()
     items = []
     total_bytes = 0
+    total = 0
+    start = (page - 1) * page_size
+    end = start + page_size
     for run in runs:
         run_settings = await load_settings(run.account_id or "")
-        run_dir = recording_directory(run_settings)
-        path = recording_path(run.id, run_dir)
+        path = recording_path(run.id, recording_directory(run_settings))
         if not path.is_file() or path.stat().st_size <= 0:
             continue
         stat = path.stat()
+        total += 1
         total_bytes += stat.st_size
-        suite = await db.get(TestSuite, run.suite_id)
-        device = await db.get(Device, run.device_id)
-        items.append({
-            "run_id": run.id,
-            "task_name": suite.name if suite else "测试任务",
-            "device_id": run.device_id,
-            "device_name": device.name if device else run.device_id,
-            "created_at": run.created_at.isoformat() if run.created_at else None,
-            "finished_at": run.finished_at.isoformat() if run.finished_at else None,
-            "status": run.status,
-            "file_name": path.name,
-            "size_bytes": stat.st_size,
-            "download_url": f"/api/runs/{run.id}/recording.mp4",
-        })
+        if start <= total - 1 < end:
+            suite = await db.get(TestSuite, run.suite_id)
+            device = await db.get(Device, run.device_id)
+            items.append({
+                "run_id": run.id,
+                "task_name": suite.name if suite else "测试任务",
+                "device_id": run.device_id,
+                "device_name": device.name if device else run.device_id,
+                "created_at": run.created_at.isoformat() if run.created_at else None,
+                "finished_at": run.finished_at.isoformat() if run.finished_at else None,
+                "status": run.status,
+                "file_name": path.name,
+                "size_bytes": stat.st_size,
+                "download_url": f"/api/runs/{run.id}/recording.mp4",
+            })
     account_settings = await load_settings(request.state.account_id or "")
     account_recording_dir = recording_directory(account_settings)
-    return {"items": items, "total": len(items), "total_bytes": total_bytes, "storage_dir": str(account_recording_dir)}
+    return {"items": items, "total": total, "total_bytes": total_bytes, "storage_dir": str(account_recording_dir)}
 
 
 @router.delete("/recordings/{run_id}", status_code=204)
