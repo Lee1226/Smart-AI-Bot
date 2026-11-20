@@ -181,6 +181,7 @@ async def run_exploration(session_id: str, account_id: str) -> None:
                     event_sequence += 1
                     evidence = {}
                     if image:
+                        evidence_root.mkdir(parents=True, exist_ok=True)
                         filename = f"observation_{event_sequence:04d}.png"
                         (evidence_root / filename).write_bytes(image)
                         evidence = {
