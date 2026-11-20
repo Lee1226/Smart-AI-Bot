@@ -22,6 +22,10 @@ type ExploreSession = {
 type ExploreKnowledge = {
   id: string; title: string; category: string; description: string; status: string
   app_package: string; platform: string; risk_level: string; source_session_id: string
+  trigger_conditions: Record<string, unknown>
+  recognition_rules: Record<string, unknown>
+  handling_rules: Record<string, unknown>
+  evidence: Record<string, any>
 }
 type Overview = {
   session_total: number; session_running: number; session_completed: number
