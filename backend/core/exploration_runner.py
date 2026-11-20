@@ -138,7 +138,7 @@ async def run_exploration(session_id: str, account_id: str) -> None:
             if not row:
                 return
             config = {
-                "device_id": row.device_id, "goal": row.goal,
+                "device_id": row.device_id, "platform": row.platform, "goal": row.goal,
                 "expected_result": row.expected_result, "app_package": row.app_package,
                 "max_steps": row.max_steps, "timeout_seconds": row.timeout_seconds,
             }
@@ -241,17 +241,18 @@ async def run_exploration(session_id: str, account_id: str) -> None:
                     await db.commit()
                 return after
 
-            confirmed_rows = (await db.execute(select(ExploreKnowledge).where(
-                ExploreKnowledge.account_id == account_id,
-                ExploreKnowledge.status == "confirmed",
-                ExploreKnowledge.platform.in_([config["platform"], ""]),
-                ExploreKnowledge.app_package.in_([config["app_package"], ""]),
-            ).order_by(ExploreKnowledge.updated_at.desc()).limit(8))).scalars().all()
-            confirmed_knowledge = [{
-                "title": item.title, "risk_level": item.risk_level,
-                "recognition_rules": json.loads(item.recognition_rules_json or "{}"),
-                "handling_rules": json.loads(item.handling_rules_json or "{}"),
-            } for item in confirmed_rows]
+            async with AsyncSessionLocal() as knowledge_db:
+                confirmed_rows = (await knowledge_db.execute(select(ExploreKnowledge).where(
+                    ExploreKnowledge.account_id == account_id,
+                    ExploreKnowledge.status == "confirmed",
+                    ExploreKnowledge.platform.in_([config["platform"], ""]),
+                    ExploreKnowledge.app_package.in_([config["app_package"], ""]),
+                ).order_by(ExploreKnowledge.updated_at.desc()).limit(8))).scalars().all()
+                confirmed_knowledge = [{
+                    "title": item.title, "risk_level": item.risk_level,
+                    "recognition_rules": json.loads(item.recognition_rules_json or "{}"),
+                    "handling_rules": json.loads(item.handling_rules_json or "{}"),
+                } for item in confirmed_rows]
             agent = TestCaseAgent(
                 device=device, provider=provider, model=model, api_key=api_key,
                 api_base=api_base, max_steps=config["max_steps"], step_delay=0.8,
