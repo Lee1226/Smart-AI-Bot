@@ -19,11 +19,26 @@ from agent import local_adb
 
 router = APIRouter(prefix="/api/devices", tags=["devices"])
 
-# Cache native screen dimensions across short-lived WebSocketDevice adapters.
-# A11y state queries are relatively expensive; refresh only on cache miss,
-# expiry, or an orientation/aspect-ratio change.
-_SCREEN_DIMENSIONS_TTL = 60.0
+# Cache logical dimensions across short-lived adapters. Local ADB dimensions
+# are populated on attach/reconnect; manual tap/swipe must not dump the UI tree.
+_SCREEN_DIMENSIONS_TTL = 60.0  # Legacy remote-bridge cache policy.
 _screen_dimensions_cache: dict[str, tuple[int, int, float]] = {}
+
+
+def _cache_screen_dimensions(device_id: str, width: int, height: int) -> None:
+    if width > 0 and height > 0:
+        _screen_dimensions_cache[device_id] = (width, height, time.monotonic())
+
+
+async def _refresh_local_screen_dimensions(device_id: str) -> bool:
+    if not local_adb.is_bound(device_id):
+        return False
+    try:
+        width, height = await local_adb.get_screen_size(device_id)
+    except Exception:
+        return False
+    _cache_screen_dimensions(device_id, width, height)
+    return True
 
 
 async def get_db():
@@ -64,6 +79,14 @@ async def list_devices(request: Request, db: AsyncSession = Depends(get_db)):
     # Rehydrate local ADB bindings after backend restart; never touch remote bridge types.
     adb_rows = (await db.execute(select(Device).where(Device.connection_type == "adb_usb"))).scalars().all()
     await local_adb.refresh_bindings(adb_rows)
+    # Remove dimensions for disconnected devices and prefetch for reattached ADB devices.
+    for cached_id in list(_screen_dimensions_cache):
+        if not local_adb.is_bound(cached_id):
+            _screen_dimensions_cache.pop(cached_id, None)
+    await asyncio.gather(*[
+        _refresh_local_screen_dimensions(d.id)
+        for d in adb_rows if local_adb.is_bound(d.id) and d.id not in _screen_dimensions_cache
+    ], return_exceptions=True)
     # Sync status from native ADB or existing WebSocket registry.
     out = []
     for d in devices:
@@ -138,6 +161,8 @@ async def attach_local_adb(req: LocalAdbAttachRequest, request: Request, db: Asy
         existing.name = req.name.strip() or item.get("model") or existing.name
         existing.adb_auto_connect = True
         local_adb.bind_device(existing.id, serial)
+        _screen_dimensions_cache.pop(existing.id, None)
+        await _refresh_local_screen_dimensions(existing.id)
         await db.commit()
         await db.refresh(existing)
         return DeviceOut(
@@ -155,6 +180,7 @@ async def attach_local_adb(req: LocalAdbAttachRequest, request: Request, db: Asy
     await db.commit()
     await db.refresh(device)
     local_adb.bind_device(device.id, serial)
+    await _refresh_local_screen_dimensions(device.id)
     return DeviceOut(
         id=device.id, connection_type=device.connection_type, adb_serial=serial,
         adb_auto_connect=True, name=device.name, token=device.token, status="online",
@@ -179,6 +205,7 @@ async def detach_local_adb(device_id: str, request: Request, db: AsyncSession = 
     from routers.live import stop_local_adb_stream
     await stop_local_adb_stream(device_id)
     local_adb.unbind_device(device_id)
+    _screen_dimensions_cache.pop(device_id, None)
     device.adb_auto_connect = False
     device.status = "offline"
     await db.commit()
@@ -485,35 +512,46 @@ async def control_device(device_id: str, req: DeviceControlRequest, request: Req
                 if any(value is None for value in required):
                     raise HTTPException(status_code=422, detail="触控坐标缺失")
                 points = [(req.x, req.y)] if req.action == "tap" else [(req.x, req.y), (req.x2, req.y2)]
-                # Reuse native dimensions across short-lived adapters instead
-                # of issuing an expensive accessibility-state RPC for every tap.
-                # Refresh on cache miss/expiry or when the video aspect ratio
-                # indicates that the device orientation has changed.
-                native_w, native_h = transport.screen_width, transport.screen_height
                 cached = _screen_dimensions_cache.get(device_id)
-                now = time.monotonic()
-                if cached:
-                    cached_w, cached_h, cached_at = cached
-                    source_ratio = (req.source_width / req.source_height) if req.source_width and req.source_height else 0
-                    cached_ratio = cached_w / cached_h if cached_h else 0
-                    orientation_changed = bool(source_ratio and cached_ratio and abs(source_ratio - cached_ratio) > 0.08 and abs(source_ratio - 1 / cached_ratio) < 0.08)
-                    if (now - cached_at) < _SCREEN_DIMENSIONS_TTL and not orientation_changed:
-                        native_w, native_h = cached_w, cached_h
-
-                cache_missing_or_stale = not cached or (now - cached[2]) >= _SCREEN_DIMENSIONS_TTL
                 source_ratio = (req.source_width / req.source_height) if req.source_width and req.source_height else 0
-                cached_ratio = native_w / native_h if native_h else 0
-                orientation_changed = bool(source_ratio and cached_ratio and abs(source_ratio - cached_ratio) > 0.08 and abs(source_ratio - 1 / cached_ratio) < 0.08)
-                if native_w <= 0 or native_h <= 0 or cache_missing_or_stale or orientation_changed:
-                    try:
-                        await transport.get_ui_state()
-                        if transport.screen_width > 0 and transport.screen_height > 0:
-                            native_w, native_h = transport.screen_width, transport.screen_height
-                            _screen_dimensions_cache[device_id] = (native_w, native_h, time.monotonic())
-                    except Exception:
-                        # Keep a previously known size if accessibility is temporarily unavailable.
-                        if cached and cached[0] > 0 and cached[1] > 0:
-                            native_w, native_h = cached[0], cached[1]
+
+                if local_adb.is_bound(device_id):
+                    # Native ADB uses a lightweight wm size query on cache miss;
+                    # it never invokes uiautomator just to prepare manual input.
+                    if not cached:
+                        await _refresh_local_screen_dimensions(device_id)
+                        cached = _screen_dimensions_cache.get(device_id)
+                    native_w, native_h = (
+                        (cached[0], cached[1]) if cached
+                        else (transport.screen_width, transport.screen_height)
+                    )
+                    if native_w <= 0 or native_h <= 0:
+                        native_w, native_h = req.source_width or 0, req.source_height or 0
+
+                    # wm size is the base logical resolution. The decoded frame
+                    # reflects current rotation, so swap axes when aspect ratios
+                    # clearly indicate the inverse orientation.
+                    cached_ratio = native_w / native_h if native_h else 0
+                    if source_ratio and cached_ratio:
+                        same = abs(source_ratio - cached_ratio) <= 0.08
+                        inverse = abs(source_ratio - 1 / cached_ratio) <= 0.08
+                        if inverse and not same:
+                            native_w, native_h = native_h, native_w
+                            _cache_screen_dimensions(device_id, native_w, native_h)
+                else:
+                    # Keep existing behavior for Portal/other remote bridges.
+                    native_w, native_h = transport.screen_width, transport.screen_height
+                    if cached and (time.monotonic() - cached[2]) < _SCREEN_DIMENSIONS_TTL:
+                        native_w, native_h = cached[0], cached[1]
+                    if native_w <= 0 or native_h <= 0 or not cached or (time.monotonic() - cached[2]) >= _SCREEN_DIMENSIONS_TTL:
+                        try:
+                            await transport.get_ui_state()
+                            if transport.screen_width > 0 and transport.screen_height > 0:
+                                native_w, native_h = transport.screen_width, transport.screen_height
+                                _cache_screen_dimensions(device_id, native_w, native_h)
+                        except Exception:
+                            if cached and cached[0] > 0 and cached[1] > 0:
+                                native_w, native_h = cached[0], cached[1]
                 if req.source_width and req.source_height and native_w > 0 and native_h > 0:
                     points = [
                         (round(x * native_w / req.source_width), round(y * native_h / req.source_height))
