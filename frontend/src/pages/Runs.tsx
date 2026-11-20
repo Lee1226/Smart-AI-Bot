@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { cancelRun, deleteRun, fetchDevices, fetchRuns, startRun, Run } from '../lib/api'
+import { cancelRun, deleteRun, fetchDevices, fetchRunsPage, startRun, Run } from '../lib/api'
 
 const ACTIVE = new Set(['queued', 'preparing', 'pending', 'running'])
 const TERMINAL = new Set(['done', 'error', 'cancelled', 'interrupted'])
@@ -94,7 +94,7 @@ export default function Runs() {
   const [pageSize, setPageSize] = useState(20)
   const { data: runPage, isLoading, isError, refetch } = useQuery({
     queryKey: ['runs', filter, deviceFilter, keyword.trim(), page, pageSize],
-    queryFn: () => fetchRuns({
+    queryFn: () => fetchRunsPage({
       status: filter,
       device_id: deviceFilter === 'all' ? undefined : deviceFilter,
       q: keyword.trim() || undefined,
