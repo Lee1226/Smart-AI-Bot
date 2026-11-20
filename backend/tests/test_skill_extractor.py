@@ -32,6 +32,32 @@ def test_extracts_successful_actions_and_preserves_evidence_and_scope():
     assert draft["safety"]["execution_enabled"] is False
 
 
+def test_preserves_prompt_and_extracts_public_decisions_observations_and_failures():
+    draft = extract_skill_draft(
+        {"title": "完成翻译", "goal": "打开翻译并启动面对面翻译",
+         "expected_result": "显示正在翻译界面", "platform": "android"},
+        [
+            _event(id="obs-1", sequence=1, event_type="observation", title="观察首页",
+                   action="", page_after={"ui_text": "首页\n随身翻译"},
+                   evidence={"screenshot": "evidence/observation_0001.jpg"}),
+            _event(id="decision-1", sequence=2, event_type="decision", action="tap",
+                   title="AI 选择操作：tap", detail="页面出现随身翻译入口，因此选择进入该功能。",
+                   status="recorded", action_args={}),
+            _event(id="action-1", sequence=3, action="tap", title="点击随身翻译"),
+            _event(id="failed-1", sequence=4, event_type="tool_result", action="tap",
+                   status="failed", detail="ERROR: element not clickable"),
+        ],
+    )
+    teaching = draft["recognition"]["teaching"]
+    assert teaching["source_prompt"] == "打开翻译并启动面对面翻译"
+    assert teaching["expected_outcome"] == "显示正在翻译界面"
+    assert teaching["observations"][0]["visible_text"] == "首页\n随身翻译"
+    assert teaching["decision_records"][0]["summary"] == "页面出现随身翻译入口，因此选择进入该功能。"
+    assert teaching["recovery_experiences"][0]["result"] == "ERROR: element not clickable"
+    assert draft["steps"][0]["decision_summary"] == "页面出现随身翻译入口，因此选择进入该功能。"
+    assert any("失败的工具调用" in warning for warning in draft["warnings"])
+
+
 def test_does_not_convert_failed_or_unsupported_actions_into_steps():
     draft = extract_skill_draft(
         {"goal": "探索页面"},
