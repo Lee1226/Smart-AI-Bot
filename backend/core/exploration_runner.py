@@ -108,6 +108,76 @@ async def _capture_exploration_snapshot(device: WebSocketDevice, root: Path, nam
     }
 
 
+def _element_identity(item: dict) -> str:
+    """Build a stable-enough identity for comparing adjacent accessibility trees."""
+    resource_id = str(item.get("resourceId") or "").strip()
+    if resource_id:
+        return f"id:{resource_id}"
+    parts = [
+        str(item.get("className") or "").strip(),
+        str(item.get("text") or "").strip(),
+        str(item.get("contentDescription") or "").strip(),
+    ]
+    return "|".join(parts) if any(parts) else ""
+
+
+def _summarize_page_change(before: dict | None, after: dict | None) -> dict:
+    """Return a compact, explainable diff between two captured UI states."""
+    before = before if isinstance(before, dict) else {}
+    after = after if isinstance(after, dict) else {}
+    old_items = [item for item in before.get("elements", []) if isinstance(item, dict)]
+    new_items = [item for item in after.get("elements", []) if isinstance(item, dict)]
+
+    def index_items(items):
+        indexed = {}
+        for item in items:
+            identity = _element_identity(item)
+            if not identity:
+                continue
+            indexed.setdefault(identity, []).append(item)
+        return indexed
+
+    old_index, new_index = index_items(old_items), index_items(new_items)
+    added, removed, changed = [], [], []
+    for identity in new_index.keys() - old_index.keys():
+        added.extend(new_index[identity][:5])
+    for identity in old_index.keys() - new_index.keys():
+        removed.extend(old_index[identity][:5])
+    for identity in old_index.keys() & new_index.keys():
+        old_item, new_item = old_index[identity][0], new_index[identity][0]
+        fields = ("text", "contentDescription", "bounds", "visible", "enabled", "clickable")
+        changed_fields = [field for field in fields if old_item.get(field) != new_item.get(field)]
+        if changed_fields:
+            changed.append({
+                "identity": identity,
+                "fields": changed_fields,
+                "before": {field: old_item.get(field) for field in changed_fields},
+                "after": {field: new_item.get(field) for field in changed_fields},
+            })
+
+    old_text, new_text = str(before.get("ui_text") or ""), str(after.get("ui_text") or "")
+    old_lines, new_lines = set(old_text.splitlines()), set(new_text.splitlines())
+    summary = {
+        "added_count": len(added),
+        "removed_count": len(removed),
+        "changed_count": len(changed),
+        "added": [{key: item.get(key) for key in ("text", "resourceId", "contentDescription", "className", "bounds")} for item in added[:20]],
+        "removed": [{key: item.get(key) for key in ("text", "resourceId", "contentDescription", "className", "bounds")} for item in removed[:20]],
+        "changed": changed[:20],
+        "added_ui_lines": list(new_lines - old_lines)[:30],
+        "removed_ui_lines": list(old_lines - new_lines)[:30],
+    }
+    summary["has_changes"] = bool(
+        summary["added_count"] or summary["removed_count"] or summary["changed_count"]
+        or summary["added_ui_lines"] or summary["removed_ui_lines"]
+    )
+    summary["label"] = (
+        f"新增控件 {summary['added_count']} 个、消失 {summary['removed_count']} 个、属性变化 {summary['changed_count']} 个"
+        if summary["has_changes"] else "相邻两次观察未发现明显 UI 结构变化"
+    )
+    return summary
+
+
 def _classify_exploration_scene(snapshot: dict) -> tuple[str, str, str] | None:
     parts = [snapshot.get("ui_text", "")]
     for item in snapshot.get("elements", []):
@@ -168,9 +238,10 @@ async def run_exploration(session_id: str, account_id: str) -> None:
             action_sequence = 0
             event_sequence = 0
             action_started_at = 0.0
+            last_observation_snapshot = None
 
             async def observe_action(stage, llm_step, fn_name, args, before, result_text):
-                nonlocal action_sequence, event_sequence, action_started_at
+                nonlocal action_sequence, event_sequence, action_started_at, last_observation_snapshot
                 if stage == "observation":
                     # Reuse the screenshot and accessibility tree already collected
                     # by TestCaseAgent for this model turn; do not query the device again.
@@ -195,6 +266,12 @@ async def run_exploration(session_id: str, account_id: str) -> None:
                         ) if item.get(key) is not None}
                         for item in elements[:300] if isinstance(item, dict)
                     ]
+                    current_observation = {"ui_text": ui_text, "elements": safe_elements}
+                    page_change = _summarize_page_change(last_observation_snapshot, current_observation) if last_observation_snapshot else {
+                        "has_changes": False, "label": "本次为初始页面观察", "added_count": 0,
+                        "removed_count": 0, "changed_count": 0, "added": [], "removed": [],
+                        "changed": [], "added_ui_lines": [], "removed_ui_lines": [],
+                    }
                     async with AsyncSessionLocal() as db:
                         db.add(ExploreStep(
                             account_id=account_id, session_id=session_id, sequence=event_sequence,
@@ -202,12 +279,13 @@ async def run_exploration(session_id: str, account_id: str) -> None:
                             detail=str(result_text or "已采集当前页面状态")[:2000],
                             action="", executor="ai", action_args_json="{}",
                             page_before_json="{}",
-                            page_after_json=json.dumps({"ui_text": ui_text, "elements": safe_elements}, ensure_ascii=False),
+                            page_after_json=json.dumps({**current_observation, "change_summary": page_change}, ensure_ascii=False),
                             evidence_json=json.dumps(evidence, ensure_ascii=False),
                             status="recorded", duration_ms=0,
                         ))
                         await db.commit()
-                    return {"ui_text": ui_text, "elements": safe_elements, **evidence}
+                    last_observation_snapshot = current_observation
+                    return {**current_observation, "change_summary": page_change, **evidence}
 
                 if stage == "decision":
                     event_sequence += 1
@@ -260,6 +338,7 @@ async def run_exploration(session_id: str, account_id: str) -> None:
                 if fn_name == "input_text" and "text" in safe_args:
                     safe_args["text"] = "[已隐藏：输入内容不写入探索记录]"
                 before = before if isinstance(before, dict) else {}
+                page_change = _summarize_page_change(before, after)
                 evidence = {
                     "before_screenshot": before.get("screenshot", ""),
                     "after_screenshot": after.get("screenshot", ""),
@@ -279,6 +358,7 @@ async def run_exploration(session_id: str, account_id: str) -> None:
                         page_after_json=json.dumps({
                             "ui_text": after.get("ui_text", ""),
                             "elements": after.get("elements", []),
+                            "change_summary": page_change,
                         }, ensure_ascii=False),
                         evidence_json=json.dumps(evidence, ensure_ascii=False),
                         status="failed" if str(result_text).startswith("ERROR") else "completed",
