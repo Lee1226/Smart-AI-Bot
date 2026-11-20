@@ -1,0 +1,167 @@
+import { useMemo, useState } from 'react'
+import { Link, useLocation, useNavigate } from 'react-router-dom'
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
+import { api, fetchDevices, type Device } from '../lib/api'
+import { useT } from '../lib/i18n'
+
+type ExploreSession = {
+  id: string; title: string; goal: string; expected_result: string; device_id: string
+  platform: string; status: string; summary: string; created_at: string; steps?: ExploreStep[]
+}
+type ExploreStep = { id: string; sequence: number; event_type: string; title: string; detail: string; action: string; status: string; duration_ms: number }
+type ExploreKnowledge = {
+  id: string; title: string; category: string; description: string; status: string
+  app_package: string; platform: string; risk_level: string; source_session_id: string
+}
+type Overview = {
+  session_total: number; session_running: number; session_completed: number
+  knowledge_total: number; knowledge_pending: number; knowledge_confirmed: number
+  recent_sessions: ExploreSession[]
+}
+
+const navItems = [
+  { to: '/exploration', zh: '探索概览', en: 'Overview', icon: '▦' },
+  { to: '/exploration/new', zh: '新建探索', en: 'New exploration', icon: '＋' },
+  { to: '/exploration/history', zh: '探索历史', en: 'History', icon: '◷' },
+  { to: '/exploration/knowledge', zh: '探索经验库', en: 'Experience library', icon: '◇' },
+  { to: '/exploration/plans', zh: '计划生成与验证', en: 'Plan review', icon: '✓' },
+]
+const statusLabel: Record<string, string> = {
+  draft: '草稿', running: '探索中', paused: '已暂停', completed: '已完成',
+  failed: '失败', cancelled: '已取消', discovered: '待整理', pending_review: '待审核',
+  validated: '已验证', confirmed: '已确认', invalidated: '已失效', disabled: '已停用',
+}
+const statusClass: Record<string, string> = {
+  completed: 'bg-green-50 text-green-700', confirmed: 'bg-green-50 text-green-700',
+  running: 'bg-blue-50 text-blue-700', failed: 'bg-red-50 text-red-700',
+  discovered: 'bg-amber-50 text-amber-700', pending_review: 'bg-amber-50 text-amber-700',
+  draft: 'bg-slate-100 text-slate-600', paused: 'bg-slate-100 text-slate-600',
+}
+
+function Status({ value }: { value: string }) {
+  return <span className={`inline-flex rounded-full px-2 py-1 text-xs ${statusClass[value] || 'bg-slate-100 text-slate-600'}`}>{statusLabel[value] || value}</span>
+}
+function PageTitle({ title, desc, action }: { title: string; desc: string; action?: React.ReactNode }) {
+  return <div className="mb-6 flex flex-wrap items-start justify-between gap-3"><div><h1 className="text-2xl font-bold text-ink">{title}</h1><p className="mt-1 text-sm text-ink-mute">{desc}</p></div>{action}</div>
+}
+function Empty({ title, desc, action }: { title: string; desc: string; action?: React.ReactNode }) {
+  return <div className="rounded-xl border border-dashed border-hairline bg-white px-5 py-12 text-center"><div className="text-sm font-semibold text-ink">{title}</div><p className="mt-1 text-xs text-ink-mute">{desc}</p>{action && <div className="mt-4">{action}</div>}</div>
+}
+
+export default function ExplorationCenter() {
+  const t = useT()
+  const { pathname } = useLocation()
+  const navigate = useNavigate()
+  const qc = useQueryClient()
+  const current = navItems.find(item => item.to === pathname)?.to || '/exploration'
+  const isNew = current === '/exploration/new'
+  const isHistory = current === '/exploration/history'
+  const isKnowledge = current === '/exploration/knowledge'
+  const isPlans = current === '/exploration/plans'
+  const [goal, setGoal] = useState('')
+  const [expected, setExpected] = useState('')
+  const [deviceId, setDeviceId] = useState('')
+  const [platform, setPlatform] = useState('android')
+  const [appPackage, setAppPackage] = useState('')
+  const [maxSteps, setMaxSteps] = useState(20)
+  const [timeoutSeconds, setTimeoutSeconds] = useState(300)
+  const { data: overview } = useQuery({ queryKey: ['exploration-overview'], queryFn: async () => (await api.get<Overview>('/exploration/overview')).data })
+  const { data: devices = [] } = useQuery({ queryKey: ['devices'], queryFn: fetchDevices, enabled: isNew, refetchInterval: 5000 })
+  const { data: sessions = [], isLoading: sessionsLoading } = useQuery({
+    queryKey: ['exploration-sessions'], queryFn: async () => (await api.get<ExploreSession[]>('/exploration/sessions')).data,
+    enabled: isHistory,
+  })
+  const { data: knowledge = [], isLoading: knowledgeLoading } = useQuery({
+    queryKey: ['exploration-knowledge'], queryFn: async () => (await api.get<ExploreKnowledge[]>('/exploration/knowledge')).data,
+    enabled: isKnowledge,
+  })
+  const createSession = useMutation({
+    mutationFn: async () => (await api.post<ExploreSession>('/exploration/sessions', {
+      title: goal.trim().slice(0, 80), goal, expected_result: expected, device_id: deviceId,
+      platform, app_package: appPackage, max_steps: maxSteps, timeout_seconds: timeoutSeconds,
+    })).data,
+    onSuccess: async row => {
+      await qc.invalidateQueries({ queryKey: ['exploration-overview'] })
+      await qc.invalidateQueries({ queryKey: ['exploration-sessions'] })
+      navigate(`/exploration/history?session=${row.id}`)
+    },
+  })
+  const reviewKnowledge = useMutation({
+    mutationFn: async ({ id, status }: { id: string; status: string }) => api.patch(`/exploration/knowledge/${id}`, { status }),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['exploration-knowledge'] }),
+  })
+  const selectedDevice = devices.find((device: Device) => device.id === deviceId)
+  const onlineDevices = useMemo(() => devices.filter((device: Device) => device.status === 'online'), [devices])
+
+  return <div className="space-y-6">
+    <div className="flex flex-wrap items-center justify-between gap-3">
+      <div><div className="text-xs text-ink-faint">AI WORKSPACE / EXPLORATION</div><h1 className="mt-1 text-xl font-bold text-ink">AI 探索中心</h1><p className="mt-1 text-xs text-ink-mute">从自然语言目标出发，沉淀可复用的操作经验与确定性执行计划</p></div>
+      <Link to="/exploration/new" className="rounded-lg bg-primary px-4 py-2.5 text-sm font-medium text-white hover:opacity-90">＋ 新建探索</Link>
+    </div>
+    <div className="flex flex-wrap gap-1 border-b border-hairline">
+      {navItems.map(item => <Link key={item.to} to={item.to} className={`border-b-2 px-3 py-2.5 text-sm ${current === item.to ? 'border-primary font-semibold text-primary-deep' : 'border-transparent text-ink-mute hover:text-ink'}`}><span className="mr-1.5">{item.icon}</span>{t(item.zh, item.en)}</Link>)}
+    </div>
+
+    {!isNew && !isHistory && !isKnowledge && !isPlans && <>
+      <PageTitle title="探索概览" desc="查看探索进度、待审核经验和近期探索活动。" action={<Link to="/exploration/new" className="rounded-lg border border-hairline bg-white px-3 py-2 text-sm">开始一次探索</Link>} />
+      <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
+        {[
+          ['探索会话', overview?.session_total ?? 0, '累计创建'],
+          ['正在探索', overview?.session_running ?? 0, '当前运行会话'],
+          ['经验条目', overview?.knowledge_total ?? 0, '已沉淀的场景经验'],
+          ['待审核经验', overview?.knowledge_pending ?? 0, '需要人工确认'],
+        ].map(([label, value, hint]) => <div key={String(label)} className="rounded-xl border border-hairline bg-white p-4"><div className="text-xs text-ink-faint">{label}</div><div className="mt-2 text-2xl font-semibold tabular-nums text-ink">{value}</div><div className="mt-1 text-xs text-ink-mute">{hint}</div></div>)}
+      </div>
+      <section className="rounded-xl border border-hairline bg-white p-4">
+        <div className="mb-3 flex items-center justify-between"><h2 className="text-sm font-semibold">最近探索</h2><Link to="/exploration/history" className="text-xs text-primary">查看全部 →</Link></div>
+        {(overview?.recent_sessions || []).length === 0 ? <Empty title="还没有探索记录" desc="创建一次探索任务，开始记录设备操作轨迹。" action={<Link to="/exploration/new" className="text-sm text-primary">新建探索</Link>} /> : <div className="divide-y divide-hairline">{overview?.recent_sessions.map(row => <Link key={row.id} to={`/exploration/history?session=${row.id}`} className="flex flex-wrap items-center justify-between gap-3 py-3"><div className="min-w-0"><div className="truncate text-sm font-medium">{row.title}</div><div className="mt-1 truncate text-xs text-ink-mute">{row.goal}</div></div><Status value={row.status} /></Link>)}</div>}
+      </section>
+      <div className="rounded-xl border border-blue-100 bg-blue-50/60 p-4 text-xs leading-5 text-blue-900"><strong>当前阶段说明：</strong>探索会话与经验数据已支持持久化。设备自动探索、轨迹采集、计划自动生成和真机回放验证尚未接通；创建会话只保存探索任务，不会操作手机。</div>
+    </>}
+
+    {isNew && <>
+      <PageTitle title="新建探索" desc="描述希望 AI 在设备上完成的目标。保存后先建立探索会话；当前版本不会自动操作设备。" />
+      <div className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_320px]">
+        <section className="space-y-4 rounded-xl border border-hairline bg-white p-5">
+          <div><label className="mb-1.5 block text-sm font-medium">探索目标 <span className="text-red-500">*</span></label><textarea value={goal} onChange={e => setGoal(e.target.value)} rows={4} maxLength={10000} placeholder="例如：打开 YOYO 助手，询问今天的天气，并确认助手返回了天气信息。" className="w-full rounded-lg border border-hairline px-3 py-2.5 text-sm outline-none focus:border-primary" /><div className="mt-1 text-right text-[11px] text-ink-faint">{goal.length}/10000</div></div>
+          <div><label className="mb-1.5 block text-sm font-medium">预期结果</label><textarea value={expected} onChange={e => setExpected(e.target.value)} rows={3} placeholder="描述完成标准，例如：页面出现天气回复，包含温度和天气状况。" className="w-full rounded-lg border border-hairline px-3 py-2.5 text-sm outline-none focus:border-primary" /></div>
+          <div className="grid gap-3 md:grid-cols-2">
+            <div><label className="mb-1.5 block text-sm font-medium">探索设备 <span className="text-red-500">*</span></label><select value={deviceId} onChange={e => { setDeviceId(e.target.value); const d = onlineDevices.find((x: Device) => x.id === e.target.value); if (d?.platform) setPlatform(d.platform) }} className="w-full rounded-lg border border-hairline bg-white px-3 py-2.5 text-sm"><option value="">选择已连接设备</option>{onlineDevices.map((d: Device) => <option key={d.id} value={d.id}>{d.name} · {d.platform || d.connection_type}</option>)}</select><p className="mt-1 text-[11px] text-ink-faint">{selectedDevice ? `已选择：${selectedDevice.name}` : '仅显示当前账号下在线设备'}</p></div>
+            <div><label className="mb-1.5 block text-sm font-medium">目标平台</label><select value={platform} onChange={e => setPlatform(e.target.value)} className="w-full rounded-lg border border-hairline bg-white px-3 py-2.5 text-sm"><option value="android">Android</option><option value="harmony">HarmonyOS</option><option value="ios">iOS</option></select></div>
+          </div>
+          <div><label className="mb-1.5 block text-sm font-medium">目标应用包名（可选）</label><input value={appPackage} onChange={e => setAppPackage(e.target.value)} placeholder="com.example.app" className="w-full rounded-lg border border-hairline px-3 py-2.5 text-sm" /></div>
+          <div className="grid gap-3 md:grid-cols-2">
+            <div><label className="mb-1.5 block text-sm font-medium">最大探索步骤</label><input type="number" min={1} max={100} value={maxSteps} onChange={e => setMaxSteps(Math.max(1, Math.min(100, Number(e.target.value) || 1)))} className="w-full rounded-lg border border-hairline px-3 py-2.5 text-sm" /></div>
+            <div><label className="mb-1.5 block text-sm font-medium">超时时间（秒）</label><input type="number" min={10} max={3600} value={timeoutSeconds} onChange={e => setTimeoutSeconds(Math.max(10, Math.min(3600, Number(e.target.value) || 10)))} className="w-full rounded-lg border border-hairline px-3 py-2.5 text-sm" /></div>
+          </div>
+          {createSession.isError && <div className="rounded-lg bg-red-50 p-3 text-xs text-red-700">{String((createSession.error as Error)?.message || createSession.error)}</div>}
+          <div className="flex justify-end gap-2 border-t border-hairline pt-4"><Link to="/exploration" className="rounded-lg border border-hairline px-4 py-2 text-sm">取消</Link><button disabled={!goal.trim() || !deviceId || createSession.isPending} onClick={() => createSession.mutate()} className="rounded-lg bg-primary px-5 py-2 text-sm font-medium text-white disabled:opacity-50">{createSession.isPending ? '保存中…' : '创建探索会话'}</button></div>
+        </section>
+        <aside className="space-y-3">
+          <div className="rounded-xl border border-hairline bg-white p-4"><h3 className="text-sm font-semibold">探索流程</h3><ol className="mt-3 space-y-3 text-xs text-ink-mute"><li>01 · 观察设备页面与 UI 层级</li><li>02 · AI 规划并执行下一步操作</li><li>03 · 记录操作前后状态与证据</li><li>04 · 识别可复用的弹窗和异常处理经验</li><li>05 · 生成计划并进行确定性回放验证</li></ol></div>
+          <div className="rounded-xl border border-amber-200 bg-amber-50/70 p-4 text-xs leading-5 text-amber-900"><strong>注意：</strong>本阶段仅创建并保存会话配置，不会向设备发送操作指令。自动探索接入后会增加暂停、停止和人工接管控制。</div>
+        </aside>
+      </div>
+    </>}
+
+    {isHistory && <>
+      <PageTitle title="探索历史" desc="查看已创建的探索会话及其状态。" />
+      {sessionsLoading ? <div className="py-10 text-center text-sm text-ink-faint">正在读取探索记录…</div> : sessions.length === 0 ? <Empty title="暂无探索历史" desc="创建探索会话后，记录会显示在这里。" action={<Link to="/exploration/new" className="text-sm text-primary">新建探索</Link>} /> : <div className="overflow-hidden rounded-xl border border-hairline bg-white"><div className="grid grid-cols-[minmax(0,1fr)_120px_160px] gap-3 border-b border-hairline bg-canvas-soft px-4 py-3 text-xs font-medium text-ink-mute"><span>探索目标</span><span>状态</span><span>创建时间</span></div>{sessions.map(row => <div key={row.id} className="grid grid-cols-[minmax(0,1fr)_120px_160px] items-center gap-3 border-b border-hairline px-4 py-4 last:border-0"><div className="min-w-0"><div className="truncate text-sm font-medium">{row.title}</div><div className="mt-1 truncate text-xs text-ink-mute">{row.goal}</div></div><Status value={row.status} /><span className="text-xs text-ink-mute">{new Date(row.created_at).toLocaleString()}</span></div>)}</div>}
+    </>}
+
+    {isKnowledge && <>
+      <PageTitle title="探索经验库" desc="沉淀权限弹窗、广告弹窗、登录过期、网络异常等可复用处理经验。" />
+      {knowledgeLoading ? <div className="py-10 text-center text-sm text-ink-faint">正在读取经验条目…</div> : knowledge.length === 0 ? <Empty title="经验库还是空的" desc="探索过程中发现的复杂场景将在这里形成经验候选，审核确认后才能供执行计划复用。" /> : <div className="grid gap-3 md:grid-cols-2">{knowledge.map(item => <article key={item.id} className="rounded-xl border border-hairline bg-white p-4"><div className="flex items-start justify-between gap-2"><h3 className="text-sm font-semibold">{item.title}</h3><Status value={item.status} /></div><p className="mt-2 text-xs leading-5 text-ink-mute">{item.description || '暂无场景说明'}</p><div className="mt-3 flex flex-wrap gap-2 text-[11px] text-ink-faint"><span>{item.category}</span>{item.app_package && <span>· {item.app_package}</span>}<span>· 风险：{item.risk_level}</span></div>{item.status !== 'confirmed' && item.status !== 'disabled' && <div className="mt-4 flex gap-2"><button onClick={() => reviewKnowledge.mutate({ id: item.id, status: 'confirmed' })} className="rounded-md bg-primary px-3 py-1.5 text-xs text-white">确认经验</button><button onClick={() => reviewKnowledge.mutate({ id: item.id, status: 'invalidated' })} className="rounded-md border border-hairline px-3 py-1.5 text-xs">标记无效</button></div>}</article>)}</div>}
+    </>}
+
+    {isPlans && <>
+      <PageTitle title="计划生成与验证" desc="把探索轨迹整理成可编辑、可校验、可版本化的正式执行计划。" />
+      <div className="rounded-xl border border-hairline bg-white p-5">
+        <div className="text-sm font-semibold">计划发布流程</div>
+        <div className="mt-4 grid gap-3 md:grid-cols-4">{[['01','选择探索记录','选择已完成且有有效步骤的探索会话'],['02','整理执行步骤','为每步补齐定位器、前置条件和验证条件'],['03','确定性回放','在目标设备验证步骤可重复执行'],['04','发布正式计划','复用现有执行计划版本管理']].map(([n,title,desc]) => <div key={n} className="rounded-lg bg-canvas-soft p-3"><div className="text-xs font-semibold text-primary">{n}</div><div className="mt-2 text-sm font-medium">{title}</div><p className="mt-1 text-xs leading-5 text-ink-mute">{desc}</p></div>)}</div>
+        <div className="mt-5 rounded-lg border border-amber-200 bg-amber-50/70 p-3 text-xs leading-5 text-amber-900">自动生成、步骤编辑和真机回放验证尚未接通。当前先保留流程入口，避免生成未经验证的计划并误导后续自动执行。</div>
+        <Link to="/execution-plans" className="mt-4 inline-flex rounded-lg border border-hairline px-3 py-2 text-sm hover:bg-canvas-soft">打开现有执行计划管理 →</Link>
+      </div>
+    </>}
+  </div>
+}
