@@ -3,7 +3,7 @@ import json
 from dataclasses import asdict
 from typing import List, Optional
 
-from fastapi import APIRouter, Depends, File, Form, HTTPException, Request, UploadFile
+from fastapi import APIRouter, Depends, File, Form, HTTPException, Query, Request, UploadFile
 from pydantic import BaseModel
 from sqlalchemy import and_, delete, func, not_, or_, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -140,8 +140,8 @@ async def list_suites(
     request: Request,
     q: str = "",
     tag: str = "",
-    page: int = 1,
-    page_size: int = 20,
+    page: int = Query(1, ge=1),
+    page_size: int = Query(20, ge=10, le=100),
     db: AsyncSession = Depends(get_db),
 ):
     """List suites with optional name search (q), tag filter, and pagination."""
