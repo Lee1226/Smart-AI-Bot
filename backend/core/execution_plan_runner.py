@@ -214,6 +214,7 @@ async def execute_execution_plan_run(
         await state.emit(message)
 
     recorder = RunRecorder(run_id)
+    validation_passed = False
     lifecycle_device = None
     lifecycle_post_actions = []
     lifecycle_result_id = None
@@ -412,6 +413,7 @@ async def execute_execution_plan_run(
             final_status = "fail"
             final_reason = "步骤执行完成，但用例未配置最终预期结果，且并非所有步骤都有可判定的验证条件，不能判定为通过。"
 
+        validation_passed = final_status == "pass"
         async with AsyncSessionLocal() as db:
             await db.execute(update(TestResult).where(TestResult.id == result.id).values(
                 status=final_status, reason=final_reason, steps=step_count,
@@ -435,6 +437,7 @@ async def execute_execution_plan_run(
         await emit("执行计划已取消")
         raise
     except Exception as exc:
+        validation_passed = False
         logger.exception("Execution plan run failed: %s", run_id)
         async with AsyncSessionLocal() as db:
             await db.execute(update(TestRun).where(TestRun.id == run_id).values(
@@ -450,6 +453,7 @@ async def execute_execution_plan_run(
             try:
                 await run_lifecycle_actions(lifecycle_device, lifecycle_post_actions, "执行后处理", emit)
             except Exception as cleanup_error:
+                validation_passed = False
                 logger.exception("Post-execution lifecycle actions failed: %s", run_id)
                 try:
                     await emit(f"执行后处理失败：{cleanup_error}")
@@ -472,6 +476,20 @@ async def execute_execution_plan_run(
                     except Exception:
                         logger.exception("Could not persist post-action failure: %s", run_id)
         await recorder.stop()
+        if validation_passed:
+            try:
+                async with AsyncSessionLocal() as db:
+                    await db.execute(update(ExecutionPlan).where(
+                        ExecutionPlan.id == plan_id
+                    ).values(
+                        status="validated",
+                        validated_run_id=run_id,
+                        updated_at=datetime.utcnow(),
+                    ))
+                    await db.commit()
+                await emit("计划验证通过：已记录本次真机回放结果")
+            except Exception:
+                logger.exception("Could not mark execution plan as validated: %s", plan_id)
         if not recorder.saved:
             try:
                 await emit(f"录像未生成：{recorder.status_message}")
