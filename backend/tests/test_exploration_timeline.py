@@ -88,6 +88,7 @@ def test_scene_timeline_groups_repeated_observations_and_links_page_transition()
     assert timeline["scene_count"] == 2
     assert timeline["transition_count"] == 1
     assert timeline["scenes"][0]["observation_count"] == 2
+    assert timeline["scenes"][0]["event_ids"] == ["o1", "d1", "o2"]
     assert timeline["scenes"][0]["actions"][0]["action"] == "tap"
     assert timeline["transitions"][0]["from_scene"] == "scene-1"
     assert timeline["transitions"][0]["to_scene"] == "scene-2"
