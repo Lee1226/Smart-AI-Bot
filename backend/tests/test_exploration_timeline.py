@@ -52,3 +52,56 @@ def test_image_extension_matches_screenshot_bytes():
     assert _image_extension(b"\xff\xd8\xffpayload") == "jpg"
     assert _image_extension(b"RIFFxxxxWEBPpayload") == "webp"
     assert _image_extension(b"\x89PNG\r\n\x1a\npayload") == "png"
+
+
+def test_scene_timeline_groups_repeated_observations_and_links_page_transition():
+    from core.exploration_timeline import build_scene_timeline
+
+    steps = [
+        {
+            "id": "o1", "sequence": 1, "event_type": "observation",
+            "page_after": {"ui_text": "首页", "elements": [{"resourceId": "app:id/home", "text": "首页"}]},
+        },
+        {
+            "id": "d1", "sequence": 2, "event_type": "decision",
+            "title": "AI 选择操作：swipe", "action": "swipe",
+        },
+        {
+            "id": "o2", "sequence": 3, "event_type": "observation",
+            "page_after": {"ui_text": "首页", "elements": [{"resourceId": "app:id/home", "text": "首页"}]},
+        },
+        {
+            "id": "a1", "sequence": 4, "event_type": "action", "action": "tap",
+            "title": "tap", "status": "completed", "duration_ms": 120,
+            "page_before": {"ui_text": "首页", "elements": [{"resourceId": "app:id/home", "text": "首页"}]},
+            "page_after": {"ui_text": "设置页", "elements": [{"resourceId": "app:id/settings", "text": "设置"}],
+                           "change_summary": {"label": "新增控件 1 个"}},
+        },
+        {
+            "id": "o3", "sequence": 5, "event_type": "observation",
+            "page_after": {"ui_text": "设置页", "elements": [{"resourceId": "app:id/settings", "text": "设置"}]},
+        },
+    ]
+
+    timeline = build_scene_timeline(steps)
+
+    assert timeline["scene_count"] == 2
+    assert timeline["transition_count"] == 1
+    assert timeline["scenes"][0]["observation_count"] == 2
+    assert timeline["scenes"][0]["actions"][0]["action"] == "tap"
+    assert timeline["transitions"][0]["from_scene"] == "scene-1"
+    assert timeline["transitions"][0]["to_scene"] == "scene-2"
+    assert timeline["transitions"][0]["change_summary"]["label"] == "新增控件 1 个"
+
+
+def test_scene_timeline_keeps_unknown_state_events_without_inventing_scene():
+    from core.exploration_timeline import build_scene_timeline
+
+    timeline = build_scene_timeline([
+        {"id": "d1", "sequence": 1, "event_type": "decision", "title": "未观察页面"},
+        {"id": "r1", "sequence": 2, "event_type": "tool_result", "title": "结果"},
+    ])
+
+    assert timeline["scenes"] == []
+    assert timeline["transitions"] == []
+    assert timeline["scene_count"] == 0
