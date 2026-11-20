@@ -5,6 +5,7 @@ is deliberately not exposed until the interaction loop and safety gates are impl
 """
 from __future__ import annotations
 
+import asyncio
 import json
 from datetime import datetime
 from typing import Any
@@ -252,6 +253,49 @@ async def append_step(session_id: str, body: StepCreate, request: Request, db: A
     await db.commit()
     await db.refresh(row)
     return _step_out(row)
+
+
+@router.post("/sessions/{session_id}/start", status_code=202)
+async def start_session(session_id: str, request: Request, db: AsyncSession = Depends(get_db)):
+    account_id = require_account_id(request)
+    row = (await db.execute(select(ExploreSession).where(
+        ExploreSession.id == session_id, ExploreSession.account_id == account_id
+    ))).scalar_one_or_none()
+    if not row:
+        raise HTTPException(status_code=404, detail="Exploration session not found")
+    from core.exploration_runner import exploration_jobs, run_exploration
+    task = exploration_jobs.get(session_id)
+    if task and not task.done():
+        raise HTTPException(status_code=409, detail="探索任务已经在运行")
+    if row.status not in {"draft", "failed", "cancelled"}:
+        raise HTTPException(status_code=409, detail=f"当前状态不能启动探索：{row.status}")
+    row.status = "queued"
+    row.error_message = ""
+    row.summary = "等待设备空闲"
+    row.finished_at = None
+    row.updated_at = datetime.utcnow()
+    await db.commit()
+    task = asyncio.create_task(run_exploration(session_id, account_id))
+    exploration_jobs[session_id] = task
+    return {"session_id": session_id, "status": "queued"}
+
+
+@router.post("/sessions/{session_id}/stop")
+async def stop_session(session_id: str, request: Request, db: AsyncSession = Depends(get_db)):
+    account_id = require_account_id(request)
+    row = (await db.execute(select(ExploreSession).where(
+        ExploreSession.id == session_id, ExploreSession.account_id == account_id
+    ))).scalar_one_or_none()
+    if not row:
+        raise HTTPException(status_code=404, detail="Exploration session not found")
+    from core.exploration_runner import stop_exploration
+    stopped = await stop_exploration(session_id)
+    if not stopped and row.status not in {"completed", "failed", "cancelled"}:
+        row.status = "cancelled"
+        row.finished_at = datetime.utcnow()
+        row.summary = "探索已停止"
+        await db.commit()
+    return {"session_id": session_id, "stopped": stopped, "status": "cancelled" if stopped else row.status}
 
 
 @router.get("/knowledge")
