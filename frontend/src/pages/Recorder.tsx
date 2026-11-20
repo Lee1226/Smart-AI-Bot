@@ -616,7 +616,7 @@ export default function Recorder() {
   }
 
   const startRealRecording = async () => {
-    if (!deviceId) return
+    if (!deviceId || loading || realRecording) return
     // Tear down any previous recorder polling before initializing a new session.
     realPollAbortRef.current?.abort()
     fallbackPollAbortRef.current?.abort()
@@ -628,24 +628,31 @@ export default function Recorder() {
     setSessionStartSnapshot(null)
     setSelectedEventIndex(0)
     realEventsCursor.current = 0
+    setLoading(true)
     try {
-      // Start event capture first so a slow initial snapshot cannot make the
-      // Start button appear stuck before the device-side recorder is running.
+      // Start event capture before collecting the initial UI snapshot. The
+      // backend buffers events, so polling can safely begin after the snapshot
+      // without racing a second full snapshot against this initialization call.
       const { data } = await api.post<{ mode?: string; message?: string }>(`/recorder/record/start?device_id=${deviceId}`)
       if (data.mode === 'manual') {
         setError(data.message || '当前连接方式不支持真机触摸采集，请使用网页录制。')
         return
       }
-      setRealRecording(true)
       try {
         const snapshot = await api.get<SnapshotData>(`/recorder/snapshot?device_id=${deviceId}`)
         applySnapshot(snapshot.data)
         setSessionStartSnapshot(snapshot.data)
       } catch (e: unknown) {
         setError(`录制已启动，但初始页面信息采集失败：${(e as Error).message ?? 'Snapshot failed'}`)
+      } finally {
+        // The Portal session is active even if its initial snapshot failed;
+        // expose Stop and begin draining its buffered events in either case.
+        setRealRecording(true)
       }
     } catch (e: unknown) {
       setError((e as Error).message ?? 'Failed to start recording')
+    } finally {
+      setLoading(false)
     }
   }
 
@@ -753,7 +760,7 @@ export default function Recorder() {
             disabled={!deviceId || loading || realRecording || ios || harmony}
             onClick={startRealRecording}
           >
-            {t('手机端触摸采集（Portal）', 'Phone-side touch capture (Portal)')}
+            {loading ? t('启动中…', 'Starting…') : t('手机端触摸采集（Portal）', 'Phone-side touch capture (Portal)')}
           </button>
           <p className="w-full text-xs text-gray-400">
             {t('开始录制后，左侧显示手机实时画面；直接用鼠标点击或拖动即可操控手机，系统自动记录坐标和对应 UI 信息。', 'Start recording to view the live phone screen on the left. Click or drag with your mouse to control the phone; coordinates and matching UI metadata are recorded automatically.')}
