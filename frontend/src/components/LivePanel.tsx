@@ -5,7 +5,7 @@ import { useT } from '../lib/i18n'
 import H264LivePlayer from './H264LivePlayer'
 import H264Player from './H264Player'
 import { browserUsbH264Source, subscribeUsb, usbSnapshot } from '../lib/browserUsb'
-import { websocketH264Source } from '../lib/h264Stream'
+import { deviceH264WebSocketUrl, websocketH264Source } from '../lib/h264Stream'
 
 type ControlIconName = 'hand' | 'power' | 'back' | 'home' | 'recent' | 'refresh'
 
@@ -34,15 +34,6 @@ const CAN_WEBCODECS =
   typeof window !== 'undefined' && window.isSecureContext && 'VideoDecoder' in window
 
 type Mode = 'on' | 'off'
-
-// H.264 screenrecord stream over WebSocket (under /v1 — already ws-proxied).
-function h264WsUrl(id: string, scrcpyPackets = false): string {
-  const proto = location.protocol === 'https:' ? 'wss:' : 'ws:'
-  const token = getToken()
-  const source = 'device'
-  const qs = `?source=${source}${scrcpyPackets ? '&format=scrcpy-v1' : ''}${token ? `&token=${encodeURIComponent(token)}` : ''}`
-  return `${proto}//${location.host}/v1/devices/${id}/live${qs}`
-}
 
 // Screenshot mode: poll single JPEG frames (chained on load/error) instead of a
 // long-lived MJPEG stream — short requests that complete cleanly, so they never
@@ -210,7 +201,7 @@ export default function LivePanel({ device, defaultMode = 'off', storageKey = 'l
   const usingRemote = wantsVideo && remoteVideo && !localUsb && !localAdb && !adbFailed
   const videoUnavailable = mode === 'on' && (screenshotsOnly || !(usingUsb || usingLocalAdb || usingRemote))
   const videoSource = useMemo(() => device
-    ? localUsb ? browserUsbH264Source(device.id) : websocketH264Source(h264WsUrl(device.id, !!localAdb))
+    ? localUsb ? browserUsbH264Source(device.id) : websocketH264Source(deviceH264WebSocketUrl(device.id, !!localAdb, getToken()))
     : undefined, [device?.id, localUsb, localAdb, mode, reloadKey])
   const videoFailed = (message: string) => { setStreamError(message); setAdbFailed(true) }
   const webglFailed = (message: string) => { setStreamError(message); setRenderer('canvas'); localStorage.setItem('h264-renderer', 'canvas') }
