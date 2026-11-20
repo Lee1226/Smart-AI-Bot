@@ -162,6 +162,7 @@ async def _execute_ai(
     emit,
     login_context=None,
     target_package: str = "",
+    exploration_knowledge: Optional[list] = None,
 ):
     intent = step.get("intent") if isinstance(step.get("intent"), dict) else {}
     description = str(intent.get("description") or "").strip()
@@ -195,6 +196,7 @@ async def _execute_ai(
         language=language,
         login_context=login_context,
         target_package=target_package,
+        exploration_knowledge=exploration_knowledge,
     )
     return await agent.run(TestCaseData(path=context, expected=expected))
 
@@ -257,6 +259,19 @@ async def execute_execution_plan_run(
 
         from core.test_runner import _suite_app_package
         target_package = plan.app_package or await _suite_app_package(plan.suite_id, device.platform)
+        async with AsyncSessionLocal() as knowledge_db:
+            from db.exploration_models import ExploreKnowledge
+            knowledge_rows = (await knowledge_db.execute(select(ExploreKnowledge).where(
+                ExploreKnowledge.account_id == account_id,
+                ExploreKnowledge.status == "confirmed",
+                ExploreKnowledge.platform.in_([device.platform, ""]),
+                ExploreKnowledge.app_package.in_([target_package, ""]),
+            ).order_by(ExploreKnowledge.updated_at.desc()).limit(8))).scalars().all()
+            confirmed_knowledge = [{
+                "title": item.title, "risk_level": item.risk_level,
+                "recognition_rules": json.loads(item.recognition_rules_json or "{}"),
+                "handling_rules": json.loads(item.handling_rules_json or "{}"),
+            } for item in knowledge_rows]
         verifier = LLMVerifier(v_provider, v_model, v_key, v_base, fallbacks=fallbacks, language=language)
 
         async with AsyncSessionLocal() as db:
@@ -308,6 +323,7 @@ async def execute_execution_plan_run(
                     ai_result = await _execute_ai(
                         device, step, provider, model, api_key, api_base,
                         fallbacks, language, max_steps, emit, login_context, target_package,
+                        confirmed_knowledge,
                     )
                     step_tokens = ai_result.total_tokens
                     step_result = ai_result.reason
@@ -330,6 +346,7 @@ async def execute_execution_plan_run(
                         ai_result = await _execute_ai(
                             device, step, provider, model, api_key, api_base,
                             fallbacks, language, max_steps, emit, login_context, target_package,
+                        confirmed_knowledge,
                         )
                         step_tokens = ai_result.total_tokens
                         step_result = f"AI 恢复：{ai_result.reason}"
