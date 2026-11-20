@@ -4,7 +4,8 @@ import { Link, useNavigate } from 'react-router-dom'
 import { fetchSuites, fetchProjects, createSuite, uploadSuite, deleteSuite, setSuiteTag, importSuite, getToken, type Suite } from '../lib/api'
 import AISuiteImport from '../components/AISuiteImport'
 
-const PAGE_SIZE = 20
+const DEFAULT_PAGE_SIZE = 20
+const PAGE_SIZE_OPTIONS = [10, 20, 50, 100]
 
 function TagEdit({ suite }: { suite: Suite }) {
   const qc = useQueryClient()
@@ -70,6 +71,7 @@ export default function Suites() {
   const [debouncedQ, setDebouncedQ] = useState('')
   const [tag, setTag] = useState('')
   const [page, setPage] = useState(1)
+  const [pageSize, setPageSize] = useState(DEFAULT_PAGE_SIZE)
 
   // Debounce the search input
   useEffect(() => {
@@ -78,14 +80,14 @@ export default function Suites() {
   }, [q])
 
   const { data, isLoading } = useQuery({
-    queryKey: ['suites', debouncedQ, tag, page],
-    queryFn: () => fetchSuites({ q: debouncedQ, tag, page, page_size: PAGE_SIZE }),
+    queryKey: ['suites', debouncedQ, tag, page, pageSize],
+    queryFn: () => fetchSuites({ q: debouncedQ, tag, page, page_size: pageSize }),
   })
 
   const suites = data?.items ?? []
   const tags = data?.tags ?? []
   const total = data?.total ?? 0
-  const totalPages = Math.max(1, Math.ceil(total / PAGE_SIZE))
+  const totalPages = Math.max(1, Math.ceil(total / pageSize))
 
   const uploadMut = useMutation({
     mutationFn: uploadSuite,
@@ -261,8 +263,14 @@ export default function Suites() {
       </div>
 
       {/* Pagination */}
-      {totalPages > 1 && (
-        <div className="flex items-center justify-center gap-2 mt-6">
+      {total > 0 && (
+        <div className="flex flex-wrap items-center justify-center gap-3 mt-6">
+          <label className="flex items-center gap-2 text-sm text-gray-500">每页显示
+            <select value={pageSize} onChange={e => { setPageSize(Number(e.target.value)); setPage(1) }} className="border rounded px-2 py-1 text-sm text-gray-700">
+              {PAGE_SIZE_OPTIONS.map(size => <option key={size} value={size}>{size} 条</option>)}
+            </select>
+          </label>
+          <span className="text-sm text-gray-500">共 {total} 条</span>
           <button
             className="px-3 py-1 text-sm border rounded disabled:opacity-40"
             disabled={page <= 1}
@@ -270,7 +278,7 @@ export default function Suites() {
           >
             ‹
           </button>
-          <span className="text-sm text-gray-500">{page} / {totalPages}</span>
+          <span className="text-sm text-gray-500">第 {page} / {totalPages} 页</span>
           <button
             className="px-3 py-1 text-sm border rounded disabled:opacity-40"
             disabled={page >= totalPages}
