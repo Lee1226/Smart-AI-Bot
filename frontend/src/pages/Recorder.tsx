@@ -143,36 +143,52 @@ export default function Recorder() {
   const pointerStart = useRef<{ x: number; y: number } | null>(null)
   const screenRef = useRef<HTMLDivElement>(null)
   const realEventsCursor = useRef(0)
+  const realPollAbortRef = useRef<AbortController | null>(null)
+  const fallbackPollAbortRef = useRef<AbortController | null>(null)
 
-  // Poll captured events while real-recording is active.
+  // Poll captured events serially. A slow event/snapshot request must never
+  // overlap the next poll, and leaving/stopping the recording aborts in-flight
+  // browser requests immediately.
   useEffect(() => {
     if (!realRecording || !deviceId) return
-    const poll = setInterval(async () => {
+    let alive = true
+    let timer: ReturnType<typeof setTimeout> | null = null
+    let activeController: AbortController | null = null
+
+    const poll = async () => {
+      const controller = new AbortController()
+      activeController = controller
+      realPollAbortRef.current = controller
       try {
-        const { data } = await api.get(`/recorder/record/events?device_id=${deviceId}&since=${realEventsCursor.current}`)
+        const { data } = await api.get(
+          `/recorder/record/events?device_id=${deviceId}&since=${realEventsCursor.current}`,
+          { signal: controller.signal },
+        )
+        if (!alive || controller.signal.aborted) return
         const events = (data.events ?? []) as RecordEvent[]
         if (events.length) {
           realEventsCursor.current += events.length
-          // Capture a nearby frame for this polling batch. It is deliberately
-          // labelled approximate: it must never be promoted to the touched
-          // control's executable locator because the UI may already have changed.
           let nearbyScreenshot = ''
           let nearbySnapshot: SnapshotData | null = null
           try {
-            const snapshot = await api.get<SnapshotData>(`/recorder/snapshot?device_id=${deviceId}`)
+            const snapshot = await api.get<SnapshotData>(
+              `/recorder/snapshot?device_id=${deviceId}`,
+              { signal: controller.signal },
+            )
+            if (!alive || controller.signal.aborted) return
             nearbySnapshot = snapshot.data
             nearbyScreenshot = snapshot.data.screenshot_b64
             setScreenshot(snapshot.data.screenshot_b64)
             setElements(snapshot.data.elements)
-          } catch { /* event capture must continue if screenshot capture fails */ }
+          } catch {
+            if (controller.signal.aborted) return
+          }
+          if (!alive || controller.signal.aborted) return
           setRealEvents(prev => [...prev, ...events.map((event, index) => {
             const isLast = index === events.length - 1
             const observedAt = Date.now()
             const x = event.coordinates?.x ?? event.x
             const y = event.coordinates?.y ?? event.y
-            // One polling snapshot may arrive after several physical events.
-            // Attach it to every event in the batch as approximate context,
-            // never as event-time target evidence or an executable locator.
             const hit = nearbySnapshot && typeof x === 'number' && typeof y === 'number'
               ? [...nearbySnapshot.elements].reverse().find(el => !!el.bounds
                 && el.bounds.left <= x && el.bounds.right >= x
@@ -201,17 +217,28 @@ export default function Recorder() {
                   observed_target_evidence: 'post_event_poll_approximate',
                 } : {}),
               } : {}),
-              // Keep one copy of the shared batch screenshot to avoid storing
-              // duplicate image assets for every event in the same poll batch.
               ...(isLast && nearbyScreenshot
                 ? { screenshot_b64: nearbyScreenshot, screenshot_captured_at_ms: observedAt }
                 : {}),
             }
           })])
         }
-      } catch { /* transient — ignore */ }
-    }, 800)
-    return () => clearInterval(poll)
+      } catch {
+        // Aborted on stop/unmount; transient errors retry on the next cycle.
+      } finally {
+        if (realPollAbortRef.current === controller) realPollAbortRef.current = null
+        if (activeController === controller) activeController = null
+        if (alive) timer = setTimeout(poll, 800)
+      }
+    }
+
+    void poll()
+    return () => {
+      alive = false
+      if (timer) clearTimeout(timer)
+      activeController?.abort()
+      if (realPollAbortRef.current === activeController) realPollAbortRef.current = null
+    }
   }, [realRecording, deviceId])
 
   // ── Device selection helpers ────────────────────────────────────────────────
@@ -242,20 +269,39 @@ export default function Recorder() {
     return () => { alive = false }
   }, [deviceId])
 
-  // Some USB/Harmony bridges expose screenshots but not the H.264 live stream.
-  // Keep the same interaction surface usable with a rate-limited screenshot fallback.
+  // Screenshot fallback is serial: schedule the next refresh only after the
+  // current full snapshot has completed. This avoids a backlog when a device's
+  // screenshot/UI-tree RPC is slow.
   useEffect(() => {
     if (!recording || videoAvailable || !deviceId) return
     let alive = true
+    let timer: ReturnType<typeof setTimeout> | null = null
+    let activeController: AbortController | null = null
     const refresh = async () => {
+      const controller = new AbortController()
+      activeController = controller
+      fallbackPollAbortRef.current = controller
       try {
-        const { data } = await api.get<SnapshotData>(`/recorder/snapshot?device_id=${deviceId}`)
-        if (alive) applySnapshot(data)
-      } catch { /* retry on the next interval */ }
+        const { data } = await api.get<SnapshotData>(
+          `/recorder/snapshot?device_id=${deviceId}`,
+          { signal: controller.signal },
+        )
+        if (alive && !controller.signal.aborted) applySnapshot(data)
+      } catch {
+        // Retry after the current request settles; abort is expected on stop.
+      } finally {
+        if (fallbackPollAbortRef.current === controller) fallbackPollAbortRef.current = null
+        if (activeController === controller) activeController = null
+        if (alive) timer = window.setTimeout(refresh, 1500)
+      }
     }
     void refresh()
-    const timer = window.setInterval(refresh, 1500)
-    return () => { alive = false; window.clearInterval(timer) }
+    return () => {
+      alive = false
+      if (timer) clearTimeout(timer)
+      activeController?.abort()
+      if (fallbackPollAbortRef.current === activeController) fallbackPollAbortRef.current = null
+    }
   }, [recording, videoAvailable, deviceId])
 
   const screenPoint = (event: PointerEvent<HTMLDivElement>) => {
@@ -441,6 +487,11 @@ export default function Recorder() {
 
   const stopRecording = async () => {
     setRecording(false)
+    fallbackPollAbortRef.current?.abort()
+    if (semanticRefreshTimer.current) {
+      clearTimeout(semanticRefreshTimer.current)
+      semanticRefreshTimer.current = null
+    }
     try {
       // Flush queued pointer gestures before closing the backend session so the
       // final accepted action is not lost from the returned event list.
@@ -463,6 +514,13 @@ export default function Recorder() {
 
   const resetRecording = () => {
     setRecording(false)
+    setRealRecording(false)
+    fallbackPollAbortRef.current?.abort()
+    realPollAbortRef.current?.abort()
+    if (semanticRefreshTimer.current) {
+      clearTimeout(semanticRefreshTimer.current)
+      semanticRefreshTimer.current = null
+    }
     setScreenshot('')
     setElements([])
     setSteps([])
@@ -559,6 +617,9 @@ export default function Recorder() {
 
   const startRealRecording = async () => {
     if (!deviceId) return
+    // Tear down any previous recorder polling before initializing a new session.
+    realPollAbortRef.current?.abort()
+    fallbackPollAbortRef.current?.abort()
     setSteps([])
     setSaved(null)
     setError('')
@@ -568,15 +629,21 @@ export default function Recorder() {
     setSelectedEventIndex(0)
     realEventsCursor.current = 0
     try {
-      const snapshot = await api.get<SnapshotData>(`/recorder/snapshot?device_id=${deviceId}`)
-      applySnapshot(snapshot.data)
-      setSessionStartSnapshot(snapshot.data)
+      // Start event capture first so a slow initial snapshot cannot make the
+      // Start button appear stuck before the device-side recorder is running.
       const { data } = await api.post<{ mode?: string; message?: string }>(`/recorder/record/start?device_id=${deviceId}`)
       if (data.mode === 'manual') {
-        setError(data.message || '当前连接方式不支持真机触摸采集，请使用网页操作录制。')
+        setError(data.message || '当前连接方式不支持真机触摸采集，请使用网页录制。')
         return
       }
       setRealRecording(true)
+      try {
+        const snapshot = await api.get<SnapshotData>(`/recorder/snapshot?device_id=${deviceId}`)
+        applySnapshot(snapshot.data)
+        setSessionStartSnapshot(snapshot.data)
+      } catch (e: unknown) {
+        setError(`录制已启动，但初始页面信息采集失败：${(e as Error).message ?? 'Snapshot failed'}`)
+      }
     } catch (e: unknown) {
       setError((e as Error).message ?? 'Failed to start recording')
     }
@@ -584,6 +651,9 @@ export default function Recorder() {
 
   const stopRealRecording = async () => {
     setRealRecording(false)
+    // Abort the current event/snapshot poll before asking the Portal to stop.
+    // This prevents a slow snapshot from competing with the next recording.
+    realPollAbortRef.current?.abort()
     try {
       const { data } = await api.post<{ events: RecordEvent[] }>(`/recorder/record/stop?device_id=${deviceId}`)
       const events = data.events ?? []
