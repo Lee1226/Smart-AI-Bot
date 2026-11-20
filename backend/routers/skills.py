@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import json
 from datetime import datetime
+from pathlib import Path
 from typing import Any
 
 from fastapi import APIRouter, Depends, HTTPException, Request, Query
@@ -15,6 +16,8 @@ from core.skill_extractor import extract_skill_draft
 from db.database import AsyncSessionLocal
 from db.exploration_models import ExploreSession, ExploreStep
 from db.skill_models import ReusableSkill
+from db.skill_validation_models import SkillValidationRun
+from core.skill_validator import validate_skill_structure
 
 router = APIRouter(prefix="/api/skills", tags=["reusable-skills"])
 
@@ -44,6 +47,17 @@ def _out(row: ReusableSkill) -> dict:
         "warnings": _loads(row.warnings_json, []), "status": row.status,
         "version": row.version, "review_note": row.review_note,
         "created_at": row.created_at.isoformat(), "updated_at": row.updated_at.isoformat(),
+    }
+
+
+def _validation_out(row: SkillValidationRun) -> dict:
+    return {
+        "id": row.id, "skill_id": row.skill_id, "skill_version": row.skill_version,
+        "validation_type": row.validation_type, "status": row.status,
+        "summary": _loads(row.summary_json, {}),
+        "findings": _loads(row.findings_json, []),
+        "device_touched": bool(row.device_touched),
+        "created_at": row.created_at.isoformat(),
     }
 
 
@@ -167,3 +181,54 @@ async def update_skill(
     await db.commit()
     await db.refresh(row)
     return _out(row)
+
+
+@router.post("/{skill_id}/validate-structure", status_code=201)
+async def validate_skill_structure_api(
+    skill_id: str, request: Request, db: AsyncSession = Depends(get_db),
+):
+    """Validate the stored definition only; never connects to or controls a device."""
+    account_id = require_account_id(request)
+    row = (await db.execute(select(ReusableSkill).where(
+        ReusableSkill.id == skill_id, ReusableSkill.account_id == account_id,
+    ))).scalar_one_or_none()
+    if not row:
+        raise HTTPException(status_code=404, detail="Skill not found")
+
+    snapshot = _out(row)
+    evidence_root = (
+        Path(__file__).resolve().parent.parent / "data" / "explorations"
+        / row.source_session_id
+    )
+    result = validate_skill_structure(snapshot, evidence_root=evidence_root)
+    run = SkillValidationRun(
+        account_id=account_id, skill_id=row.id, skill_version=row.version,
+        validation_type="structural", status=result["status"],
+        summary_json=json.dumps(result["summary"], ensure_ascii=False),
+        findings_json=json.dumps(result["findings"], ensure_ascii=False),
+        skill_snapshot_json=json.dumps(snapshot, ensure_ascii=False),
+        device_touched=False,
+    )
+    db.add(run)
+    await db.commit()
+    await db.refresh(run)
+    return _validation_out(run)
+
+
+@router.get("/{skill_id}/validations")
+async def list_skill_validations(
+    skill_id: str, request: Request,
+    limit: int = Query(default=20, ge=1, le=100),
+    db: AsyncSession = Depends(get_db),
+):
+    account_id = require_account_id(request)
+    owned = await db.scalar(select(ReusableSkill.id).where(
+        ReusableSkill.id == skill_id, ReusableSkill.account_id == account_id,
+    ))
+    if not owned:
+        raise HTTPException(status_code=404, detail="Skill not found")
+    rows = (await db.execute(select(SkillValidationRun).where(
+        SkillValidationRun.skill_id == skill_id,
+        SkillValidationRun.account_id == account_id,
+    ).order_by(SkillValidationRun.created_at.desc()).limit(limit))).scalars().all()
+    return [_validation_out(item) for item in rows]
