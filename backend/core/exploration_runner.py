@@ -73,7 +73,7 @@ async def _persist_result(session_id: str, account_id: str, result) -> None:
                         raw = base64.b64decode(encoded, validate=True)
                         name = f"{index:03d}_{_safe_filename(fn_name)}.jpg"
                         (root / name).write_bytes(raw)
-                        evidence["screenshot"] = str(Path("screenshots") / name)
+                        evidence["screenshot"] = (Path("screenshots") / name).as_posix()
                     except Exception:
                         logger.warning("Could not persist exploration screenshot %s/%s", session_id, index)
             db.add(ExploreStep(
@@ -109,7 +109,7 @@ async def _capture_exploration_snapshot(device: WebSocketDevice, root: Path, nam
             ) if item.get(key) is not None
         })
     return {
-        "screenshot": str(Path("evidence") / filename),
+        "screenshot": (Path("evidence") / filename).as_posix(),
         "sha256": hashlib.sha256(image).hexdigest(),
         "ui_text": str(ui_text or "")[:16000],
         "elements": safe_elements,
@@ -264,7 +264,7 @@ async def run_exploration(session_id: str, account_id: str) -> None:
                         filename = f"observation_{event_sequence:04d}.{_image_extension(image)}"
                         (evidence_root / filename).write_bytes(image)
                         evidence = {
-                            "screenshot": str(Path("evidence") / filename),
+                            "screenshot": (Path("evidence") / filename).as_posix(),
                             "sha256": hashlib.sha256(image).hexdigest(),
                         }
                     safe_elements = [
