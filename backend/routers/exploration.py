@@ -18,6 +18,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from auth.access import require_account_id
 from db.database import AsyncSessionLocal
 from db.exploration_models import ExploreKnowledge, ExploreSession, ExploreStep
+from core.exploration_timeline import build_scene_timeline
 from db.models import Device, TestSuite, TestCase, ExecutionPlan
 
 router = APIRouter(prefix="/api/exploration", tags=["exploration"])
@@ -229,6 +230,25 @@ async def patch_session(session_id: str, body: SessionPatch, request: Request, d
     await db.commit()
     await db.refresh(row)
     return _session_out(row)
+
+
+@router.get("/sessions/{session_id}/timeline")
+async def get_session_timeline(session_id: str, request: Request, db: AsyncSession = Depends(get_db)):
+    account_id = require_account_id(request)
+    session = (await db.execute(select(ExploreSession).where(
+        ExploreSession.id == session_id, ExploreSession.account_id == account_id
+    ))).scalar_one_or_none()
+    if not session:
+        raise HTTPException(status_code=404, detail="Exploration session not found")
+    rows = (await db.execute(select(ExploreStep).where(
+        ExploreStep.session_id == session_id, ExploreStep.account_id == account_id
+    ).order_by(ExploreStep.sequence))).scalars().all()
+    steps = [_step_out(row) for row in rows]
+    return {
+        "session_id": session_id,
+        "scenes": build_scene_timeline(steps),
+        "event_count": len(steps),
+    }
 
 
 @router.post("/sessions/{session_id}/steps", status_code=201)
