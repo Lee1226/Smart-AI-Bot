@@ -1096,10 +1096,26 @@ class TestCaseAgent:
                     if no_action_streak == 3:
                         await self._log("  ⚠ 3 steps with no action — forcing 'back' to break the loop")
                         try:
-                            await self.device.global_action("back")
+                            _recovery_before = None
+                            if self.action_observer:
+                                try:
+                                    await self.action_observer("decision", steps + 1, "global_action", {"action": "back"}, None, "连续多轮未产生工具调用，Agent 触发防卡死返回操作")
+                                    _recovery_before = await self.action_observer("before", steps + 1, "global_action", {"action": "back"}, None, "")
+                                except Exception as observer_error:
+                                    logger.warning("Exploration recovery capture failed: %s", observer_error)
+                            recovery_result = await self.device.global_action("back")
                             await asyncio.sleep(1.0)
-                        except Exception:
-                            pass
+                            if self.action_observer:
+                                try:
+                                    await self.action_observer("after", steps + 1, "global_action", {"action": "back"}, _recovery_before, recovery_result)
+                                except Exception as observer_error:
+                                    logger.warning("Exploration recovery result capture failed: %s", observer_error)
+                        except Exception as recovery_error:
+                            if self.action_observer:
+                                try:
+                                    await self.action_observer("after", steps + 1, "global_action", {"action": "back"}, _recovery_before, f"ERROR: {recovery_error}")
+                                except Exception:
+                                    pass
                     if no_action_streak >= _MAX_NO_ACTION:
                         await self._log(
                             f"  🛑 {_MAX_NO_ACTION} steps with no tool call — aborting "
@@ -1158,6 +1174,11 @@ class TestCaseAgent:
                             args = self.login_context.redact(args)
                         result_text = memory.remember(args.get("key", ""), args.get("value", ""))
                         await self._log(f"    📝 {result_text}")
+                        if self.action_observer:
+                            try:
+                                await self.action_observer("tool_result", steps + 1, fn_name, args, None, result_text)
+                            except Exception as observer_error:
+                                logger.warning("Exploration tool-result capture failed: %s", observer_error)
                         tool_results.append({
                             "tool_call_id": tc.id,
                             "role": "tool",
@@ -1189,6 +1210,11 @@ class TestCaseAgent:
                                 f"({_screenshot_requests_used}/{_MAX_SCREENSHOT_REQUESTS} used)."
                             )
                             await self._log(f"    📸 {result_text}")
+                        if self.action_observer:
+                            try:
+                                await self.action_observer("tool_result", steps + 1, fn_name, args, None, result_text)
+                            except Exception as observer_error:
+                                logger.warning("Exploration tool-result capture failed: %s", observer_error)
                         tool_results.append({
                             "tool_call_id": tc.id,
                             "role": "tool",
@@ -1362,6 +1388,11 @@ class TestCaseAgent:
                             except Exception:
                                 pass
 
+                    if fn_name == "mark_done" and self.action_observer:
+                        try:
+                            await self.action_observer("tool_result", steps + 1, fn_name, args, None, result_text)
+                        except Exception as observer_error:
+                            logger.warning("Exploration verification-result capture failed: %s", observer_error)
                     tool_results.append({
                         "tool_call_id": tc.id,
                         "role": "tool",
