@@ -46,6 +46,7 @@ async def _persist_result(session_id: str, account_id: str, result) -> None:
     root.mkdir(parents=True, exist_ok=True)
     actions = result.action_history or []
     step_logs = result.step_logs or []
+    logs_by_step = {getattr(item, 'step', index + 1): item for index, item in enumerate(step_logs)}
     async with AsyncSessionLocal() as db:
         for index, action in enumerate(actions, 1):
             record = action if isinstance(action, dict) else {}
@@ -53,8 +54,10 @@ async def _persist_result(session_id: str, account_id: str, result) -> None:
             args = record.get("args") if isinstance(record.get("args"), dict) else {}
             detail = str(record.get("result") or record.get("action_result") or "")
             evidence = {}
-            if index <= len(step_logs):
-                encoded = getattr(step_logs[index - 1], "screenshot_b64", "") or ""
+            step_number = int(record.get("step") or index)
+            step_log = logs_by_step.get(step_number)
+            if step_log is not None:
+                encoded = getattr(step_log, "screenshot_b64", "") or ""
                 if encoded:
                     try:
                         raw = base64.b64decode(encoded, validate=True)
@@ -71,7 +74,7 @@ async def _persist_result(session_id: str, account_id: str, result) -> None:
                 page_before_json="{}", page_after_json="{}",
                 evidence_json=json.dumps(evidence, ensure_ascii=False),
                 status="completed" if not detail.startswith("ERROR") else "failed",
-                duration_ms=int(getattr(step_logs[index - 1], "action_ms", 0)) if index <= len(step_logs) else 0,
+                duration_ms=int(getattr(step_log, "action_ms", 0)) if step_log is not None else 0,
             ))
         await db.commit()
 
