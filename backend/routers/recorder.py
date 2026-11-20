@@ -33,6 +33,7 @@ from db.database import AsyncSessionLocal
 from db.models import TestCase, TestSuite
 from agent import local_adb
 from core.recorder_engine import recorder_engine, sanitize_events_for_storage
+from core.device_control import execute_manual_device_control
 
 logger = logging.getLogger(__name__)
 
@@ -545,17 +546,16 @@ async def execute_recorder_gesture(req: ActionRequest, request: Request):
                 pre_ui_text, pre_elements = await device.get_ui_state()
             except Exception:
                 pre_ui_text, pre_elements = "", []
-            if req.action == "tap":
-                if coordinate_space == "device_px":
-                    result = await device.tap_absolute(args["x"], args["y"])
-                else:
-                    result = await device.tap(args["x"], args["y"])
-            else:
-                coords = (args["x1"], args["y1"], args["x2"], args["y2"])
-                if coordinate_space == "device_px":
-                    result = await device.swipe_absolute(*coords, duration_ms=args.get("duration_ms", 450))
-                else:
-                    result = await device.swipe(*coords, duration_ms=args.get("duration_ms", 450))
+            await execute_manual_device_control(
+                req.device_id, device, req.action,
+                x=args.get("x") if req.action == "tap" else args.get("x1"),
+                y=args.get("y") if req.action == "tap" else args.get("y1"),
+                x2=args.get("x2") if req.action == "tap" else args.get("x2"),
+                y2=args.get("y2") if req.action == "tap" else args.get("y2"),
+                duration_ms=args.get("duration_ms", 450),
+                coordinate_space=coordinate_space or "model_image_px",
+            )
+            result = f"{req.action} dispatched"
         except Exception as exc:
             raise HTTPException(status_code=500, detail=str(exc))
         description = _step_description(req.action, args, [])
