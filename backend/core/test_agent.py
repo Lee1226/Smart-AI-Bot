@@ -718,7 +718,7 @@ class TestCaseAgent:
                 if not isinstance(item, dict):
                     continue
                 handling = item.get("handling_rules", {})
-                guidance = handling.get("suggestion", "") if isinstance(handling, dict) else ""
+                guidance = item.get("description") or (handling.get("suggestion", "") if isinstance(handling, dict) else "")
                 lessons.append({
                     "scene": str(item.get("title", ""))[:120],
                     "guidance": str(guidance)[:600],
