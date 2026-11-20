@@ -90,11 +90,15 @@ export default function Runs() {
   const [filter, setFilter] = useState<Filter>('all')
   const [keyword, setKeyword] = useState('')
   const [deviceFilter, setDeviceFilter] = useState('all')
-  const { data: runs = [], isLoading, isError, refetch } = useQuery({
-    queryKey: ['runs'],
-    queryFn: () => fetchRuns(),
-    refetchInterval: query => (query.state.data ?? []).some((run: Run) => ACTIVE.has(run.status)) ? 3000 : false,
+  const [page, setPage] = useState(1)
+  const [pageSize, setPageSize] = useState(20)
+  const { data: runPage, isLoading, isError, refetch } = useQuery({
+    queryKey: ['runs', page, pageSize],
+    queryFn: () => fetchRuns({ page, page_size: pageSize }),
+    refetchInterval: query => (query.state.data?.items ?? []).some((run: Run) => ACTIVE.has(run.status)) ? 3000 : false,
   })
+  const runs = runPage?.items ?? []
+  const totalRuns = runPage?.total ?? 0
   const { data: devices = [] } = useQuery({ queryKey: ['devices'], queryFn: fetchDevices, refetchInterval: 10000 })
   const deviceNames = useMemo(() => new Map(devices.map(device => [device.id, device.name])), [devices])
   const activeCount = runs.filter(run => ACTIVE.has(run.status)).length
@@ -122,7 +126,7 @@ export default function Runs() {
     </header>
 
     <section className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
-      <Metric label="任务总数" value={runs.length} note="当前可见运行记录" />
+      <Metric label="任务总数" value={totalRuns} note="全部运行记录" />
       <Metric label="正在执行" value={activeCount} note="排队、准备或运行中" tone="blue" />
       <Metric label="执行异常" value={failedCount} note="错误或服务中断" tone={failedCount ? 'red' : 'neutral'} />
       <Metric label="历史用例通过率" value={totalCases ? passRate : 0} note={totalCases ? `基于 ${totalCases} 个已结束用例` : '暂无已结束用例'} tone="green" />
@@ -143,6 +147,16 @@ export default function Runs() {
     {isError && <div role="alert" className="rounded-xl border border-rose-200 bg-rose-50 p-4 text-sm text-rose-700">任务记录读取失败，请检查后端连接后重试。</div>}
     {!isLoading && !isError && filtered.length === 0 && <div className="rounded-xl border border-dashed border-hairline bg-white p-12 text-center"><div className="text-3xl text-ink-faint">▤</div><h3 className="mt-3 text-sm font-semibold text-ink">{runs.length ? '没有符合筛选条件的任务' : '还没有测试任务'}</h3><p className="mt-1 text-xs text-ink-mute">{runs.length ? '试试调整状态、设备或搜索条件。' : '创建快速任务，或选择多设备回归计划开始测试。'}</p>{!runs.length && <div className="mt-4 flex justify-center gap-2"><Link to="/quick" className="rounded-lg bg-primary px-4 py-2 text-xs font-medium text-white">创建快速任务</Link><Link to="/regressions" className="rounded-lg border border-hairline px-4 py-2 text-xs font-medium">多设备回归</Link></div>}</div>}
     <section className="space-y-3">{filtered.map(run => <RunCard key={run.id} run={run} deviceName={deviceNames.get(run.device_id) || run.device_id.slice(0, 12)} />)}</section>
-    <div className="flex flex-wrap items-center justify-between gap-2 text-xs text-ink-mute"><span>显示 {filtered.length} / {runs.length} 条任务记录</span><span>任务执行与正式运行记录保持原有后端逻辑</span></div>
+    <div className="flex flex-wrap items-center justify-between gap-3 text-xs text-ink-mute">
+      <span>当前页显示 {filtered.length} 条 / 共 {totalRuns} 条任务记录</span>
+      <div className="flex items-center gap-2">
+        <label className="flex items-center gap-2">每页显示
+          <select value={pageSize} onChange={e => { setPageSize(Number(e.target.value)); setPage(1) }} className="rounded border border-hairline bg-white px-2 py-1 text-ink"><option value={10}>10 条</option><option value={20}>20 条</option><option value={50}>50 条</option><option value={100}>100 条</option></select>
+        </label>
+        <button disabled={page <= 1} onClick={() => setPage(p => p - 1)} className="rounded border border-hairline px-2 py-1 disabled:opacity-40">上一页</button>
+        <span>第 {page} / {Math.max(1, Math.ceil(totalRuns / pageSize))} 页</span>
+        <button disabled={page >= Math.ceil(totalRuns / pageSize)} onClick={() => setPage(p => p + 1)} className="rounded border border-hairline px-2 py-1 disabled:opacity-40">下一页</button>
+      </div>
+    </div>
   </div>
 }
