@@ -20,6 +20,7 @@ async def init_db():
     # Import models so every table is registered on Base.metadata before
     # create_all runs — independent of import order at the call site.
     from db import models  # noqa: F401
+    from db import exploration_models  # noqa: F401
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
 
