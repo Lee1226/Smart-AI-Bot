@@ -43,7 +43,7 @@ async def execute_manual_device_control(
     source_height: Optional[int] = None,
     duration_ms: int = 450,
     coordinate_space: Optional[str] = None,
-) -> None:
+) -> str:
     """Dispatch one input. Caller must hold core.device_scheduler.locks[device_id].
 
     source_width/source_height retain the debug-console video-frame mapping.
@@ -55,11 +55,11 @@ async def execute_manual_device_control(
             if action == "tap":
                 if x is None or y is None:
                     raise ValueError("触控坐标缺失")
-                await transport.tap(x, y)
+                return await transport.tap(x, y)
             else:
                 if any(value is None for value in (x, y, x2, y2)):
                     raise ValueError("触控坐标缺失")
-                await transport.swipe(x, y, x2, y2, duration_ms)
+                return await transport.swipe(x, y, x2, y2, duration_ms)
             return
 
         required = (x, y) if action == "tap" else (x, y, x2, y2)
@@ -117,13 +117,13 @@ async def execute_manual_device_control(
                 ]
 
         if action == "tap":
-            await transport.tap_absolute(*points[0])
+            return await transport.tap_absolute(*points[0])
         else:
             bounded_duration = max(80, min(duration_ms, 2000)) if coordinate_space != "device_px" else duration_ms
-            await transport.swipe_absolute(*points[0], *points[1], bounded_duration)
+            return await transport.swipe_absolute(*points[0], *points[1], bounded_duration)
         return
 
     key = {"back": "back", "home": "home", "recent": "recent", "power": "power"}.get(action)
     if key is None:
         raise ValueError(f"Unsupported manual device action: {action}")
-    await transport.press_key(key)
+    return await transport.press_key(key)
