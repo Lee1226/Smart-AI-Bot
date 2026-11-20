@@ -1,10 +1,3 @@
-export function deviceH264WebSocketUrl(id: string, scrcpyPackets = false, token = ''): string {
-  const proto = location.protocol === 'https:' ? 'wss:' : 'ws:'
-  const source = 'device'
-  const qs = `?source=${source}${scrcpyPackets ? '&format=scrcpy-v1' : ''}${token ? `&token=${encodeURIComponent(token)}` : ''}`
-  return `${proto}//${location.host}/v1/devices/${id}/live${qs}`
-}
-
 export type ScrcpyPreviewPacket = {
   type: 'configuration' | 'data'
   data: Uint8Array
@@ -137,3 +130,11 @@ export function websocketH264Source(url: string): H264StreamSource {
     }
   }
 }
+
+export function deviceH264WebSocketUrl(id: string, scrcpyPackets = false, token = ''): string {
+  const proto = location.protocol === 'https:' ? 'wss:' : 'ws:'
+  const source = 'device'
+  const qs = `?source=${source}${scrcpyPackets ? '&format=scrcpy-v1' : ''}${token ? `&token=${encodeURIComponent(token)}` : ''}`
+  return `${proto}//${location.host}/v1/devices/${id}/live${qs}`
+}
+
