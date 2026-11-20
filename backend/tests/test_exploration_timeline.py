@@ -1,5 +1,5 @@
 """Tests for exploration UI change summaries."""
-from core.exploration_runner import _summarize_page_change
+from core.exploration_runner import _image_extension, _summarize_page_change
 
 
 def test_page_change_reports_added_removed_and_changed_controls():
@@ -46,3 +46,9 @@ def test_page_change_handles_missing_snapshots():
 
     assert diff["has_changes"] is False
     assert diff["label"] == "相邻两次观察未发现明显 UI 结构变化"
+
+
+def test_image_extension_matches_screenshot_bytes():
+    assert _image_extension(b"\\xff\\xd8\\xffpayload") == "jpg"
+    assert _image_extension(b"RIFFxxxxWEBPpayload") == "webp"
+    assert _image_extension(b"\\x89PNG\\r\\n\\x1a\\npayload") == "png"
