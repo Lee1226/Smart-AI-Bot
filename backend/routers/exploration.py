@@ -18,7 +18,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from auth.access import require_account_id
 from db.database import AsyncSessionLocal
 from db.exploration_models import ExploreKnowledge, ExploreSession, ExploreStep
-from db.models import Device
+from db.models import Device, TestSuite, TestCase, ExecutionPlan
 
 router = APIRouter(prefix="/api/exploration", tags=["exploration"])
 
@@ -370,3 +370,132 @@ async def patch_knowledge(knowledge_id: str, body: KnowledgePatch, request: Requ
     await db.commit()
     await db.refresh(row)
     return _knowledge_out(row)
+
+
+@router.get("/sessions/{session_id}/evidence/{filename}")
+async def get_session_evidence(session_id: str, filename: str, request: Request):
+    """Serve only evidence files belonging to the authenticated session."""
+    from pathlib import Path
+    from fastapi.responses import FileResponse
+    if filename != Path(filename).name or filename in {"", ".", ".."}:
+        raise HTTPException(status_code=404, detail="Evidence not found")
+    account_id = require_account_id(request)
+    async with AsyncSessionLocal() as db:
+        session = (await db.execute(select(ExploreSession).where(
+            ExploreSession.id == session_id, ExploreSession.account_id == account_id
+        ))).scalar_one_or_none()
+        if not session:
+            raise HTTPException(status_code=404, detail="Exploration session not found")
+    root = (Path(__file__).resolve().parent.parent / "data" / "explorations" / session_id / "evidence").resolve()
+    target = (root / filename).resolve()
+    if target.parent != root or not target.is_file():
+        raise HTTPException(status_code=404, detail="Evidence not found")
+    return FileResponse(target, media_type="image/png")
+
+
+@router.post("/sessions/{session_id}/generate-plan", status_code=201)
+async def generate_execution_plan(session_id: str, request: Request, db: AsyncSession = Depends(get_db)):
+    """Create a draft in the existing versioned execution-plan system."""
+    account_id = require_account_id(request)
+    session = (await db.execute(select(ExploreSession).where(
+        ExploreSession.id == session_id, ExploreSession.account_id == account_id
+    ))).scalar_one_or_none()
+    if not session:
+        raise HTTPException(status_code=404, detail="Exploration session not found")
+    if session.status not in {"completed", "failed"}:
+        raise HTTPException(status_code=409, detail="探索尚未结束，不能生成执行计划")
+    traces = (await db.execute(select(ExploreStep).where(
+        ExploreStep.session_id == session_id, ExploreStep.account_id == account_id
+    ).order_by(ExploreStep.sequence))).scalars().all()
+    if not traces:
+        raise HTTPException(status_code=422, detail="没有可转换的操作步骤")
+
+    steps, warnings = [], []
+    supported = {"tap", "swipe", "scroll", "input_text", "global_action", "press_key", "start_app", "wait"}
+    for index, trace in enumerate(traces, 1):
+        if trace.event_type != "action":
+            continue
+        args = _json(trace.action_args_json, {})
+        before = _json(trace.page_before_json, {})
+        elements = before.get("elements", []) if isinstance(before, dict) else []
+        action = (trace.action or "").lower()
+        locator = {}
+        if action == "tap_element":
+            target_index = args.get("index")
+            element = next((item for item in elements if item.get("index") == target_index), None)
+            if element:
+                for source, dest in (("resourceId", "resource_id"), ("text", "text"),
+                                     ("contentDescription", "content_description"), ("className", "class_name")):
+                    if element.get(source):
+                        locator[dest] = element[source]
+            if locator:
+                action = "tap"
+                args = {}
+            else:
+                warnings.append(f"步骤 {index}: 原始控件索引缺少可复用定位信息，需要人工补充")
+        if action not in supported:
+            warnings.append(f"步骤 {index}: 动作 {trace.action or '(空)'} 暂不支持自动回放")
+            continue
+        if action == "input_text" and str(args.get("text", "")).startswith("[已隐藏"):
+            warnings.append(f"步骤 {index}: 输入内容已脱敏，需要人工补录")
+        executor = "system" if action in {"start_app", "global_action", "press_key"} else "deterministic"
+        import_status = "ready"
+        if action == "tap" and not locator and not all(k in args for k in ("x", "y")):
+            import_status = "needs_locator"
+        if action == "tap_element" or (trace.action == "tap_element" and not locator):
+            import_status = "needs_locator"
+            executor = "ai"
+        if action == "input_text" and str(args.get("text", "")).startswith("[已隐藏"):
+            import_status = "needs_confirmation"
+        description = f"{trace.action}：{trace.detail[:160]}"
+        steps.append({
+            "step_id": f"explore_{trace.id}", "sequence": len(steps) + 1,
+            "action": action, "args": args, "executor": executor,
+            "execution_channel": "system_api" if executor == "system" else "ui_automation",
+            "locator": locator, "fallback": None, "precondition": None,
+            "wait_condition": None, "timing": {}, "verification": None,
+            "on_failure": "fail",
+            "intent": {"description": description, "expected_result": "",
+                       "source": "exploration", "status": "needs_confirmation"},
+            "import_status": import_status,
+            "source_event_id": trace.id,
+        })
+    if not steps:
+        raise HTTPException(status_code=422, detail="没有可转换的受支持动作")
+
+    suite = TestSuite(
+        name=f"AI探索 · {session.title[:80]}",
+        source_format="exploration",
+        app_package=session.app_package or "",
+        account_id=account_id,
+    )
+    db.add(suite)
+    await db.flush()
+    case = TestCase(
+        suite_id=suite.id, path=session.goal, expected=session.expected_result or "",
+        account_id=account_id,
+    )
+    db.add(case)
+    await db.flush()
+    plan = ExecutionPlan(
+        test_case_id=case.id, suite_id=suite.id, version=1,
+        status="draft", source="exploration", platform=session.platform or "",
+        app_package=session.app_package or "",
+        metadata_json=json.dumps({
+            "exploration_session_id": session_id,
+            "expected": session.expected_result or "",
+            "review_required": True,
+        }, ensure_ascii=False),
+        steps_json=json.dumps(steps, ensure_ascii=False),
+        warnings_json=json.dumps(warnings, ensure_ascii=False),
+        account_id=account_id,
+    )
+    db.add(plan)
+    await db.commit()
+    await db.refresh(plan)
+    return {
+        "plan_id": plan.id, "test_case_id": case.id, "suite_id": suite.id,
+        "version": plan.version, "status": plan.status,
+        "steps": steps, "warnings": warnings,
+        "message": "已生成执行计划草稿；所有步骤均需人工确认意图和验证条件后才能运行。",
+    }
