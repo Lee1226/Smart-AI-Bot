@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from 'react'
 import { Link, useLocation, useNavigate, useSearchParams } from 'react-router-dom'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { api, fetchDevices, type Device } from '../lib/api'
+import { api, fetchDevices, fetchSuites, fetchSuiteCases, fetchExecutionPlans, runExecutionPlan, fetchRun, fetchResults, type Device } from '../lib/api'
 import { useT } from '../lib/i18n'
 
 type ExploreStep = { id: string; sequence: number; event_type: string; title: string; detail: string; action: string; status: string; duration_ms: number; evidence: Record<string, string>; page_before: { ui_text?: string }; page_after: { ui_text?: string }; action_args: Record<string, unknown> }
@@ -65,6 +65,169 @@ function PageTitle({ title, desc, action }: { title: string; desc: string; actio
 }
 function Empty({ title, desc, action }: { title: string; desc: string; action?: React.ReactNode }) {
   return <div className="rounded-xl border border-dashed border-hairline bg-white px-5 py-12 text-center"><div className="text-sm font-semibold text-ink">{title}</div><p className="mt-1 text-xs text-ink-mute">{desc}</p>{action && <div className="mt-4">{action}</div>}</div>
+}
+
+
+function PlanReviewWorkspace() {
+  const qc = useQueryClient()
+  const [searchParams, setSearchParams] = useSearchParams()
+  const [deviceId, setDeviceId] = useState('')
+  const [activeRunId, setActiveRunId] = useState('')
+  const requestedSuiteId = searchParams.get('suite') || ''
+  const { data: suitesPage, isLoading: suitesLoading } = useQuery({
+    queryKey: ['exploration-plan-suites'],
+    queryFn: () => fetchSuites({ page: 1, page_size: 100 }),
+  })
+  const suites = (suitesPage?.items || []).filter(suite => suite.source_format === 'exploration')
+  const selectedSuite = suites.find(suite => suite.id === requestedSuiteId) || suites[0]
+  const { data: cases = [], isLoading: casesLoading } = useQuery({
+    queryKey: ['exploration-plan-cases', selectedSuite?.id],
+    queryFn: () => fetchSuiteCases(selectedSuite!.id),
+    enabled: !!selectedSuite,
+  })
+  const selectedCase = cases[0]
+  const { data: plans = [], isLoading: plansLoading, refetch: refetchPlans } = useQuery({
+    queryKey: ['exploration-plan-items', selectedCase?.id],
+    queryFn: () => fetchExecutionPlans(selectedCase!.id),
+    enabled: !!selectedCase,
+    refetchInterval: activeRunId ? 2000 : false,
+  })
+  const selectedPlan = plans[0]
+  const { data: devices = [] } = useQuery({
+    queryKey: ['devices'],
+    queryFn: fetchDevices,
+    refetchInterval: 5000,
+  })
+  const onlineDevices = devices.filter(device => device.status === 'online')
+  const selectedDevice = onlineDevices.find(device => device.id === deviceId)
+  const { data: run } = useQuery({
+    queryKey: ['exploration-plan-run', activeRunId],
+    queryFn: () => fetchRun(activeRunId),
+    enabled: !!activeRunId,
+    refetchInterval: query => ['pending', 'running'].includes(query.state.data?.status || '') ? 1500 : false,
+  })
+  const { data: results = [] } = useQuery({
+    queryKey: ['exploration-plan-results', activeRunId],
+    queryFn: () => fetchResults(activeRunId),
+    enabled: !!activeRunId && !!run && !['pending', 'running'].includes(run.status),
+  })
+  const runMut = useMutation({
+    mutationFn: async () => {
+      if (!selectedPlan || !selectedDevice) throw new Error('请先选择在线测试设备')
+      return runExecutionPlan(selectedPlan.id, { device_id: selectedDevice.id, max_steps: 8 })
+    },
+    onSuccess: result => {
+      setActiveRunId(result.id)
+      qc.invalidateQueries({ queryKey: ['exploration-plan-run', result.id] })
+    },
+  })
+  useEffect(() => {
+    if (run && !['pending', 'running'].includes(run.status)) {
+      refetchPlans()
+      qc.invalidateQueries({ queryKey: ['execution-plans'] })
+    }
+  }, [run?.status, refetchPlans, qc, run])
+  useEffect(() => {
+    if (selectedSuite && selectedSuite.id !== requestedSuiteId) {
+      setSearchParams({ suite: selectedSuite.id }, { replace: true })
+    }
+  }, [selectedSuite?.id, requestedSuiteId, setSearchParams])
+
+  const steps = selectedPlan?.steps || []
+  const blockers = steps.flatMap((step, index) => {
+    const issues: string[] = []
+    if (!step.action || !step.executor) issues.push('动作类型或执行策略未配置')
+    if (['ai', 'hybrid'].includes(step.executor) &&
+      (step.intent?.status !== 'confirmed' || !step.intent.description?.trim() || !step.intent.expected_result?.trim())) {
+      issues.push('操作意图或预期结果尚未人工确认')
+    }
+    if (step.action === 'start_app' && !String(step.args?.package_name || step.args?.package || '').trim()) {
+      issues.push('缺少应用 Package 标识')
+    }
+    if (step.action === 'swipe' && !['x1', 'y1', 'x2', 'y2'].every(key => {
+      const value = step.args?.[key] ?? (step.fallback?.coordinates as Record<string, unknown> | undefined)?.[key]
+      return value !== undefined && value !== null && value !== '' && Number.isFinite(Number(value))
+    })) issues.push('滑动坐标不完整')
+    return issues.map(issue => ({ step: index + 1, issue }))
+  })
+  const runPending = !!run && ['pending', 'running'].includes(run.status)
+  const result = results[0]
+  const resultPassed = result?.status === 'pass'
+  const planValidated = selectedPlan?.status === 'validated'
+
+  return (
+    <div className="space-y-5">
+      <section className="rounded-xl border border-hairline bg-white p-4">
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <div><h2 className="text-sm font-semibold">待整理的探索计划</h2><p className="mt-1 text-xs text-ink-mute">只展示 AI 探索生成的计划草稿，选择后可检查、编辑和验证。</p></div>
+          <span className="rounded-full bg-primary-soft px-3 py-1 text-xs text-primary-deep">{suites.length} 个探索套件</span>
+        </div>
+        {suitesLoading ? <p className="py-8 text-center text-sm text-ink-faint">正在读取探索计划…</p> :
+          suites.length === 0 ? <Empty title="还没有待整理的计划" desc="请先在探索历史中完成一次探索，并点击“生成执行计划草稿”。" action={<Link to="/exploration/history" className="inline-flex rounded-lg border border-hairline px-3 py-2 text-sm">查看探索历史</Link>} /> :
+          <div className="mt-4 grid gap-3 md:grid-cols-2">
+            <label className="text-xs font-medium text-ink-secondary">探索计划套件
+              <select className="mt-1.5 w-full rounded-lg border border-hairline bg-white px-3 py-2.5 text-sm" value={selectedSuite?.id || ''} onChange={e => { setSearchParams({ suite: e.target.value }); setActiveRunId('') }}>
+                {suites.map(suite => <option key={suite.id} value={suite.id}>{suite.name} · {suite.case_count} 个用例</option>)}
+              </select>
+            </label>
+            <div className="rounded-lg bg-canvas-soft p-3 text-xs text-ink-mute">
+              <div className="font-medium text-ink">{selectedSuite?.app_package || '未记录应用标识'}</div>
+              <div className="mt-1">创建时间：{selectedSuite ? new Date(selectedSuite.created_at).toLocaleString() : '—'}</div>
+              <div className="mt-1">计划用例：{casesLoading ? '读取中…' : cases.length}</div>
+            </div>
+          </div>}
+      </section>
+
+      {selectedSuite && <section className="rounded-xl border border-hairline bg-white p-4">
+        <div className="flex flex-wrap items-center justify-between gap-2">
+          <div><h2 className="text-sm font-semibold">计划检查与整理</h2><p className="mt-1 text-xs text-ink-mute">复用现有执行计划编辑器，编辑操作意图、定位、等待和验证条件。</p></div>
+          {selectedPlan && <Link to={`/execution-plans?suite=${encodeURIComponent(selectedSuite.id)}`} className="rounded-lg border border-hairline px-3 py-2 text-xs hover:bg-canvas-soft">打开步骤编辑器</Link>}
+        </div>
+        {casesLoading || plansLoading ? <p className="py-6 text-center text-sm text-ink-faint">正在加载计划内容…</p> :
+          !selectedCase ? <Empty title="套件中没有用例" desc="该探索套件没有关联用例，请返回探索记录重新生成草稿。" /> :
+          !selectedPlan ? <Empty title="该探索用例尚无执行计划" desc="请前往执行计划编辑器生成或检查计划。" action={<Link to={`/execution-plans?suite=${encodeURIComponent(selectedSuite.id)}`} className="text-primary underline">打开执行计划编辑器</Link>} /> :
+          <div className="mt-4 space-y-4">
+            <div className="flex flex-wrap items-center gap-2 text-xs">
+              <span className="rounded-full bg-slate-100 px-2.5 py-1">{selectedPlan.status === 'validated' ? '已验证' : '待整理'}</span>
+              <span className="text-ink-faint">版本 v{selectedPlan.version} · {steps.length} 个步骤</span>
+              {selectedPlan.validated_run_id && <span className="text-ink-faint">验证运行：{selectedPlan.validated_run_id.slice(0, 8)}</span>}
+            </div>
+            <div className="rounded-lg border border-hairline p-3">
+              <div className="text-xs font-semibold">步骤预检</div>
+              {blockers.length ? <div className="mt-2 space-y-1.5">{blockers.map((item, i) => <div key={i} className="text-xs text-amber-800">第 {item.step} 步：{item.issue}</div>)}</div> :
+                <p className="mt-2 text-xs text-green-700">基础结构检查通过。仍需结合真实设备回放结果确认行为正确。</p>}
+              {selectedPlan.warnings.length > 0 && <ul className="mt-2 list-disc space-y-1 pl-4 text-xs text-ink-mute">{selectedPlan.warnings.map((warning, i) => <li key={i}>{warning}</li>)}</ul>}
+            </div>
+            <div className="space-y-2">{steps.map((step, i) => <div key={step.step_id || i} className="flex items-start gap-3 rounded-lg border border-hairline p-3">
+              <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-canvas-soft text-xs">{i + 1}</span>
+              <div className="min-w-0 flex-1"><div className="text-sm font-medium">{step.action}</div><p className="mt-1 text-xs text-ink-mute">{step.intent?.description || '操作意图待补充'}</p><div className="mt-1 text-[11px] text-ink-faint">执行器：{step.executor} · 验证条件：{step.verification ? '已配置' : '未配置'} · 操作后等待：{step.wait_condition?.type === 'delay' ? `${step.wait_condition.duration_ms || 0} ms` : '未配置'}</div></div>
+              <span className="text-[11px] text-ink-faint">{step.intent?.status === 'confirmed' ? '已确认' : '待确认'}</span>
+            </div>)}</div>
+          </div>}
+      </section>}
+
+      {selectedPlan && <section className="rounded-xl border border-hairline bg-white p-4">
+        <h2 className="text-sm font-semibold">真机回放验证</h2>
+        <p className="mt-1 text-xs text-ink-mute">在选定的在线设备上调用现有执行计划 Runner；不另建设备控制通道。</p>
+        <div className="mt-3 flex flex-wrap items-end gap-3">
+          <label className="min-w-[240px] flex-1 text-xs font-medium text-ink-secondary">测试设备
+            <select className="mt-1.5 w-full rounded-lg border border-hairline bg-white px-3 py-2.5 text-sm" value={deviceId} onChange={e => setDeviceId(e.target.value)}>
+              <option value="">选择在线设备</option>{onlineDevices.map(device => <option key={device.id} value={device.id}>{device.name} · {device.platform} · {device.connection_type}</option>)}
+            </select>
+          </label>
+          <button disabled={!selectedDevice || !selectedPlan || blockers.length > 0 || runMut.isPending || runPending} onClick={() => runMut.mutate()} className="rounded-lg bg-primary px-4 py-2.5 text-sm font-medium text-white disabled:cursor-not-allowed disabled:opacity-40">{runMut.isPending ? '正在启动…' : runPending ? '回放运行中…' : '开始真机回放验证'}</button>
+        </div>
+        {blockers.length > 0 && <p className="mt-2 text-xs text-amber-700">请先补齐上述必需项；当前计划不能启动验证。</p>}
+        {runMut.isError && <p className="mt-2 text-xs text-red-600">{String((runMut.error as Error)?.message || runMut.error)}</p>}
+        {run && <div className="mt-4 rounded-lg border border-hairline p-3">
+          <div className="flex flex-wrap items-center justify-between gap-2"><span className="text-xs font-semibold">运行状态：{run.status}</span><span className="text-[11px] text-ink-faint">Run ID：{run.id}</span></div>
+          {runPending ? <p className="mt-2 text-xs text-ink-mute">正在回放，页面每隔约 1.5 秒刷新运行状态…</p> :
+            <div className="mt-2 text-xs"><div>通过：{run.passed} · 失败：{run.failed} · 异常：{run.errored}</div>{result && <p className={resultPassed ? 'mt-1 text-green-700' : 'mt-1 text-red-700'}>{result.status === 'pass' ? '回放验证通过' : `回放未通过：${result.reason || result.status}`}</p>}</div>}
+          {planValidated && <p className="mt-2 text-xs font-medium text-green-700">计划已标记为已验证，可继续人工审核后投入正式执行。</p>}
+        </div>}
+      </section>}
+    </div>
+  )
 }
 
 export default function ExplorationCenter() {
@@ -215,14 +378,6 @@ export default function ExplorationCenter() {
       {knowledgeLoading ? <div className="py-10 text-center text-sm text-ink-faint">正在读取经验条目…</div> : knowledge.length === 0 ? <Empty title="经验库还是空的" desc="探索过程中发现的复杂场景将在这里形成经验候选，审核确认后才能供执行计划复用。" /> : <div className="grid gap-3 md:grid-cols-2">{knowledge.map(item => <article key={item.id} className="rounded-xl border border-hairline bg-white p-4"><div className="flex items-start justify-between gap-2"><h3 className="text-sm font-semibold">{item.title}</h3><Status value={item.status} /></div><textarea key={item.id + item.description} defaultValue={item.description} aria-label="经验说明" onBlur={e => { if (e.target.value !== item.description) updateKnowledge.mutate({ id: item.id, description: e.target.value }) }} rows={3} className="mt-2 w-full resize-y rounded-lg border border-hairline bg-white px-3 py-2 text-xs leading-5 text-ink-mute" />{item.source_session_id && item.evidence?.after_screenshot && <div className="mt-3 max-w-sm"><EvidenceImage sessionId={item.source_session_id} filename={item.evidence.after_screenshot.split('/').pop()} label="场景证据" /></div>}<details className="mt-3 rounded-lg bg-canvas-soft p-3"><summary className="cursor-pointer text-xs font-medium">识别依据与处理建议</summary><pre className="mt-2 whitespace-pre-wrap text-[11px] text-ink-mute">{JSON.stringify({ trigger: item.trigger_conditions, recognition: item.recognition_rules, handling: item.handling_rules }, null, 2)}</pre></details><div className="mt-3 flex flex-wrap gap-2 text-[11px] text-ink-faint"><span>{item.category}</span>{item.app_package && <span>· {item.app_package}</span>}<span>· 风险：{item.risk_level}</span></div><div className="mt-4 flex flex-wrap gap-2">{item.status !== 'confirmed' && item.status !== 'disabled' && <><button onClick={() => reviewKnowledge.mutate({ id: item.id, status: 'confirmed' })} className="rounded-md bg-primary px-3 py-1.5 text-xs text-white">确认并允许作为参考</button><button onClick={() => reviewKnowledge.mutate({ id: item.id, status: 'invalidated' })} className="rounded-md border border-hairline px-3 py-1.5 text-xs">标记无效</button></>}{item.status !== 'disabled' && <button onClick={() => reviewKnowledge.mutate({ id: item.id, status: 'disabled' })} className="rounded-md border border-hairline px-3 py-1.5 text-xs">停用经验</button>}</div></article>)}</div>}
     </>}
 
-    {isPlans && <>
-      <PageTitle title="计划生成与验证" desc="把探索轨迹整理成可编辑、可校验、可版本化的正式执行计划。" />
-      <div className="rounded-xl border border-hairline bg-white p-5">
-        <div className="text-sm font-semibold">计划发布流程</div>
-        <div className="mt-4 grid gap-3 md:grid-cols-4">{[['01','选择探索记录','选择已完成且有有效步骤的探索会话'],['02','整理执行步骤','为每步补齐定位器、前置条件和验证条件'],['03','确定性回放','在目标设备验证步骤可重复执行'],['04','发布正式计划','复用现有执行计划版本管理']].map(([n,title,desc]) => <div key={n} className="rounded-lg bg-canvas-soft p-3"><div className="text-xs font-semibold text-primary">{n}</div><div className="mt-2 text-sm font-medium">{title}</div><p className="mt-1 text-xs leading-5 text-ink-mute">{desc}</p></div>)}</div>
-        <div className="mt-5 rounded-lg border border-amber-200 bg-amber-50/70 p-3 text-xs leading-5 text-amber-900">自动生成、步骤编辑和真机回放验证尚未接通。当前先保留流程入口，避免生成未经验证的计划并误导后续自动执行。</div>
-        <Link to="/execution-plans" className="mt-4 inline-flex rounded-lg border border-hairline px-3 py-2 text-sm hover:bg-canvas-soft">打开现有执行计划管理 →</Link>
-      </div>
-    </>}
+    {isPlans && <PlanReviewWorkspace />}}
   </div>
 }
