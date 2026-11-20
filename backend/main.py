@@ -21,7 +21,7 @@ from auth.middleware import AuthMiddleware
 from ws.portal_ws import portal_websocket_endpoint, browser_usb_websocket_endpoint, adb_bridge_websocket_endpoint, hdc_bridge_websocket_endpoint, ios_bridge_websocket_endpoint
 from ws.video import provider_video_endpoint
 from routers import execution_plans
-from routers import exploration
+from routers import exploration, skills
 from routers import regressions
 
 # Drop provider-unsupported params (e.g. vector_store_ids leaking into Anthropic)
@@ -104,6 +104,7 @@ app.include_router(debug.router)
 app.include_router(recorder.router)
 app.include_router(execution_plans.router)
 app.include_router(exploration.router)
+app.include_router(skills.router)
 app.include_router(settings.router)
 app.include_router(appdist.router)
 app.include_router(serverinfo.router)
