@@ -166,18 +166,76 @@ async def run_exploration(session_id: str, account_id: str) -> None:
 
             evidence_root = Path(__file__).resolve().parent.parent / "data" / "explorations" / session_id / "evidence"
             action_sequence = 0
+            event_sequence = 0
             action_started_at = 0.0
 
             async def observe_action(stage, llm_step, fn_name, args, before, result_text):
-                nonlocal action_sequence, action_started_at
+                nonlocal action_sequence, event_sequence, action_started_at
+                if stage == "observation":
+                    # Reuse the screenshot and accessibility tree already collected
+                    # by TestCaseAgent for this model turn; do not query the device again.
+                    observed = before if isinstance(before, dict) else {}
+                    image = observed.get("image_bytes") or b""
+                    ui_text = str(observed.get("ui_text") or "")[:16000]
+                    elements = observed.get("elements") if isinstance(observed.get("elements"), list) else []
+                    event_sequence += 1
+                    evidence = {}
+                    if image:
+                        filename = f"observation_{event_sequence:04d}.png"
+                        (evidence_root / filename).write_bytes(image)
+                        evidence = {
+                            "screenshot": str(Path("evidence") / filename),
+                            "sha256": hashlib.sha256(image).hexdigest(),
+                        }
+                    safe_elements = [
+                        {key: item.get(key) for key in (
+                            "index", "text", "resourceId", "contentDescription", "className",
+                            "bounds", "visible", "enabled", "clickable"
+                        ) if item.get(key) is not None}
+                        for item in elements[:300] if isinstance(item, dict)
+                    ]
+                    async with AsyncSessionLocal() as db:
+                        db.add(ExploreStep(
+                            account_id=account_id, session_id=session_id, sequence=event_sequence,
+                            event_type="observation", title=f"第 {llm_step} 轮页面观察",
+                            detail=str(result_text or "已采集当前页面状态")[:2000],
+                            action="", executor="ai", action_args_json="{}",
+                            page_before_json="{}",
+                            page_after_json=json.dumps({"ui_text": ui_text, "elements": safe_elements}, ensure_ascii=False),
+                            evidence_json=json.dumps(evidence, ensure_ascii=False),
+                            status="recorded", duration_ms=0,
+                        ))
+                        await db.commit()
+                    return {"ui_text": ui_text, "elements": safe_elements, **evidence}
+
+                if stage == "decision":
+                    event_sequence += 1
+                    safe_args = dict(args) if isinstance(args, dict) else {}
+                    if fn_name == "input_text" and "text" in safe_args:
+                        safe_args["text"] = "[已隐藏：输入内容不写入探索记录]"
+                    async with AsyncSessionLocal() as db:
+                        db.add(ExploreStep(
+                            account_id=account_id, session_id=session_id, sequence=event_sequence,
+                            event_type="decision", title=f"AI 选择操作：{fn_name}",
+                            detail=f"基于当前页面观察，AI 选择调用 {fn_name} 工具；此处记录可审计的工具选择，不保存模型内部推理。",
+                            action=fn_name, executor="ai",
+                            action_args_json=json.dumps(safe_args, ensure_ascii=False),
+                            page_before_json="{}", page_after_json="{}", evidence_json="{}",
+                            status="recorded", duration_ms=0,
+                        ))
+                        await db.commit()
+                    return None
+
                 if stage == "before":
                     action_started_at = time.perf_counter()
                     return await _capture_exploration_snapshot(
-                        device, evidence_root, f"{action_sequence + 1:03d}_before"
+                        device, evidence_root, f"action_{action_sequence + 1:04d}_before"
                     )
+
                 action_sequence += 1
+                event_sequence += 1
                 after = await _capture_exploration_snapshot(
-                    device, evidence_root, f"{action_sequence:03d}_after"
+                    device, evidence_root, f"action_{action_sequence:04d}_after"
                 )
                 safe_args = dict(args) if isinstance(args, dict) else {}
                 if fn_name == "input_text" and "text" in safe_args:
@@ -191,8 +249,8 @@ async def run_exploration(session_id: str, account_id: str) -> None:
                 }
                 async with AsyncSessionLocal() as db:
                     db.add(ExploreStep(
-                        account_id=account_id, session_id=session_id, sequence=action_sequence,
-                        event_type="action", title=fn_name or f"Step {action_sequence}",
+                        account_id=account_id, session_id=session_id, sequence=event_sequence,
+                        event_type="action", title=fn_name or f"Action {action_sequence}",
                         detail=str(result_text or "")[:4000], action=fn_name, executor="ai",
                         action_args_json=json.dumps(safe_args, ensure_ascii=False),
                         page_before_json=json.dumps({
