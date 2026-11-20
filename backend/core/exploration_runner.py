@@ -32,6 +32,14 @@ def _safe_filename(value: str) -> str:
     return re.sub(r"[^a-zA-Z0-9_.-]", "_", value)[:100] or "step"
 
 
+def _image_extension(data: bytes) -> str:
+    if data.startswith(b"\\xff\\xd8\\xff"):
+        return "jpg"
+    if data.startswith(b"RIFF") and data[8:12] == b"WEBP":
+        return "webp"
+    return "png"
+
+
 async def _set_session(session_id: str, **values) -> None:
     async with AsyncSessionLocal() as db:
         row = await db.get(ExploreSession, session_id)
@@ -88,7 +96,7 @@ async def _capture_exploration_snapshot(device: WebSocketDevice, root: Path, nam
     image = await device.screenshot()
     ui_text, elements = await device.get_ui_state()
     root.mkdir(parents=True, exist_ok=True)
-    filename = f"{name}.png"
+    filename = f"{name}.{_image_extension(image)}"
     (root / filename).write_bytes(image)
     safe_elements = []
     for item in (elements or [])[:300]:
@@ -253,7 +261,7 @@ async def run_exploration(session_id: str, account_id: str) -> None:
                     evidence = {}
                     if image:
                         evidence_root.mkdir(parents=True, exist_ok=True)
-                        filename = f"observation_{event_sequence:04d}.png"
+                        filename = f"observation_{event_sequence:04d}.{_image_extension(image)}"
                         (evidence_root / filename).write_bytes(image)
                         evidence = {
                             "screenshot": str(Path("evidence") / filename),
