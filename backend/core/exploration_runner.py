@@ -207,7 +207,11 @@ async def run_exploration(session_id: str, account_id: str) -> None:
                         status="failed" if str(result_text).startswith("ERROR") else "completed",
                         duration_ms=max(0, int((time.perf_counter() - action_started_at) * 1000)) if action_started_at else 0,
                     ))
+                    scene_snapshot = after
                     scene = _classify_exploration_scene(after)
+                    if not scene:
+                        scene_snapshot = before
+                        scene = _classify_exploration_scene(before)
                     if scene:
                         category, title, suggestion = scene
                         existing = (await db.execute(select(ExploreKnowledge).where(
@@ -225,8 +229,8 @@ async def run_exploration(session_id: str, account_id: str) -> None:
                                     "platform": config["platform"],
                                 }, ensure_ascii=False),
                                 recognition_rules_json=json.dumps({
-                                    "matched_ui_text": after.get("ui_text", "")[:3000],
-                                    "matched_elements": after.get("elements", [])[:80],
+                                    "matched_ui_text": scene_snapshot.get("ui_text", "")[:3000],
+                                    "matched_elements": scene_snapshot.get("elements", [])[:80],
                                 }, ensure_ascii=False),
                                 handling_rules_json=json.dumps({
                                     "mode": "manual_review",
