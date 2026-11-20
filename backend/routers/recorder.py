@@ -433,7 +433,10 @@ async def start_record(device_id: str, request: Request):
     # Ask the Portal to emit physical interaction events. A failed RPC must not
     # leave a session that falsely reports successful capture.
     try:
-        await device._rpc("start_record", {})
+        # Recording control must not inherit the generic 30s reconnect wait.
+        # If Portal is offline, fail this start attempt promptly and release
+        # the in-memory session so the next attempt is not blocked by stale state.
+        await asyncio.wait_for(device._rpc("start_record", {}, timeout=8.0), timeout=10.0)
     except Exception as e:
         recorder_engine.stop(device_id)
         logger.warning("start_record RPC failed: %s", e)
@@ -453,9 +456,11 @@ async def stop_record(device_id: str, request: Request):
     if info and info["recording"] and info["source"] != "portal_touch":
         raise HTTPException(status_code=409, detail="当前设备正在使用其他录制来源")
     try:
-        await device._rpc("stop_record", {})
+        # Always release the server-side recorder session promptly, even if
+        # Portal has disconnected and its stop acknowledgement never arrives.
+        await asyncio.wait_for(device._rpc("stop_record", {}, timeout=6.0), timeout=8.0)
     except Exception as e:
-        logger.warning("stop_record RPC failed: %s", e)
+        logger.warning("stop_record RPC failed or timed out: %s", e)
     events = recorder_engine.stop(device_id)
     return {"ok": True, "events": events,
             "session": recorder_engine.session_info(device_id)}
