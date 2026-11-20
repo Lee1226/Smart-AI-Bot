@@ -602,6 +602,7 @@ async def list_recordings(
         if not path.is_file() or path.stat().st_size <= 0:
             continue
         stat = path.stat()
+        total_bytes += stat.st_size
         suite = None
         device = None
         if search:
@@ -619,7 +620,6 @@ async def list_recordings(
             if search not in searchable:
                 continue
         total += 1
-        total_bytes += stat.st_size
         if start <= total - 1 < end:
             if suite is None:
                 suite = suite_cache.get(run.suite_id)
