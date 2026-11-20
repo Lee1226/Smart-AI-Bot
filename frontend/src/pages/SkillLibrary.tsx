@@ -85,7 +85,6 @@ function SkillCard({ skill }: { skill: Skill }) {
 }
 
 export default function SkillLibrary() {
-  const t = useT()
   const qc = useQueryClient()
   const [sessionId, setSessionId] = useState('')
   const [filter, setFilter] = useState('all')
