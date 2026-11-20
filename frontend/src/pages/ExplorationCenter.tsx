@@ -5,6 +5,15 @@ import { api, fetchDevices, fetchSuites, fetchSuiteCases, fetchExecutionPlans, r
 import { useT } from '../lib/i18n'
 
 type ExploreStep = { id: string; sequence: number; event_type: string; title: string; detail: string; action: string; status: string; duration_ms: number; evidence: Record<string, string>; page_before: { ui_text?: string; elements?: unknown[] }; page_after: { ui_text?: string; elements?: unknown[]; change_summary?: { label?: string; has_changes?: boolean; added_count?: number; removed_count?: number; changed_count?: number; added?: unknown[]; removed?: unknown[]; changed?: unknown[]; added_ui_lines?: string[]; removed_ui_lines?: string[] } }; action_args: Record<string, unknown> }
+type SceneTimeline = {
+  event_count: number
+  scenes: {
+    scene_count: number
+    transition_count: number
+    scenes: Array<{ id: string; title: string; first_sequence: number; last_sequence: number; observation_count: number; actions: Array<{ sequence: number; title: string; action: string; status: string; duration_ms: number }> }>
+    transitions: Array<{ id: string; from_scene: string; to_scene: string; action: string; sequence: number; status: string; change_summary: { label?: string } }>
+  }
+}
 type ExploreSession = {
   id: string; title: string; goal: string; expected_result: string; device_id: string
   platform: string; status: string; summary: string; created_at: string
@@ -262,6 +271,12 @@ export default function ExplorationCenter() {
     enabled: !!selectedSessionId,
     refetchInterval: query => ['queued', 'running'].includes(query.state.data?.status || '') ? 1500 : false,
   })
+  const { data: sceneTimeline } = useQuery({
+    queryKey: ['exploration-timeline', selectedSessionId],
+    queryFn: async () => (await api.get<SceneTimeline>(`/exploration/sessions/${selectedSessionId}/timeline`)).data,
+    enabled: !!selectedSessionId,
+    refetchInterval: query => ['queued', 'running'].includes(selectedSession?.status || '') ? 1500 : false,
+  })
   const { data: sessions = [], isLoading: sessionsLoading } = useQuery({
     queryKey: ['exploration-sessions'], queryFn: async () => (await api.get<ExploreSession[]>('/exploration/sessions')).data,
     enabled: isHistory,
@@ -370,6 +385,16 @@ export default function ExplorationCenter() {
       {selectedSession && <section className="rounded-xl border border-hairline bg-white p-4">
         <div className="flex flex-wrap items-start justify-between gap-3"><div><div className="text-sm font-semibold">{selectedSession.title}</div><p className="mt-1 text-xs text-ink-mute">{selectedSession.goal}</p></div><div className="flex items-center gap-2"><Status value={selectedSession.status} />{['queued', 'running'].includes(selectedSession.status) && <button onClick={() => stopSession.mutate(selectedSession.id)} disabled={stopSession.isPending} className="rounded-md border border-red-200 px-3 py-1.5 text-xs text-red-600 disabled:opacity-50">停止探索</button>}</div></div>
         {selectedSession.expected_result && <div className="mt-3 rounded-lg bg-canvas-soft p-3 text-xs"><strong>预期结果：</strong>{selectedSession.expected_result}</div>}{selectedSession.summary && <div className="mt-3 rounded-lg bg-blue-50 p-3 text-xs text-blue-900">{selectedSession.summary}</div>}{selectedSession.error_message && <div className="mt-3 rounded-lg bg-red-50 p-3 text-xs text-red-700">{selectedSession.error_message}</div>}
+        {sceneTimeline && <section className="mt-4 rounded-xl border border-hairline bg-canvas-soft/50 p-4">
+          <div className="flex flex-wrap items-center justify-between gap-2"><div><h3 className="text-sm font-semibold">探索场景与操作路径</h3><p className="mt-1 text-xs text-ink-mute">将重复页面观察合并为场景节点，并关联导致页面变化的操作；原始事件时间轴仍完整保留。</p></div><div className="flex gap-2 text-xs"><span className="rounded-full bg-white px-2.5 py-1">场景 {sceneTimeline.scenes.scene_count}</span><span className="rounded-full bg-white px-2.5 py-1">页面转移 {sceneTimeline.scenes.transition_count}</span></div></div>
+          {sceneTimeline.scenes.scenes.length === 0 ? <p className="mt-3 text-xs text-ink-faint">当前记录还没有足够的页面快照来构建场景关系。</p> : <div className="mt-3 grid gap-3 lg:grid-cols-2">
+            {sceneTimeline.scenes.scenes.map((scene, index) => <article key={scene.id} className="rounded-lg border border-hairline bg-white p-3">
+              <div className="flex items-start justify-between gap-2"><div className="flex min-w-0 items-center gap-2"><span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-primary-soft text-xs font-semibold text-primary">{index + 1}</span><div className="min-w-0"><h4 className="truncate text-sm font-semibold">{scene.title}</h4><p className="text-[11px] text-ink-faint">{scene.id} · 事件 {scene.first_sequence}–{scene.last_sequence}</p></div></div><span className="shrink-0 rounded-full bg-canvas-soft px-2 py-1 text-[10px] text-ink-mute">观察 {scene.observation_count} 次</span></div>
+              {scene.actions.length > 0 ? <div className="mt-3 space-y-1.5 border-l-2 border-hairline pl-3">{scene.actions.map(action => <div key={action.sequence} className="text-xs"><span className="font-medium">{action.sequence}. {action.title}</span><span className="ml-2 text-ink-faint">{action.status}{action.duration_ms ? ` · ${action.duration_ms} ms` : ''}</span></div>)}</div> : <p className="mt-3 text-xs text-ink-faint">该页面暂无关联操作</p>}
+            </article>)}
+          </div>}
+          {sceneTimeline.scenes.transitions.length > 0 && <div className="mt-3 rounded-lg border border-hairline bg-white p-3"><h4 className="text-xs font-semibold">页面转移关系</h4><div className="mt-2 space-y-2">{sceneTimeline.scenes.transitions.map(transition => <div key={transition.id} className="flex flex-wrap items-center gap-2 text-xs"><span className="rounded bg-canvas-soft px-2 py-1">{transition.from_scene}</span><span className="text-ink-faint">— {transition.action} →</span><span className="rounded bg-canvas-soft px-2 py-1">{transition.to_scene}</span><span className="text-ink-faint">第 {transition.sequence} 条事件 · {transition.status}</span>{transition.change_summary?.label && <span className="w-full text-[11px] text-ink-mute">{transition.change_summary.label}</span>}</div>)}</div></div>}
+        </section>}
         <div className="mt-4 flex flex-wrap items-center justify-between gap-2"><div><h3 className="text-sm font-semibold">完整探索时间轴</h3><span className="text-xs text-ink-faint">{selectedSession.steps?.length || 0} 条事件 · {selectedSession.steps?.filter(step => step.event_type === 'observation').length || 0} 次观察 · {selectedSession.steps?.filter(step => step.event_type === 'decision').length || 0} 次决策 · {selectedSession.steps?.filter(step => step.event_type === 'action').length || 0} 次操作 · {selectedSession.steps?.filter(step => step.event_type === 'tool_result').length || 0} 次结果</span></div>{['completed', 'failed'].includes(selectedSession.status) && !!selectedSession.steps?.some(step => step.event_type === 'action') && <button onClick={() => generatePlan.mutate(selectedSession.id)} disabled={generatePlan.isPending} className="rounded-md bg-primary px-3 py-2 text-xs font-medium text-white disabled:opacity-50">{generatePlan.isPending ? '生成中…' : '生成执行计划草稿'}</button>}</div>
         <p className="mt-2 text-[11px] text-ink-faint">观察记录复用 Agent 本轮已有截图和 UI Tree；决策记录展示工具选择摘要，不保存模型内部隐式推理。</p>
         {generatePlan.isError && <p className="mt-2 text-xs text-red-600">{String((generatePlan.error as Error)?.message || generatePlan.error)}</p>}
