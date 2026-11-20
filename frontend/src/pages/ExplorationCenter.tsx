@@ -10,7 +10,7 @@ type SceneTimeline = {
   scenes: {
     scene_count: number
     transition_count: number
-    scenes: Array<{ id: string; title: string; first_sequence: number; last_sequence: number; observation_count: number; actions: Array<{ sequence: number; title: string; action: string; status: string; duration_ms: number }> }>
+    scenes: Array<{ id: string; title: string; first_sequence: number; last_sequence: number; observation_count: number; screenshot: string; actions: Array<{ sequence: number; title: string; action: string; status: string; duration_ms: number }> }>
     transitions: Array<{ id: string; from_scene: string; to_scene: string; action: string; sequence: number; status: string; change_summary: { label?: string } }>
   }
 }
@@ -390,6 +390,7 @@ export default function ExplorationCenter() {
           {sceneTimeline.scenes.scenes.length === 0 ? <p className="mt-3 text-xs text-ink-faint">当前记录还没有足够的页面快照来构建场景关系。</p> : <div className="mt-3 grid gap-3 lg:grid-cols-2">
             {sceneTimeline.scenes.scenes.map((scene, index) => <article key={scene.id} className="rounded-lg border border-hairline bg-white p-3">
               <div className="flex items-start justify-between gap-2"><div className="flex min-w-0 items-center gap-2"><span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-primary-soft text-xs font-semibold text-primary">{index + 1}</span><div className="min-w-0"><h4 className="truncate text-sm font-semibold">{scene.title}</h4><p className="text-[11px] text-ink-faint">{scene.id} · 事件 {scene.first_sequence}–{scene.last_sequence}</p></div></div><span className="shrink-0 rounded-full bg-canvas-soft px-2 py-1 text-[10px] text-ink-mute">观察 {scene.observation_count} 次</span></div>
+              {scene.screenshot && <div className="mt-3 max-w-sm"><EvidenceImage sessionId={selectedSession.id} filename={scene.screenshot.split('/').pop()} label="场景页面截图" /></div>}
               {scene.actions.length > 0 ? <div className="mt-3 space-y-1.5 border-l-2 border-hairline pl-3">{scene.actions.map(action => <div key={action.sequence} className="text-xs"><span className="font-medium">{action.sequence}. {action.title}</span><span className="ml-2 text-ink-faint">{action.status}{action.duration_ms ? ` · ${action.duration_ms} ms` : ''}</span></div>)}</div> : <p className="mt-3 text-xs text-ink-faint">该页面暂无关联操作</p>}
             </article>)}
           </div>}
