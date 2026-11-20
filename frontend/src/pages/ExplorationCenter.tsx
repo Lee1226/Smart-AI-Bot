@@ -310,7 +310,7 @@ export default function ExplorationCenter() {
     queryKey: ['exploration-timeline', selectedSessionId],
     queryFn: async () => (await api.get<SceneTimeline>(`/exploration/sessions/${selectedSessionId}/timeline`)).data,
     enabled: !!selectedSessionId,
-    refetchInterval: query => ['queued', 'running'].includes(selectedSession?.status || '') ? 1500 : false,
+    refetchInterval: ['queued', 'running'].includes(selectedSession?.status || '') ? 1500 : false,
   })
   const { data: sessions = [], isLoading: sessionsLoading } = useQuery({
     queryKey: ['exploration-sessions'], queryFn: async () => (await api.get<ExploreSession[]>('/exploration/sessions')).data,
@@ -435,7 +435,7 @@ export default function ExplorationCenter() {
         <p className="mt-2 text-[11px] text-ink-faint">观察记录复用 Agent 本轮已有截图和 UI Tree；决策记录展示工具选择摘要，不保存模型内部隐式推理。</p>
         {generatePlan.isError && <p className="mt-2 text-xs text-red-600">{String((generatePlan.error as Error)?.message || generatePlan.error)}</p>}
         {generatedPlanId && <div className="mt-2 rounded-lg bg-green-50 p-3 text-xs text-green-800">执行计划草稿已创建：{generatedPlanId}。步骤仍需人工确认操作意图和验证条件。<Link className="ml-2 underline" to="/execution-plans">打开执行计划管理</Link></div>}
-        {!selectedSession.steps?.length ? <p className="mt-3 text-xs text-ink-faint">正在等待探索事件，页面会自动刷新。</p> : <ol className="mt-3 space-y-3">{selectedSession.steps.map(step => {
+        {!selectedSession.steps?.length ? <p className="mt-3 text-xs text-ink-faint">正在等待探索事件，页面会自动刷新。</p> : <ol className="mt-3 space-y-3">{selectedSession.steps.map((step: ExploreStep) => {
           const eventLabel = step.event_type === 'observation' ? '页面观察' : step.event_type === 'decision' ? 'AI 决策' : step.event_type === 'action' ? '设备操作' : step.event_type === 'tool_result' ? '工具结果' : step.event_type
           const screenshot = step.event_type === 'observation' ? step.evidence?.screenshot : ''
           return <li id={`exploration-event-${step.id}`} key={step.id} className="scroll-mt-24 rounded-xl border border-hairline p-3"><div className="flex items-start justify-between gap-3"><div className="min-w-0"><div className="flex flex-wrap items-center gap-2"><span className="text-sm font-semibold">{step.sequence}. {step.title || step.action || step.event_type}</span><span className="rounded-full bg-canvas-soft px-2 py-0.5 text-[10px] text-ink-mute">{eventLabel}</span></div>{step.detail && <p className="mt-1 text-xs text-ink-mute">{step.detail}</p>}{step.action && <div className="mt-1 text-[11px] text-ink-faint">工具：{step.action} · 参数：{JSON.stringify(step.action_args || {})}</div>}<div className="mt-1 text-[11px] text-ink-faint">状态：{step.status}{step.duration_ms > 0 ? ` · ${step.duration_ms} ms` : ''}</div></div></div>
