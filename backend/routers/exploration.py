@@ -375,6 +375,7 @@ async def patch_knowledge(knowledge_id: str, body: KnowledgePatch, request: Requ
 @router.get("/sessions/{session_id}/evidence/{filename}")
 async def get_session_evidence(session_id: str, filename: str, request: Request):
     """Serve only evidence files belonging to the authenticated session."""
+    import mimetypes
     from pathlib import Path
     from fastapi.responses import FileResponse
     if filename != Path(filename).name or filename in {"", ".", ".."}:
@@ -390,7 +391,8 @@ async def get_session_evidence(session_id: str, filename: str, request: Request)
     target = (root / filename).resolve()
     if target.parent != root or not target.is_file():
         raise HTTPException(status_code=404, detail="Evidence not found")
-    return FileResponse(target, media_type="image/png")
+    media_type = mimetypes.guess_type(target.name)[0] or "application/octet-stream"
+    return FileResponse(target, media_type=media_type)
 
 
 @router.post("/sessions/{session_id}/generate-plan", status_code=201)
