@@ -426,6 +426,7 @@ async def execute_execution_plan_run(
             await db.commit()
         await emit(f"执行计划结束：{final_status} · {final_reason}")
     except asyncio.CancelledError:
+        validation_passed = False
         async with AsyncSessionLocal() as db:
             await db.execute(update(TestRun).where(TestRun.id == run_id).values(
                 status="cancelled", finished_at=datetime.utcnow()
