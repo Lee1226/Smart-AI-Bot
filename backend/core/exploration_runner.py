@@ -147,11 +147,11 @@ def _summarize_page_change(before: dict | None, after: dict | None) -> dict:
 
     old_index, new_index = index_items(old_items), index_items(new_items)
     added, removed, changed = [], [], []
-    for identity in new_index.keys() - old_index.keys():
+    for identity in sorted(new_index.keys() - old_index.keys()):
         added.extend(new_index[identity][:5])
-    for identity in old_index.keys() - new_index.keys():
+    for identity in sorted(old_index.keys() - new_index.keys()):
         removed.extend(old_index[identity][:5])
-    for identity in old_index.keys() & new_index.keys():
+    for identity in sorted(old_index.keys() & new_index.keys()):
         old_item, new_item = old_index[identity][0], new_index[identity][0]
         fields = ("text", "contentDescription", "bounds", "visible", "enabled", "clickable")
         changed_fields = [field for field in fields if old_item.get(field) != new_item.get(field)]
@@ -172,8 +172,8 @@ def _summarize_page_change(before: dict | None, after: dict | None) -> dict:
         "added": [{key: item.get(key) for key in ("text", "resourceId", "contentDescription", "className", "bounds")} for item in added[:20]],
         "removed": [{key: item.get(key) for key in ("text", "resourceId", "contentDescription", "className", "bounds")} for item in removed[:20]],
         "changed": changed[:20],
-        "added_ui_lines": list(new_lines - old_lines)[:30],
-        "removed_ui_lines": list(old_lines - new_lines)[:30],
+        "added_ui_lines": sorted(new_lines - old_lines)[:30],
+        "removed_ui_lines": sorted(old_lines - new_lines)[:30],
     }
     summary["has_changes"] = bool(
         summary["added_count"] or summary["removed_count"] or summary["changed_count"]
