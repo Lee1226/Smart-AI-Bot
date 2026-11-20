@@ -226,6 +226,24 @@ async def run_exploration(session_id: str, account_id: str) -> None:
                         await db.commit()
                     return None
 
+                if stage == "tool_result":
+                    event_sequence += 1
+                    safe_args = dict(args) if isinstance(args, dict) else {}
+                    if fn_name == "input_text" and "text" in safe_args:
+                        safe_args["text"] = "[已隐藏：输入内容不写入探索记录]"
+                    async with AsyncSessionLocal() as db:
+                        db.add(ExploreStep(
+                            account_id=account_id, session_id=session_id, sequence=event_sequence,
+                            event_type="tool_result", title=f"{fn_name} 返回结果",
+                            detail=str(result_text or "")[:4000], action=fn_name, executor="ai",
+                            action_args_json=json.dumps(safe_args, ensure_ascii=False),
+                            page_before_json="{}", page_after_json="{}", evidence_json="{}",
+                            status="failed" if str(result_text).startswith(("ERROR", "Rejected")) else "completed",
+                            duration_ms=0,
+                        ))
+                        await db.commit()
+                    return None
+
                 if stage == "before":
                     action_started_at = time.perf_counter()
                     return await _capture_exploration_snapshot(
