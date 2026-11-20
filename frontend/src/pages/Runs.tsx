@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { cancelRun, deleteRun, fetchDevices, fetchRuns, startRun, Run } from '../lib/api'
@@ -93,9 +93,15 @@ export default function Runs() {
   const [page, setPage] = useState(1)
   const [pageSize, setPageSize] = useState(20)
   const { data: runPage, isLoading, isError, refetch } = useQuery({
-    queryKey: ['runs', page, pageSize],
-    queryFn: () => fetchRuns({ page, page_size: pageSize }),
-    refetchInterval: query => (query.state.data?.items ?? []).some((run: Run) => ACTIVE.has(run.status)) ? 3000 : false,
+    queryKey: ['runs', filter, deviceFilter, keyword.trim(), page, pageSize],
+    queryFn: () => fetchRuns({
+      status: filter,
+      device_id: deviceFilter === 'all' ? undefined : deviceFilter,
+      q: keyword.trim() || undefined,
+      page,
+      page_size: pageSize,
+    }),
+    refetchInterval: query => query.state.data?.has_active ? 3000 : false,
   })
   const runs = runPage?.items ?? []
   const totalRuns = runPage?.total ?? 0
@@ -107,17 +113,12 @@ export default function Runs() {
   const passedCases = completed.reduce((sum, run) => sum + (run.passed || 0), 0)
   const totalCases = completed.reduce((sum, run) => sum + (run.total || 0), 0)
   const passRate = totalCases ? Math.round(passedCases / totalCases * 100) : 0
-  const filtered = useMemo(() => {
-    const q = keyword.trim().toLowerCase()
-    return [...runs].filter(run => {
-      if (filter === 'active' && !ACTIVE.has(run.status)) return false
-      if (filter === 'done' && run.status !== 'done') return false
-      if (filter === 'problem' && !['error', 'interrupted'].includes(run.status)) return false
-      if (deviceFilter !== 'all' && run.device_id !== deviceFilter) return false
-      if (q && ![run.suite_name || '', run.suite_id, run.provider, run.model, run.id].some(value => value.toLowerCase().includes(q))) return false
-      return true
-    }).sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime())
-  }, [runs, filter, deviceFilter, keyword])
+  const filtered = runs
+  const totalPages = Math.max(1, Math.ceil(totalRuns / pageSize))
+
+  useEffect(() => {
+    if (page > totalPages) setPage(totalPages)
+  }, [page, totalPages])
 
   return <div className="space-y-6">
     <header className="flex flex-wrap items-end justify-between gap-4">
@@ -127,19 +128,19 @@ export default function Runs() {
 
     <section className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
       <Metric label="任务总数" value={totalRuns} note="全部运行记录" />
-      <Metric label="正在执行" value={activeCount} note="排队、准备或运行中" tone="blue" />
-      <Metric label="执行异常" value={failedCount} note="错误或服务中断" tone={failedCount ? 'red' : 'neutral'} />
-      <Metric label="历史用例通过率" value={totalCases ? passRate : 0} note={totalCases ? `基于 ${totalCases} 个已结束用例` : '暂无已结束用例'} tone="green" />
+      <Metric label="当前页执行中" value={activeCount} note="本页排队、准备或运行中" tone="blue" />
+      <Metric label="当前页异常" value={failedCount} note="本页错误或服务中断" tone={failedCount ? 'red' : 'neutral'} />
+      <Metric label="当前页用例通过率" value={totalCases ? passRate : 0} note={totalCases ? `基于本页 ${totalCases} 个已结束用例` : '本页暂无已结束用例'} tone="green" />
     </section>
 
     <section className="rounded-xl border border-hairline bg-white p-4 shadow-sm sm:p-5">
       <div className="flex flex-wrap items-center justify-between gap-3"><div><h2 className="font-semibold text-ink">任务运行列表</h2><p className="mt-1 text-xs text-ink-mute">执行中的任务每 3 秒自动刷新</p></div><button onClick={() => void refetch()} className="rounded-lg border border-hairline px-3 py-2 text-xs font-medium text-ink-mute hover:bg-canvas-cool">↻ 刷新</button></div>
       <div className="mt-4 flex flex-col gap-3 lg:flex-row">
         <div className="flex flex-1 flex-wrap gap-1 rounded-lg bg-canvas-soft p-1">
-          {([{ id: 'all', label: '全部任务' }, { id: 'active', label: '执行中' }, { id: 'done', label: '已完成' }, { id: 'problem', label: '异常中断' }] as { id: Filter; label: string }[]).map(item => <button key={item.id} onClick={() => setFilter(item.id)} className={`rounded-md px-3 py-2 text-xs font-medium transition-colors ${filter === item.id ? 'bg-white text-primary shadow-sm' : 'text-ink-mute hover:text-ink'}`}>{item.label}</button>)}
+          {([{ id: 'all', label: '全部任务' }, { id: 'active', label: '执行中' }, { id: 'done', label: '已完成' }, { id: 'problem', label: '异常中断' }] as { id: Filter; label: string }[]).map(item => <button key={item.id} onClick={() => { setFilter(item.id); setPage(1) }} className={`rounded-md px-3 py-2 text-xs font-medium transition-colors ${filter === item.id ? 'bg-white text-primary shadow-sm' : 'text-ink-mute hover:text-ink'}`}>{item.label}</button>)}
         </div>
-        <input value={keyword} onChange={e => setKeyword(e.target.value)} placeholder="搜索任务名称、模型或运行 ID" className="min-w-0 flex-1 rounded-lg border border-hairline px-3 py-2 text-sm outline-none focus:border-primary lg:max-w-xs" />
-        <select value={deviceFilter} onChange={e => setDeviceFilter(e.target.value)} className="rounded-lg border border-hairline bg-white px-3 py-2 text-sm text-ink"><option value="all">全部设备</option>{devices.map(device => <option key={device.id} value={device.id}>{device.name}</option>)}</select>
+        <input value={keyword} onChange={e => { setKeyword(e.target.value); setPage(1) }} placeholder="搜索任务名称、模型或运行 ID" className="min-w-0 flex-1 rounded-lg border border-hairline px-3 py-2 text-sm outline-none focus:border-primary lg:max-w-xs" />
+        <select value={deviceFilter} onChange={e => { setDeviceFilter(e.target.value); setPage(1) }} className="rounded-lg border border-hairline bg-white px-3 py-2 text-sm text-ink"><option value="all">全部设备</option>{devices.map(device => <option key={device.id} value={device.id}>{device.name}</option>)}</select>
       </div>
     </section>
 
@@ -154,8 +155,8 @@ export default function Runs() {
           <select value={pageSize} onChange={e => { setPageSize(Number(e.target.value)); setPage(1) }} className="rounded border border-hairline bg-white px-2 py-1 text-ink"><option value={10}>10 条</option><option value={20}>20 条</option><option value={50}>50 条</option><option value={100}>100 条</option></select>
         </label>
         <button disabled={page <= 1} onClick={() => setPage(p => p - 1)} className="rounded border border-hairline px-2 py-1 disabled:opacity-40">上一页</button>
-        <span>第 {page} / {Math.max(1, Math.ceil(totalRuns / pageSize))} 页</span>
-        <button disabled={page >= Math.ceil(totalRuns / pageSize)} onClick={() => setPage(p => p + 1)} className="rounded border border-hairline px-2 py-1 disabled:opacity-40">下一页</button>
+        <span>第 {page} / {totalPages} 页</span>
+        <button disabled={page >= totalPages} onClick={() => setPage(p => p + 1)} className="rounded border border-hairline px-2 py-1 disabled:opacity-40">下一页</button>
       </div>
     </div>
   </div>
