@@ -132,8 +132,8 @@ export default function ExplorationCenter() {
   })
 
   const generatePlan = useMutation({
-    mutationFn: async (id: string) => (await api.post<{ plan_id: string; warnings: string[]; message: string }>(`/exploration/sessions/${id}/generate-plan`)).data,
-    onSuccess: result => setGeneratedPlanId(result.plan_id),
+    mutationFn: async (id: string) => (await api.post<{ plan_id: string; suite_id: string; warnings: string[]; message: string }>(`/exploration/sessions/${id}/generate-plan`)).data,
+    onSuccess: result => { setGeneratedPlanId(result.plan_id); window.location.assign(`/execution-plans?suite=${encodeURIComponent(result.suite_id)}`) },
   })
   const reviewKnowledge = useMutation({
     mutationFn: async ({ id, status }: { id: string; status: string }) => api.patch(`/exploration/knowledge/${id}`, { status }),
