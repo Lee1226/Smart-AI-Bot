@@ -71,6 +71,12 @@ def _validate_lifecycle_actions(metadata: Dict[str, Any]) -> None:
                 continue
             action = str(item.get("action") or "").strip().lower()
             args = item.get("args") if isinstance(item.get("args"), dict) else {}
+            try:
+                wait_after_ms = float(item.get("wait_after_ms", 0) or 0)
+            except (TypeError, ValueError):
+                wait_after_ms = -1
+            if not 0 <= wait_after_ms <= 60000:
+                raise HTTPException(status_code=422, detail=f"metadata.{phase}[{index}].wait_after_ms must be 0..60000")
             if action not in {"stop_app", "start_app", "global_action", "press_key", "wait", "tap", "input_text", "swipe", "scroll"}:
                 raise HTTPException(status_code=422, detail=f"metadata.{phase}[{index}] unsupported action: {action}")
             if action in {"stop_app", "start_app"} and not str(args.get("package_name") or args.get("package") or "").strip():
