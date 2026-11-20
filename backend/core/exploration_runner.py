@@ -22,7 +22,7 @@ from core.settings_store import (
 from core.test_agent import TestCaseAgent
 from core.test_parser import TestCaseData
 from db.database import AsyncSessionLocal
-from db.exploration_models import ExploreSession, ExploreStep
+from db.exploration_models import ExploreKnowledge, ExploreSession, ExploreStep
 
 logger = logging.getLogger(__name__)
 exploration_jobs: dict[str, asyncio.Task] = {}
