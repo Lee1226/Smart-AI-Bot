@@ -4,6 +4,7 @@ export interface LifecycleAction {
   args: Record<string, unknown>
   enabled: boolean
   on_failure?: 'stop' | 'continue' | string
+  wait_after_ms?: number
 }
 
 const ACTION_OPTIONS = [
@@ -39,6 +40,7 @@ export default function LifecycleActionEditor({
     args: { package_name: '' },
     enabled: true,
     on_failure: 'stop',
+    wait_after_ms: 0,
   }])
   const patch = (index: number, next: Partial<LifecycleAction>) =>
     onChange(actions.map((item, i) => i === index ? { ...item, ...next, args: next.args ? { ...item.args, ...next.args } : item.args } : item))
@@ -154,6 +156,12 @@ export default function LifecycleActionEditor({
                   <input type="number" min="0" max="60000" className={inputClass} value={String(item.args.duration_ms ?? 1000)} onChange={e => patch(index, { args: { duration_ms: Math.max(0, Math.min(60000, Number(e.target.value) || 0)) } })} />
                 </div>
               )}
+              <div className="grid grid-cols-[1fr_auto] items-end gap-2">
+                <label className="block text-[11px] text-gray-500">操作后等待时间（毫秒）
+                  <input type="number" min="0" max="60000" step="100" className={inputClass + ' mt-1'} value={String(item.wait_after_ms ?? 0)} onChange={e => patch(index, { wait_after_ms: Math.max(0, Math.min(60000, Number(e.target.value) || 0)) })} />
+                </label>
+                <span className="pb-2 text-[11px] text-gray-400">0 = 不等待</span>
+              </div>
               <div className="flex items-center gap-2">
                 <label className="text-[11px] text-gray-500">失败时</label>
                 <select className="rounded border border-gray-200 bg-white px-2 py-1 text-xs" value={item.on_failure || 'stop'} onChange={e => patch(index, { on_failure: e.target.value })}>
