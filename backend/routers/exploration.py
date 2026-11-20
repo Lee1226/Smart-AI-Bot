@@ -148,7 +148,7 @@ async def overview(request: Request, db: AsyncSession = Depends(get_db)):
     ))).scalars().all()
     return {
         "session_total": len(sessions),
-        "session_running": sum(row.status == "running" for row in sessions),
+        "session_running": sum(row.status in {"queued", "running"} for row in sessions),
         "session_completed": sum(row.status == "completed" for row in sessions),
         "knowledge_total": len(knowledge),
         "knowledge_pending": sum(row.status in {"discovered", "pending_review"} for row in knowledge),
