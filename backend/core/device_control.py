@@ -51,6 +51,17 @@ async def execute_manual_device_control(
     device pixels and must not be scaled a second time.
     """
     if action in ("tap", "swipe"):
+        if coordinate_space == "model_image_px":
+            if action == "tap":
+                if x is None or y is None:
+                    raise ValueError("触控坐标缺失")
+                await transport.tap(x, y)
+            else:
+                if any(value is None for value in (x, y, x2, y2)):
+                    raise ValueError("触控坐标缺失")
+                await transport.swipe(x, y, x2, y2, duration_ms)
+            return
+
         required = (x, y) if action == "tap" else (x, y, x2, y2)
         if any(value is None for value in required):
             raise ValueError("触控坐标缺失")
