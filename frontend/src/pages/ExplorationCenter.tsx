@@ -140,7 +140,7 @@ export default function ExplorationCenter() {
         <div className="mb-3 flex items-center justify-between"><h2 className="text-sm font-semibold">最近探索</h2><Link to="/exploration/history" className="text-xs text-primary">查看全部 →</Link></div>
         {(overview?.recent_sessions || []).length === 0 ? <Empty title="还没有探索记录" desc="创建一次探索任务，开始记录设备操作轨迹。" action={<Link to="/exploration/new" className="text-sm text-primary">新建探索</Link>} /> : <div className="divide-y divide-hairline">{overview?.recent_sessions.map(row => <Link key={row.id} to={`/exploration/history?session=${row.id}`} className="flex flex-wrap items-center justify-between gap-3 py-3"><div className="min-w-0"><div className="truncate text-sm font-medium">{row.title}</div><div className="mt-1 truncate text-xs text-ink-mute">{row.goal}</div></div><Status value={row.status} /></Link>)}</div>}
       </section>
-      <div className="rounded-xl border border-blue-100 bg-blue-50/60 p-4 text-xs leading-5 text-blue-900"><strong>当前阶段说明：</strong>探索会话与经验数据已支持持久化。设备自动探索、轨迹采集、计划自动生成和真机回放验证尚未接通；创建会话只保存探索任务，不会操作手机。</div>
+      <div className="rounded-xl border border-blue-100 bg-blue-50/60 p-4 text-xs leading-5 text-blue-900"><strong>当前阶段说明：</strong>AI 探索执行已接入现有 Agent 和设备控制通道，任务与普通测试共用设备独占锁；当前已支持启动、排队、停止、步骤与截图证据记录。经验自动识别、暂停/人工接管和计划生成验证仍在后续阶段。</div>
     </>}
 
     {isNew && <>
