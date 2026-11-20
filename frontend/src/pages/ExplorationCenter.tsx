@@ -1,13 +1,14 @@
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { Link, useLocation, useNavigate, useSearchParams } from 'react-router-dom'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { api, fetchDevices, type Device } from '../lib/api'
 import { useT } from '../lib/i18n'
 
+type ExploreStep = { id: string; sequence: number; event_type: string; title: string; detail: string; action: string; status: string; duration_ms: number; evidence: Record<string, string>; page_before: { ui_text?: string }; page_after: { ui_text?: string }; action_args: Record<string, unknown> }
 type ExploreSession = {
   id: string; title: string; goal: string; expected_result: string; device_id: string
   platform: string; status: string; summary: string; created_at: string
-  steps?: { id: string; sequence: number; event_type: string; title: string; detail: string; action: string; status: string; duration_ms: number }[]
+  steps?: ExploreStep[]
 }
 type ExploreKnowledge = {
   id: string; title: string; category: string; description: string; status: string
@@ -38,7 +39,24 @@ const statusClass: Record<string, string> = {
   draft: 'bg-slate-100 text-slate-600', paused: 'bg-slate-100 text-slate-600',
 }
 
-function Status({ value }: { value: string }) {
+
+function EvidenceImage({ sessionId, filename, label }: { sessionId: string; filename?: string; label: string }) {
+  const [url, setUrl] = useState('')
+  useEffect(() => {
+    let objectUrl = ''
+    let active = true
+    if (!filename) { setUrl(''); return }
+    api.get(`/exploration/sessions/${sessionId}/evidence/${encodeURIComponent(filename)}`, { responseType: 'blob' })
+      .then(response => {
+        objectUrl = URL.createObjectURL(response.data)
+        if (active) setUrl(objectUrl)
+      }).catch(() => { if (active) setUrl('') })
+    return () => { active = false; if (objectUrl) URL.revokeObjectURL(objectUrl) }
+  }, [sessionId, filename])
+  if (!filename) return null
+  return <div className="min-w-0"><div className="mb-1 text-[11px] text-ink-faint">{label}</div>{url ? <a href={url} target="_blank" rel="noreferrer"><img src={url} alt={label} className="max-h-80 w-full rounded-lg border border-hairline object-contain bg-black/5" /></a> : <div className="rounded-lg bg-canvas-soft p-3 text-xs text-ink-faint">证据读取中或暂不可用</div>}</div>
+}
+\nfunction Status({ value }: { value: string }) {
   return <span className={`inline-flex rounded-full px-2 py-1 text-xs ${statusClass[value] || 'bg-slate-100 text-slate-600'}`}>{statusLabel[value] || value}</span>
 }
 function PageTitle({ title, desc, action }: { title: string; desc: string; action?: React.ReactNode }) {
@@ -65,7 +83,7 @@ export default function ExplorationCenter() {
   const [platform, setPlatform] = useState('android')
   const [appPackage, setAppPackage] = useState('')
   const [maxSteps, setMaxSteps] = useState(20)
-  const [timeoutSeconds, setTimeoutSeconds] = useState(300)
+  const [timeoutSeconds, setTimeoutSeconds] = useState(300)\n  const [generatedPlanId, setGeneratedPlanId] = useState('')
   const { data: overview } = useQuery({ queryKey: ['exploration-overview'], queryFn: async () => (await api.get<Overview>('/exploration/overview')).data })
   const { data: devices = [] } = useQuery({ queryKey: ['devices'], queryFn: fetchDevices, enabled: isNew, refetchInterval: 5000 })
   const selectedSessionId = isHistory ? searchParams.get('session') || '' : ''
@@ -110,7 +128,12 @@ export default function ExplorationCenter() {
       await qc.invalidateQueries({ queryKey: ['exploration-overview'] })
     },
   })
-  const reviewKnowledge = useMutation({
+
+  const generatePlan = useMutation({
+    mutationFn: async (id: string) => (await api.post<{ plan_id: string; warnings: string[]; message: string }>(`/exploration/sessions/${id}/generate-plan`)).data,
+    onSuccess: result => setGeneratedPlanId(result.plan_id),
+  })
+    const reviewKnowledge = useMutation({
     mutationFn: async ({ id, status }: { id: string; status: string }) => api.patch(`/exploration/knowledge/${id}`, { status }),
     onSuccess: () => qc.invalidateQueries({ queryKey: ['exploration-knowledge'] }),
   })
@@ -174,14 +197,16 @@ export default function ExplorationCenter() {
       {selectedSession && <section className="rounded-xl border border-hairline bg-white p-4">
         <div className="flex flex-wrap items-start justify-between gap-3"><div><div className="text-sm font-semibold">{selectedSession.title}</div><p className="mt-1 text-xs text-ink-mute">{selectedSession.goal}</p></div><div className="flex items-center gap-2"><Status value={selectedSession.status} />{['queued', 'running'].includes(selectedSession.status) && <button onClick={() => stopSession.mutate(selectedSession.id)} disabled={stopSession.isPending} className="rounded-md border border-red-200 px-3 py-1.5 text-xs text-red-600 disabled:opacity-50">停止探索</button>}</div></div>
         {selectedSession.expected_result && <div className="mt-3 rounded-lg bg-canvas-soft p-3 text-xs"><strong>预期结果：</strong>{selectedSession.expected_result}</div>}{selectedSession.summary && <div className="mt-3 rounded-lg bg-blue-50 p-3 text-xs text-blue-900">{selectedSession.summary}</div>}{selectedSession.error_message && <div className="mt-3 rounded-lg bg-red-50 p-3 text-xs text-red-700">{selectedSession.error_message}</div>}
-        <div className="mt-4 flex items-center justify-between"><h3 className="text-sm font-semibold">探索轨迹</h3><span className="text-xs text-ink-faint">{selectedSession.steps?.length || 0} 个事件</span></div>
-        {!selectedSession.steps?.length ? <p className="mt-3 text-xs text-ink-faint">正在等待探索步骤，页面会自动刷新。</p> : <ol className="mt-3 space-y-3">{selectedSession.steps.map(step => <li key={step.id} className="flex gap-3 border-l-2 border-primary/30 pl-3"><div className="min-w-0 flex-1"><div className="text-xs font-semibold">{step.sequence}. {step.title || step.action || step.event_type}</div>{step.detail && <p className="mt-1 text-xs text-ink-mute">{step.detail}</p>}</div><span className="text-[11px] text-ink-faint">{step.duration_ms} ms</span></li>)}</ol>}
+        <div className="mt-4 flex flex-wrap items-center justify-between gap-2"><div><h3 className="text-sm font-semibold">探索轨迹</h3><span className="text-xs text-ink-faint">{selectedSession.steps?.length || 0} 个动作事件 · 前后截图与 UI 状态</span></div>{['completed', 'failed'].includes(selectedSession.status) && !!selectedSession.steps?.length && <button onClick={() => generatePlan.mutate(selectedSession.id)} disabled={generatePlan.isPending} className="rounded-md bg-primary px-3 py-2 text-xs font-medium text-white disabled:opacity-50">{generatePlan.isPending ? '生成中…' : '生成执行计划草稿'}</button>}</div>
+        {generatePlan.isError && <p className="mt-2 text-xs text-red-600">{String((generatePlan.error as Error)?.message || generatePlan.error)}</p>}
+        {generatedPlanId && <div className="mt-2 rounded-lg bg-green-50 p-3 text-xs text-green-800">执行计划草稿已创建：{generatedPlanId}。步骤仍需人工确认操作意图和验证条件。<Link className="ml-2 underline" to="/execution-plans">打开执行计划管理</Link></div>}
+        {!selectedSession.steps?.length ? <p className="mt-3 text-xs text-ink-faint">正在等待探索步骤，页面会自动刷新。</p> : <ol className="mt-3 space-y-4">{selectedSession.steps.map(step => <li key={step.id} className="rounded-xl border border-hairline p-3"><div className="flex items-start justify-between gap-3"><div className="min-w-0"><div className="text-sm font-semibold">{step.sequence}. {step.title || step.action || step.event_type}</div>{step.detail && <p className="mt-1 text-xs text-ink-mute">{step.detail}</p>}<div className="mt-1 text-[11px] text-ink-faint">动作：{step.action || '—'} · 状态：{step.status} · {step.duration_ms} ms</div></div></div><div className="mt-3 grid gap-3 md:grid-cols-2"><EvidenceImage sessionId={selectedSession.id} filename={step.evidence?.before_screenshot?.split('/').pop()} label="操作前截图" /><EvidenceImage sessionId={selectedSession.id} filename={step.evidence?.after_screenshot?.split('/').pop()} label="操作后截图" /></div>{(step.page_before?.ui_text || step.page_after?.ui_text) && <details className="mt-3 rounded-lg bg-canvas-soft p-3"><summary className="cursor-pointer text-xs font-medium">查看前后 UI 层级信息</summary><div className="mt-2 grid gap-3 md:grid-cols-2"><div><div className="mb-1 text-[11px] font-semibold">操作前</div><pre className="max-h-56 overflow-auto whitespace-pre-wrap text-[11px] text-ink-mute">{step.page_before?.ui_text || '无'}</pre></div><div><div className="mb-1 text-[11px] font-semibold">操作后</div><pre className="max-h-56 overflow-auto whitespace-pre-wrap text-[11px] text-ink-mute">{step.page_after?.ui_text || '无'}</pre></div></div></details>}</li>)}</ol>}
       </section>}
     </>}
 
     {isKnowledge && <>
       <PageTitle title="探索经验库" desc="沉淀权限弹窗、广告弹窗、登录过期、网络异常等可复用处理经验。" />
-      {knowledgeLoading ? <div className="py-10 text-center text-sm text-ink-faint">正在读取经验条目…</div> : knowledge.length === 0 ? <Empty title="经验库还是空的" desc="探索过程中发现的复杂场景将在这里形成经验候选，审核确认后才能供执行计划复用。" /> : <div className="grid gap-3 md:grid-cols-2">{knowledge.map(item => <article key={item.id} className="rounded-xl border border-hairline bg-white p-4"><div className="flex items-start justify-between gap-2"><h3 className="text-sm font-semibold">{item.title}</h3><Status value={item.status} /></div><p className="mt-2 text-xs leading-5 text-ink-mute">{item.description || '暂无场景说明'}</p><div className="mt-3 flex flex-wrap gap-2 text-[11px] text-ink-faint"><span>{item.category}</span>{item.app_package && <span>· {item.app_package}</span>}<span>· 风险：{item.risk_level}</span></div>{item.status !== 'confirmed' && item.status !== 'disabled' && <div className="mt-4 flex gap-2"><button onClick={() => reviewKnowledge.mutate({ id: item.id, status: 'confirmed' })} className="rounded-md bg-primary px-3 py-1.5 text-xs text-white">确认经验</button><button onClick={() => reviewKnowledge.mutate({ id: item.id, status: 'invalidated' })} className="rounded-md border border-hairline px-3 py-1.5 text-xs">标记无效</button></div>}</article>)}</div>}
+      {knowledgeLoading ? <div className="py-10 text-center text-sm text-ink-faint">正在读取经验条目…</div> : knowledge.length === 0 ? <Empty title="经验库还是空的" desc="探索过程中发现的复杂场景将在这里形成经验候选，审核确认后才能供执行计划复用。" /> : <div className="grid gap-3 md:grid-cols-2">{knowledge.map(item => <article key={item.id} className="rounded-xl border border-hairline bg-white p-4"><div className="flex items-start justify-between gap-2"><h3 className="text-sm font-semibold">{item.title}</h3><Status value={item.status} /></div><p className="mt-2 text-xs leading-5 text-ink-mute">{item.description || '暂无场景说明'}</p>{item.source_session_id && item.evidence?.after_screenshot && <div className="mt-3 max-w-sm"><EvidenceImage sessionId={item.source_session_id} filename={item.evidence.after_screenshot.split('/').pop()} label="场景证据" /></div>}<details className="mt-3 rounded-lg bg-canvas-soft p-3"><summary className="cursor-pointer text-xs font-medium">识别依据与处理建议</summary><pre className="mt-2 whitespace-pre-wrap text-[11px] text-ink-mute">{JSON.stringify({ trigger: item.trigger_conditions, recognition: item.recognition_rules, handling: item.handling_rules }, null, 2)}</pre></details><div className="mt-3 flex flex-wrap gap-2 text-[11px] text-ink-faint"><span>{item.category}</span>{item.app_package && <span>· {item.app_package}</span>}<span>· 风险：{item.risk_level}</span></div>{item.status !== 'confirmed' && item.status !== 'disabled' && <div className="mt-4 flex gap-2"><button onClick={() => reviewKnowledge.mutate({ id: item.id, status: 'confirmed' })} className="rounded-md bg-primary px-3 py-1.5 text-xs text-white">确认经验</button><button onClick={() => reviewKnowledge.mutate({ id: item.id, status: 'invalidated' })} className="rounded-md border border-hairline px-3 py-1.5 text-xs">标记无效</button></div>}</article>)}</div>}
     </>}
 
     {isPlans && <>
