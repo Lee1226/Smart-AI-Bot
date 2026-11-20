@@ -137,6 +137,9 @@ function PlanReviewWorkspace() {
   const blockers = steps.flatMap((step, index) => {
     const issues: string[] = []
     if (!step.action || !step.executor) issues.push('动作类型或执行策略未配置')
+    if (step.action === 'tap_element' && !Object.values(step.locator || {}).some(value => String(value || '').trim())) {
+      issues.push('缺少可复用的控件定位信息，不能仅依赖探索时的控件索引')
+    }
     if (['ai', 'hybrid'].includes(step.executor) &&
       (step.intent?.status !== 'confirmed' || !step.intent.description?.trim() || !step.intent.expected_result?.trim())) {
       issues.push('操作意图或预期结果尚未人工确认')
