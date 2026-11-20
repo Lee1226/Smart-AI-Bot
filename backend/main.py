@@ -69,9 +69,9 @@ async def lifespan(app: FastAPI):
     try:
         yield
     finally:
-        await shutdown()
         from core.exploration_runner import shutdown_explorations
         await shutdown_explorations()
+        await shutdown()
         from routers.ios_local import shutdown as shutdown_ios
         await shutdown_ios()
 
