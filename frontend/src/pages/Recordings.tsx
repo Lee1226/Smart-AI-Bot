@@ -57,9 +57,11 @@ function RecordingCard({ item, onDeleted }: { item: RecordingItem; onDeleted: ()
 
 export default function Recordings() {
   const [keyword, setKeyword] = useState('')
+  const [page, setPage] = useState(1)
+  const [pageSize, setPageSize] = useState(20)
   const { data, isLoading, isError, refetch } = useQuery({
-    queryKey: ['recordings'],
-    queryFn: fetchRecordings,
+    queryKey: ['recordings', page, pageSize],
+    queryFn: () => fetchRecordings({ page, page_size: pageSize }),
   })
   const items = data?.items ?? []
   const filtered = useMemo(() => {
@@ -85,8 +87,8 @@ export default function Recordings() {
     </section>
 
     <section className="flex flex-wrap items-center gap-3 rounded-xl border border-hairline bg-white p-4">
-      <input value={keyword} onChange={e => setKeyword(e.target.value)} placeholder="搜索任务名称、设备或运行 ID" className="min-w-0 flex-1 rounded-lg border border-hairline px-3 py-2 text-sm outline-none focus:border-primary" />
-      <span className="text-xs text-ink-mute">显示 {filtered.length} / {items.length} 条</span>
+      <input value={keyword} onChange={e => { setKeyword(e.target.value); setPage(1) }} placeholder="搜索当前页录像：任务名称、设备或运行 ID" className="min-w-0 flex-1 rounded-lg border border-hairline px-3 py-2 text-sm outline-none focus:border-primary" />
+      <span className="text-xs text-ink-mute">当前页 {filtered.length} 条 / 共 {data?.total ?? 0} 条</span>
     </section>
 
     {isLoading && <div className="rounded-xl border border-hairline bg-white p-10 text-center text-sm text-ink-mute">正在读取录像文件…</div>}
@@ -97,7 +99,15 @@ export default function Recordings() {
       <p className="mt-1 text-xs text-ink-mute">{items.length ? '请调整搜索关键词。' : '完成支持本机 ADB 录制的测试任务后，录像会显示在这里。'}</p>
       <Link to="/runs" className="mt-4 inline-block text-xs font-medium text-primary hover:underline">查看测试任务</Link>
     </div>}
-    <section className="space-y-3">{filtered.map(item => <RecordingCard key={item.run_id} item={item} onDeleted={() => undefined} />)}</section>
+    <section className="space-y-3">{filtered.map(item => <RecordingCard key={item.run_id} item={item} onDeleted={() => { void refetch() }} />)}</section>
+    {(data?.total ?? 0) > 0 && <div className="flex flex-wrap items-center justify-end gap-3 text-xs text-ink-mute">
+      <label className="flex items-center gap-2">每页显示
+        <select value={pageSize} onChange={e => { setPageSize(Number(e.target.value)); setPage(1) }} className="rounded border border-hairline bg-white px-2 py-1 text-ink"><option value={10}>10 条</option><option value={20}>20 条</option><option value={50}>50 条</option><option value={100}>100 条</option></select>
+      </label>
+      <button disabled={page <= 1} onClick={() => setPage(p => p - 1)} className="rounded border border-hairline px-2 py-1 disabled:opacity-40">上一页</button>
+      <span>第 {page} / {Math.max(1, Math.ceil((data?.total ?? 0) / pageSize))} 页</span>
+      <button disabled={page >= Math.ceil((data?.total ?? 0) / pageSize)} onClick={() => setPage(p => p + 1)} className="rounded border border-hairline px-2 py-1 disabled:opacity-40">下一页</button>
+    </div>}
     <p className="text-xs text-ink-mute">当前版本只列出后端本地 ADB 录制成功生成的 MP4 文件；未生成录像的任务不会显示。删除录像不会删除任务结果。</p>
   </div>
 }
