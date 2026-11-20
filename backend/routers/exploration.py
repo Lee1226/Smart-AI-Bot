@@ -411,7 +411,7 @@ async def generate_execution_plan(session_id: str, request: Request, db: AsyncSe
         raise HTTPException(status_code=422, detail="没有可转换的操作步骤")
 
     steps, warnings = [], []
-    supported = {"tap", "swipe", "scroll", "input_text", "global_action", "press_key", "start_app", "wait"}
+    supported = {"tap", "tap_element", "swipe", "scroll", "input_text", "global_action", "press_key", "start_app", "wait"}
     for index, trace in enumerate(traces, 1):
         if trace.event_type != "action":
             continue
@@ -422,7 +422,7 @@ async def generate_execution_plan(session_id: str, request: Request, db: AsyncSe
         locator = {}
         if action == "tap_element":
             target_index = args.get("index")
-            element = next((item for item in elements if item.get("index") == target_index), None)
+            element = next((item for item in elements if str(item.get("index")) == str(target_index)), None)
             if element:
                 for source, dest in (("resourceId", "resource_id"), ("text", "text"),
                                      ("contentDescription", "content_description"), ("className", "class_name")):
@@ -432,7 +432,7 @@ async def generate_execution_plan(session_id: str, request: Request, db: AsyncSe
                 action = "tap"
                 args = {}
             else:
-                warnings.append(f"步骤 {index}: 原始控件索引缺少可复用定位信息，需要人工补充")
+                warnings.append(f"步骤 {index}: 原始控件索引 {target_index!r} 缺少可复用定位信息；已保留 tap_element 动作，需人工补充定位后才能回放")
         if action not in supported:
             warnings.append(f"步骤 {index}: 动作 {trace.action or '(空)'} 暂不支持自动回放")
             continue
