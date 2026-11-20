@@ -16,7 +16,7 @@ type SceneTimeline = {
 }
 type ExploreSession = {
   id: string; title: string; goal: string; expected_result: string; device_id: string
-  platform: string; status: string; summary: string; created_at: string
+  platform: string; status: string; summary: string; error_message: string; created_at: string
   steps?: ExploreStep[]
 }
 type ExploreKnowledge = {
@@ -304,7 +304,7 @@ export default function ExplorationCenter() {
     queryKey: ['exploration-session', selectedSessionId],
     queryFn: async () => (await api.get<ExploreSession>(`/exploration/sessions/${selectedSessionId}`)).data,
     enabled: !!selectedSessionId,
-    refetchInterval: query => ['queued', 'running'].includes(query.state.data?.status || '') ? 1500 : false,
+    refetchInterval: ['queued', 'running'].includes(selectedSession?.status || '') ? 1500 : false,
   })
   const { data: sceneTimeline } = useQuery({
     queryKey: ['exploration-timeline', selectedSessionId],
