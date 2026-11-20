@@ -344,6 +344,9 @@ async def run_execution_plan(
     db.add(run)
     await db.flush()
     db.add(TestResult(run_id=run.id, case_id=case.id, status="pending", account_id=account_id))
+    plan.status = "draft"
+    plan.validated_run_id = ""
+    plan.updated_at = datetime.utcnow()
     await db.commit()
     await db.refresh(run)
     from core.test_runner import start_execution_plan_run
