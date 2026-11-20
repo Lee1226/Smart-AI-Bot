@@ -22,6 +22,7 @@ async def init_db():
     from db import models  # noqa: F401
     from db import exploration_models  # noqa: F401
     from db import skill_models  # noqa: F401
+    from db import skill_validation_models  # noqa: F401
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
 
