@@ -93,8 +93,8 @@ export default function Workbench() {
       <div className="absolute inset-0 -z-10 bg-[radial-gradient(circle_at_12%_16%,rgba(255,255,255,0.75),transparent_38%),linear-gradient(135deg,transparent_48%,rgba(255,255,255,0.18)_48.2%,transparent_68%)]" />
       <div className="relative z-10 max-w-[58%]">
         <div className="mb-3 inline-flex items-center gap-1.5 rounded-full border border-white/60 bg-white/40 px-2.5 py-1 text-[10px] font-semibold tracking-[0.16em] text-blue-700 backdrop-blur">AI TERMINAL TESTING PLATFORM</div>
-        <h1 className="text-2xl font-bold leading-[1.4] tracking-tight text-[#10213E] sm:text-2xl xl:text-[30px]">欢迎使用<br className="hidden sm:block" />翼矩AI终端测试系统</h1>
-        <p className="mt-4 text-sm font-medium text-slate-600 sm:text-base">让终端测试更智能、更高效</p>
+        <h1 className="text-2xl font-bold leading-[1.25] tracking-tight text-[#10213E] sm:text-2xl xl:text-[30px]"><span className="block">欢迎使用</span><span className="mt-2 block">翼矩AI终端测试系统</span></h1>
+        <p className="mt-3 text-sm font-medium text-slate-600 sm:text-base">让终端测试更智能、更高效</p>
         <Link to="/quick" className="mt-5 inline-flex items-center gap-2 rounded-full bg-gradient-to-r from-blue-600 to-blue-500 px-5 py-2.5 text-xs font-semibold text-white shadow-lg shadow-blue-400/30 transition hover:-translate-y-0.5 hover:shadow-xl">
           <span className="text-base">▶</span>开始工作
         </Link>
