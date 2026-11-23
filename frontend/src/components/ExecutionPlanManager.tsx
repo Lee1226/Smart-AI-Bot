@@ -26,8 +26,8 @@ const ACTIONS = [
   { value: 'tap_element', label: '点击页面元素（旧格式）' },
 ]
 
-const fieldClass = 'w-full min-w-0 rounded-md border border-gray-200 bg-white px-2.5 py-2 text-sm text-gray-800 outline-none focus:border-blue-400 focus:ring-2 focus:ring-blue-100'
-const labelClass = 'mb-1 block text-[11px] font-medium text-gray-500'
+const fieldClass = 'w-full min-w-0 rounded-xl border border-slate-200 bg-slate-50/60 px-3 py-2.5 text-sm text-slate-700 outline-none transition focus:border-blue-400 focus:bg-white focus:ring-4 focus:ring-blue-500/10'
+const labelClass = 'mb-1.5 block text-xs font-semibold text-slate-600'
 
 function asNumber(value: unknown): string {
   return value === undefined || value === null ? '' : String(value)
@@ -325,18 +325,18 @@ export default function ExecutionPlanManager({ suiteId, platform, device }: { su
   if (cases.length === 0) return null
 
   return (
-    <section className="mt-6 overflow-hidden rounded-xl border border-gray-200 bg-white shadow-sm">
-      <div className="flex flex-wrap items-center justify-between gap-3 border-b bg-slate-50 px-4 py-3">
+    <section className="mt-6 overflow-hidden rounded-2xl border border-slate-200/80 bg-white shadow-[0_10px_32px_rgba(31,75,135,0.06)]">
+      <div className="flex flex-wrap items-center justify-between gap-3 border-b border-slate-100 bg-slate-50/80 px-5 py-4">
         <div>
           <h2 className="text-sm font-semibold text-gray-800">{t('执行计划', 'Execution plans')}</h2>
           <p className="mt-0.5 text-xs text-gray-500">{t('检查和调整自动化步骤，无需编辑 JSON。', 'Review and adjust automation steps without editing JSON.')}</p>
         </div>
         <span className="rounded-full bg-blue-50 px-2.5 py-1 text-[11px] text-blue-700">{t('可视化编辑', 'Visual editor')}</span>
       </div>
-      <div className="space-y-4 p-4">
+      <div className="space-y-5 p-5">
         <div className="flex flex-wrap items-center gap-2">
           <label className="text-xs font-medium text-gray-500">{t('录制用例', 'Recorded case')}</label>
-          <select className="min-w-[220px] flex-1 rounded-md border border-gray-200 bg-white px-3 py-2 text-sm"
+          <select className="min-w-[220px] flex-1 rounded-xl border border-slate-200 bg-slate-50/60 px-3 py-2.5 text-sm outline-none transition focus:border-blue-400 focus:bg-white focus:ring-4 focus:ring-blue-500/10"
             value={activeCaseId} onChange={e => { setCaseId(e.target.value); setPlanId(''); setEditing(false) }}>
             {cases.map(c => <option key={c.id} value={c.id}>{c.path || `#${c.order}`}</option>)}
           </select>
@@ -351,7 +351,7 @@ export default function ExecutionPlanManager({ suiteId, platform, device }: { su
         {plansLoading ? <div className="text-sm text-gray-400">{t('读取执行计划…', 'Loading execution plan…')}</div> : (
           <>
             {plans.length > 0 && selectedPlan && (
-              <div className="flex flex-wrap items-center gap-2 rounded-lg border border-gray-100 bg-gray-50 p-3">
+              <div className="flex flex-wrap items-center gap-2 rounded-xl border border-blue-100 bg-blue-50/50 p-4">
                 <span className="text-xs font-medium text-gray-700">{t('当前执行计划', 'Current execution plan')}</span>
                 <span className={`rounded-full px-2 py-1 text-[11px] ${STATUS_STYLE[selectedPlan.status] || 'bg-gray-100 text-gray-600'}`}>{selectedPlan.status}</span>
                 <span className="text-xs text-gray-400">{selectedPlan.steps.length} {t('个步骤', 'steps')}</span>
@@ -367,7 +367,7 @@ export default function ExecutionPlanManager({ suiteId, platform, device }: { su
             )}
 
             {!selectedPlan && !plansLoading && (
-              <div className="rounded-lg border border-dashed border-gray-300 px-4 py-6 text-center">
+              <div className="rounded-2xl border border-dashed border-slate-200 bg-slate-50/70 px-4 py-8 text-center">
                 <div className="text-sm font-medium text-gray-700">{t('还没有执行计划', 'No execution plan yet')}</div>
                 <p className="mt-1 text-xs text-gray-500">{t('可以从该用例已有的 Replay 操作记录生成一份草稿计划。', 'Generate a draft plan from this case’s existing Replay actions.')}</p>
                 {!importMut.isPending && <button className="mt-3 rounded-md bg-blue-600 px-4 py-2 text-xs font-medium text-white hover:bg-blue-700" onClick={() => importMut.mutate()}>{t('生成执行计划', 'Generate plan')}</button>}
@@ -376,7 +376,7 @@ export default function ExecutionPlanManager({ suiteId, platform, device }: { su
           </>
         )}
 
-        <section className="rounded-lg border border-gray-200 bg-white p-3">
+        <section className="rounded-2xl border border-slate-200/80 bg-slate-50/40 p-4">
           <div className="mb-2 flex items-center justify-between">
             <h3 className="text-xs font-semibold text-gray-700">单步执行日志</h3>
             <button type="button" onClick={() => setExecutionLogs([])} className="text-[11px] text-gray-400 hover:text-gray-700">清空</button>
@@ -406,7 +406,7 @@ export default function ExecutionPlanManager({ suiteId, platform, device }: { su
             <div className="grid grid-cols-1 gap-3 xl:grid-cols-2">
               {(['pre_actions', 'post_actions'] as const).map((phase) => {
                 const actions = Array.isArray(selectedPlan.metadata?.[phase]) ? selectedPlan.metadata[phase] as LifecycleAction[] : []
-                return <div key={phase} className="rounded-lg border border-gray-200 bg-white p-3">
+                return <div key={phase} className="rounded-xl border border-slate-200/80 bg-white p-4 shadow-sm">
                   <div className="text-xs font-semibold text-gray-700">{phase === 'pre_actions' ? '执行前处理' : '执行后处理'}</div>
                   {actions.filter(action => action.enabled !== false).length ? <div className="mt-2 space-y-1">{actions.filter(action => action.enabled !== false).map((action, index) => <div key={action.id || index} className="text-xs text-gray-600">{index + 1}. {({ stop_app: '强制停止应用', start_app: '启动应用', global_action: '系统导航', press_key: '按键操作', tap: '点击坐标', input_text: '输入文本', swipe: '滑动屏幕', scroll: '滚动页面', wait: '等待' } as Record<string, string>)[action.action] || action.action} · {String(action.args?.package_name || action.args?.package || action.args?.action || action.args?.key || action.args?.duration_ms || '')}</div>)}</div> : <p className="mt-2 text-xs text-gray-400">未配置，不执行任何处理</p>}
                 </div>
@@ -414,7 +414,7 @@ export default function ExecutionPlanManager({ suiteId, platform, device }: { su
             </div>
             <div className="space-y-2">
               {selectedPlan.steps.map((step, i) => (
-                <div key={step.step_id || i} className="flex items-start gap-3 rounded-lg border border-gray-100 bg-white px-3 py-3">
+                <div key={step.step_id || i} className="flex items-start gap-3 rounded-xl border border-slate-200/80 bg-white px-4 py-4 shadow-sm">
                   <span className="mt-0.5 flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-slate-100 text-[11px] font-semibold text-slate-600">{i + 1}</span>
                   <div className="min-w-0 flex-1">
                     <div className="flex flex-wrap items-center gap-2">
@@ -472,8 +472,8 @@ export default function ExecutionPlanManager({ suiteId, platform, device }: { su
               const swipeCoordinateSpace = fallback.coordinate_space ?? step.args?.coordinate_space
               const waitMs = step.wait_condition?.type === 'delay' ? step.wait_condition.duration_ms : ''
               return (
-                <div key={step.step_id || index} className="overflow-hidden rounded-lg border border-gray-200">
-                  <div className="flex items-center justify-between gap-2 border-b bg-slate-50 px-3 py-2">
+                <div key={step.step_id || index} className="overflow-hidden rounded-2xl border border-slate-200/80 bg-white shadow-sm">
+                  <div className="flex items-center justify-between gap-2 border-b border-slate-100 bg-slate-50/80 px-4 py-3">
                     <div className="flex items-center gap-2">
                       <button type="button" onClick={() => setTargetStepIndex(index)} title="将真机控件绑定到此步骤" className={targetStepIndex === index ? "flex h-6 w-6 items-center justify-center rounded-full bg-blue-600 text-xs font-semibold text-white" : "flex h-6 w-6 items-center justify-center rounded-full bg-blue-100 text-xs font-semibold text-blue-700"}>{index + 1}</button>
                       <span className="text-xs font-semibold text-gray-700">{ACTIONS.find(a => a.value === step.action)?.label || step.action}</span>
@@ -485,8 +485,8 @@ export default function ExecutionPlanManager({ suiteId, platform, device }: { su
                       <button title={t('删除步骤', 'Delete step')} onClick={() => removeStep(index)} className="rounded border border-red-200 px-2 py-1 text-xs text-red-600 hover:bg-red-50">×</button>
                     </div>
                   </div>
-                  <div className="grid grid-cols-1 gap-3 p-3 md:grid-cols-2">
-                    <div className="md:col-span-2 rounded-lg border border-blue-100 bg-blue-50/50 p-3 space-y-3">
+                  <div className="grid grid-cols-1 gap-4 p-4 md:grid-cols-2">
+                    <div className="md:col-span-2 space-y-3 rounded-xl border border-blue-100 bg-blue-50/50 p-4">
                       <div className="flex flex-wrap items-center justify-between gap-2">
                         <div><div className="text-xs font-semibold text-gray-800">{t('操作意图', 'Operation intent')}</div><p className="mt-0.5 text-[11px] text-gray-500">{t('描述这一步要完成什么。录制坐标和控件属性不能代替操作目的。', 'Describe what this step should accomplish. Coordinates and element attributes are not a substitute for intent.')}</p></div>
                         <span className={step.intent?.status === 'confirmed' ? 'rounded-full bg-green-100 px-2 py-1 text-[10px] text-green-700' : 'rounded-full bg-amber-100 px-2 py-1 text-[10px] text-amber-700'}>{step.intent?.status === 'confirmed' ? t('已确认', 'Confirmed') : t('待确认', 'Needs confirmation')}</span>
