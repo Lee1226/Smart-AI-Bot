@@ -55,14 +55,14 @@ export default function DebugConsole() {
   const statusLabel = snapshot.data?.status === 'running' ? '正在执行' : snapshot.data?.status === 'queued' ? '等待设备' : snapshot.data?.status === 'done' ? '执行完成' : snapshot.data?.status === 'error' ? '执行异常' : snapshot.data?.status === 'cancelled' ? '已停止' : '未启动'
   const statusTone = busy ? 'bg-sky-50 text-sky-700' : snapshot.data?.status === 'error' ? 'bg-rose-50 text-rose-700' : snapshot.data?.status === 'done' ? 'bg-emerald-50 text-emerald-700' : 'bg-slate-100 text-slate-600'
 
-  return <div className="space-y-8">
+  return <div className="space-y-6">
     <header className="flex flex-wrap items-center justify-between gap-5">
       <div>
         <div className="mb-2 inline-flex items-center gap-2 rounded-full border border-blue-100 bg-blue-50/80 px-3 py-1.5 text-[11px] font-bold tracking-[0.08em] text-blue-600"><svg aria-hidden="true" viewBox="0 0 24 24" className="h-3.5 w-3.5" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><rect x="6" y="2.5" width="12" height="19" rx="2.2"/><path d="M10 18.5h4"/></svg>AI 终端 · 交互调试</div>
-        <h1 className="text-3xl font-bold tracking-tight text-[#172744]">调试控制台</h1>
-        <p className="mt-2 max-w-3xl text-sm leading-6 text-slate-500">实时观察设备画面与 Agent 执行过程。调试会话独立于正式测试记录，并与正式任务共用设备独占锁。</p>
+        <h1 className="text-2xl font-bold tracking-tight text-[#172744]">调试控制台</h1>
+        <p className="mt-1.5 max-w-3xl text-sm leading-6 text-slate-500">实时观察设备画面与 Agent 执行过程。调试会话独立于正式测试记录，并与正式任务共用设备独占锁。</p>
       </div>
-      <div className="flex items-center gap-3 rounded-2xl border border-[#E8EFFB] bg-white/90 px-4 py-3 shadow-[0_5px_18px_rgba(56,102,174,0.06)]">
+      <div className="flex items-center gap-3 rounded-xl border border-[#E8EFFB] bg-white/90 px-3.5 py-2.5 shadow-[0_4px_14px_rgba(56,102,174,0.05)]">
         <span className={`rounded-full px-3 py-1.5 text-xs font-medium ${statusTone}`}>{statusLabel}</span>
         <span className="text-xs text-ink-mute">{selectedDevice ? selectedDevice.name : '未选择设备'}</span>
       </div>
@@ -85,7 +85,7 @@ export default function DebugConsole() {
       </section>
 
       <section className="min-w-0 space-y-4">
-        <div className="rounded-[24px] border border-[#E8EFFB] bg-white p-6 shadow-[0_6px_24px_rgba(56,102,174,0.06)]">
+        <div className="rounded-[20px] border border-[#E8EFFB] bg-white p-5 shadow-[0_5px_18px_rgba(56,102,174,0.05)]">
           <div className="flex items-center justify-between gap-3"><div><h2 className="text-xl font-bold text-[#1B2B4A]">Agent 任务配置</h2><p className="mt-1 text-xs text-ink-mute">选择目标设备与模型，输入自然语言操作目标</p></div><span className="rounded-full border border-blue-100 bg-blue-50 px-3 py-1.5 text-[11px] font-semibold text-blue-600">自然语言驱动</span></div>
           <div className="mt-4 grid grid-cols-1 gap-4 md:grid-cols-2">
             <label className="block text-xs font-medium text-ink-mute">目标设备
