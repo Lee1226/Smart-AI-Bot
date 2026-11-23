@@ -849,6 +849,42 @@ export interface SuiteCase {
   loop_task: boolean
 }
 
+export interface AudioCorpusItem {
+  id: string
+  name: string
+  original_filename: string
+  format: string
+  mime_type: string
+  size_bytes: number
+  duration_seconds: number
+  transcript: string
+  expected_result: string
+  category: string
+  language: string
+  created_at: string
+}
+export interface AudioPlaybackTurn {
+  corpus_id: string
+  wait_after_ms: number
+}
+export interface AudioOutputDevice {
+  index: number
+  name: string
+  channels: number
+  default_sample_rate: number
+}
+export const fetchAudioCorpus = (q = '') =>
+  api.get<AudioCorpusItem[]>('/audio-corpus', { params: q ? { q } : {} }).then(r => r.data)
+export const fetchAudioOutputDevices = () =>
+  api.get<{ devices: AudioOutputDevice[] }>('/audio-corpus/output-devices').then(r => r.data.devices)
+export const uploadAudioCorpus = async (file: File) => {
+  const form = new FormData()
+  form.append('file', file)
+  form.append('name', file.name.replace(/\\.[^.]+$/, ''))
+  return api.post<AudioCorpusItem>('/audio-corpus', form).then(r => r.data)
+}
+export const deleteAudioCorpus = (id: string) => api.delete(`/audio-corpus/${id}`)
+
 export interface ExecutionPlanIntent {
   description: string
   expected_result: string
