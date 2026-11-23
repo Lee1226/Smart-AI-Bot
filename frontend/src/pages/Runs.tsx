@@ -121,8 +121,8 @@ export default function Runs() {
   }, [page, totalPages])
 
   return <div className="mx-auto max-w-[1600px] space-y-6">
-    <header className="relative overflow-hidden rounded-3xl bg-gradient-to-br from-[#175CD3] via-[#2878E8] to-[#38A6D9] px-7 py-7 text-white shadow-[0_18px_45px_rgba(37,99,235,0.16)] sm:px-9">
-      <div className="pointer-events-none absolute -right-12 -top-20 h-64 w-64 rounded-full border-[36px] border-white/10" /><div className="relative"><div className="mb-3 inline-flex rounded-full border border-white/20 bg-white/10 px-3 py-1 text-xs font-semibold text-blue-50">AI 终端 · 任务管理</div><h1 className="text-2xl font-bold tracking-tight text-white sm:text-3xl">测试任务</h1><p className="mt-2 text-sm leading-6 text-blue-50/90">统一管理单设备任务、多设备回归任务及执行记录。</p></div>
+    <header className="relative overflow-hidden rounded-2xl bg-gradient-to-br from-[#175CD3] via-[#2878E8] to-[#38A6D9] px-5 py-5 text-white shadow-[0_18px_45px_rgba(37,99,235,0.16)] sm:px-6">
+      <div className="pointer-events-none absolute -right-12 -top-20 h-64 w-64 rounded-full border-[36px] border-white/10" /><div className="relative"><div className="mb-3 inline-flex rounded-full border border-white/20 bg-white/10 px-3 py-1 text-xs font-semibold text-blue-50">AI 终端 · 任务管理</div><h1 className="text-xl font-bold tracking-tight text-white sm:text-2xl">测试任务</h1><p className="mt-2 text-sm leading-6 text-blue-50/90">统一管理单设备任务、多设备回归任务及执行记录。</p></div>
       <div className="flex flex-wrap gap-2"><Link to="/quick" className="rounded-xl bg-white px-4 py-2.5 text-sm font-semibold text-blue-700 shadow-sm transition hover:bg-blue-50">＋ 创建快速任务</Link><Link to="/regressions" className="rounded-xl border border-white/25 bg-white/10 px-4 py-2.5 text-sm font-semibold text-white backdrop-blur transition hover:bg-white/20">创建多设备回归</Link></div>
     </header>
 
