@@ -862,6 +862,7 @@ export interface AudioCorpusItem {
   category: string
   language: string
   created_at: string
+  usage_count: number
 }
 export interface AudioPlaybackTurn {
   corpus_id: string
@@ -886,6 +887,10 @@ export const uploadAudioCorpus = async (file: File, metadata: { transcript?: str
   form.append('language', metadata.language || 'zh-CN')
   return api.post<AudioCorpusItem>('/audio-corpus', form).then(r => r.data)
 }
+export const updateAudioCorpus = (id: string, body: Pick<AudioCorpusItem, 'name' | 'transcript' | 'expected_result' | 'category' | 'language'>) =>
+  api.put<AudioCorpusItem>(`/audio-corpus/${id}`, body).then(r => r.data)
+export const fetchAudioCorpusFile = (id: string) =>
+  api.get<Blob>(`/audio-corpus/${id}/file`, { responseType: 'blob' }).then(r => r.data)
 export const deleteAudioCorpus = (id: string) => api.delete(`/audio-corpus/${id}`)
 
 export interface ExecutionPlanIntent {
