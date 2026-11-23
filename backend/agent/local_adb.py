@@ -18,16 +18,6 @@ from typing import Any
 _ATTACHED: dict[str, str] = {}  # database device UUID -> physical ADB serial
 _SERIAL_LOCKS: dict[str, asyncio.Lock] = {}
 
-# Verified OEM assistant entry points that do not necessarily expose a
-# standard MAIN/LAUNCHER activity. Keep this allowlist narrow: arbitrary
-# system services should not be presented as user-openable apps.
-_SYSTEM_ASSISTANT_APPS: dict[str, dict[str, str]] = {
-    "com.hihonor.magicvoice": {
-        "appName": "YOYO 助手",
-        "activity": "com.hihonor.magicvoice.startup.MagicFloatActivity",
-    },
-}
-
 
 def adb_path() -> str | None:
     found = shutil.which("adb")
@@ -266,9 +256,8 @@ async def rpc(device_id: str, method: str, params: dict[str, Any] | None = None,
             activity = str(params.get("activity", "")).strip()
             if activity and not re.fullmatch(r"[A-Za-z0-9_.$]+", activity):
                 raise ValueError("activity 格式无效")
-            # Use an explicit OEM assistant entry point when the package has
-            # no public launcher activity. Caller-supplied activity still wins.
-            target_activity = activity or _SYSTEM_ASSISTANT_APPS.get(package, {}).get("activity", "")
+            # Launch the selected app's standard launcher activity.
+            target_activity = activity
             if target_activity:
                 output = await _shell(serial, "am", "start", "-n", f"{package}/{target_activity}", timeout=30)
                 if "error:" in output.lower() or "exception" in output.lower():
@@ -285,9 +274,7 @@ async def rpc(device_id: str, method: str, params: dict[str, Any] | None = None,
             await _shell(serial, "am", "force-stop", package)
             return f"Force-stopped {package}"
         if method == "packages":
-            # Discover ordinary launcher apps, then add only explicitly
-            # verified OEM assistant packages whose entry point is not exposed
-            # through MAIN/LAUNCHER.
+            # Discover applications exposed through the standard MAIN/LAUNCHER intent filter.
             output = await _shell(
                 serial, "cmd", "package", "query-activities", "--brief",
                 "-a", "android.intent.action.MAIN",
@@ -300,19 +287,6 @@ async def rpc(device_id: str, method: str, params: dict[str, Any] | None = None,
                 if match:
                     packages.add(match.group(1))
             discovered = [{"packageName": package} for package in sorted(packages)]
-            for package, metadata in _SYSTEM_ASSISTANT_APPS.items():
-                if package in packages:
-                    continue
-                try:
-                    package_path = await _shell(serial, "pm", "path", package, timeout=8)
-                except Exception:
-                    continue
-                if package_path.strip().startswith("package:"):
-                    discovered.append({
-                        "packageName": package,
-                        "appName": metadata["appName"],
-                        "appType": "system_assistant",
-                    })
             if not discovered:
                 raise RuntimeError("未能从设备读取可启动应用列表；请确认 Android 版本支持 package query-activities")
             return discovered
