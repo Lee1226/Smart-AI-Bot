@@ -38,7 +38,7 @@ export default function Login() {
       <div className="w-full max-w-sm">
         <div className="text-center mb-6">
           <img src="/favicon.png" alt="" className="w-12 h-12 mx-auto mb-3 rounded-lg" />
-          <h1 className="text-xl font-bold">smart-ai-bot</h1>
+          <h1 className="text-xl font-bold">AI 终端智能测试平台</h1>
         </div>
         <form onSubmit={handleSubmit} className="bg-white border rounded-lg p-6 shadow-sm space-y-4">
           {error && <div className="text-red-500 text-sm text-center">{error}</div>}
