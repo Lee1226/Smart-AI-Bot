@@ -7,9 +7,18 @@
     font-family: theme('fontFamily.sans');
     -webkit-font-smoothing: antialiased;
     text-rendering: optimizeLegibility;
+    background: #F5F8FF;
   }
   body {
     @apply bg-canvas-soft text-ink;
+    min-width: 360px;
+  }
+  button, a, input, select, textarea {
+    -webkit-tap-highlight-color: transparent;
+  }
+  button:focus-visible, a:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-visible {
+    outline: 3px solid rgba(52, 120, 246, .28);
+    outline-offset: 2px;
   }
   code, pre, kbd, samp {
     font-family: theme('fontFamily.mono');
