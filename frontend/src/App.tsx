@@ -45,7 +45,7 @@ const NAV_GROUPS: { label: { zh: string; en: string }; items: NavigationItem[] }
     { to: '/skills', label: { zh: '技能库', en: 'Skill library' }, icon: '◇', iconStyle: 'from-violet-400 to-fuchsia-600', paths: ['/skills'] },
   ] },
   { label: { zh: '管理', en: 'Manage' }, items: [
-    { to: '/settings', label: { zh: '设置与账号', en: 'Settings & account' }, icon: '⚙', iconStyle: 'from-slate-400 to-slate-600', paths: ['/settings', '/account'] },
+    { to: '/settings', label: { zh: '系统设置', en: 'System settings' }, icon: '⚙', iconStyle: 'from-slate-400 to-slate-600', paths: ['/settings', '/account'] },
   ] },
 ]
 const PAGE_TABS = {
