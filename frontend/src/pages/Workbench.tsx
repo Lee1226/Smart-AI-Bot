@@ -3,29 +3,13 @@ import { Link } from 'react-router-dom'
 import { useQuery } from '@tanstack/react-query'
 import { Device, Run, fetchDevices, fetchRuns, fetchSuites } from '../lib/api'
 
-function MetricCard({ label, value, hint, tone = 'blue' }: { label: string; value: string | number; hint: string; tone?: 'blue' | 'green' | 'amber' | 'red' }) {
-  const tones = {
-    blue: 'bg-sky-50 text-sky-700 border-sky-100',
-    green: 'bg-emerald-50 text-emerald-700 border-emerald-100',
-    amber: 'bg-amber-50 text-amber-700 border-amber-100',
-    red: 'bg-rose-50 text-rose-700 border-rose-100',
-  }
-  return <div className="rounded-xl border border-hairline bg-white p-5 shadow-sm">
-    <div className="flex items-start justify-between gap-3">
-      <div className="text-sm text-ink-mute">{label}</div>
-      <span className={`rounded-md border px-2 py-1 text-[11px] font-medium ${tones[tone]}`}>{hint}</span>
-    </div>
-    <div className="mt-3 text-3xl font-semibold tracking-tight tabular-nums text-ink">{value}</div>
-  </div>
-}
-
 function StatusPill({ status }: { status: string }) {
   const running = ['running', 'queued', 'pending'].includes(status)
   const failed = ['failed', 'error', 'errored'].includes(status)
   const passed = ['passed', 'success', 'completed', 'done'].includes(status)
   const cls = running ? 'bg-sky-50 text-sky-700' : failed ? 'bg-rose-50 text-rose-700' : passed ? 'bg-emerald-50 text-emerald-700' : 'bg-slate-100 text-slate-600'
   const label = running ? '执行中' : failed ? '失败' : passed ? '已完成' : status || '未知'
-  return <span className={`inline-flex rounded-full px-2.5 py-1 text-xs font-medium ${cls}`}>{label}</span>
+  return <span className={`inline-flex rounded-full px-3 py-1 text-xs font-semibold ${cls}`}>{label}</span>
 }
 
 function timeText(value?: string | null) {
@@ -40,6 +24,52 @@ function deviceKind(device: Device) {
   return 'Android'
 }
 
+function TrendLine({ tone = 'blue' }: { tone?: 'blue' | 'purple' | 'orange' }) {
+  const color = tone === 'purple' ? '#A78BFA' : tone === 'orange' ? '#FDBA74' : '#60A5FA'
+  return <svg viewBox="0 0 150 54" preserveAspectRatio="none" className="h-12 w-32 overflow-visible" aria-hidden="true">
+    <path d="M2 46 C20 40 22 29 38 34 S60 20 74 24 S99 10 112 15 S132 2 148 5" fill="none" stroke={color} strokeWidth="2.5" strokeLinecap="round" />
+  </svg>
+}
+
+function MetricCard({ label, value, detail, icon, tone, trend }: { label: string; value: string | number; detail: string; icon: string; tone: 'blue' | 'purple' | 'orange'; trend: string }) {
+  const tones = {
+    blue: { icon: 'from-sky-400 to-blue-600', glow: 'from-sky-50', text: 'text-sky-600' },
+    purple: { icon: 'from-violet-400 to-purple-600', glow: 'from-violet-50', text: 'text-violet-600' },
+    orange: { icon: 'from-orange-400 to-amber-500', glow: 'from-orange-50', text: 'text-orange-600' },
+  }
+  const style = tones[tone]
+  return <div className={`relative min-h-[146px] overflow-hidden rounded-[22px] border border-[#E8EFFB] bg-gradient-to-br ${style.glow} via-white to-white p-6 shadow-[0_5px_18px_rgba(56,102,174,0.07)]`}>
+    <div className="relative z-10 flex items-center gap-5">
+      <span className={`grid h-[62px] w-[62px] shrink-0 place-items-center rounded-[18px] bg-gradient-to-br ${style.icon} text-[30px] text-white shadow-lg shadow-blue-100/70`}>{icon}</span>
+      <div className="min-w-0">
+        <div className="text-[38px] font-bold leading-none tracking-tight text-[#172744] tabular-nums">{value}</div>
+        <div className="mt-2 text-[17px] font-medium text-slate-500">{label}</div>
+      </div>
+    </div>
+    <div className="absolute bottom-5 left-6 flex items-center gap-2 text-sm font-medium text-emerald-500">
+      <span className="text-base">↑</span>{trend}
+    </div>
+    <div className="absolute bottom-3 right-4 opacity-90"><TrendLine tone={tone} /></div>
+    <div className="absolute bottom-5 left-[108px] text-xs text-slate-400">{detail}</div>
+  </div>
+}
+
+function QuickCard({ to, icon, title, subtitle, tone }: { to: string; icon: string; title: string; subtitle: string; tone: 'blue' | 'purple' | 'teal' }) {
+  const tones = {
+    blue: 'from-blue-100 to-sky-50 text-blue-600',
+    purple: 'from-violet-100 to-purple-50 text-violet-600',
+    teal: 'from-teal-100 to-cyan-50 text-teal-600',
+  }
+  return <Link to={to} className="group flex min-h-[128px] items-center gap-5 rounded-[22px] border border-white/80 bg-white/80 p-6 shadow-[0_7px_24px_rgba(58,104,176,0.06)] transition-all hover:-translate-y-1 hover:border-blue-100 hover:shadow-[0_12px_30px_rgba(58,104,176,0.12)]">
+    <span className={`grid h-[76px] w-[76px] shrink-0 place-items-center rounded-[22px] bg-gradient-to-br text-[38px] ${tones[tone]}`}>{icon}</span>
+    <span className="min-w-0 flex-1">
+      <span className="block text-xl font-semibold text-[#1B2B4A]">{title}</span>
+      <span className="mt-2 block text-sm text-slate-400">{subtitle}</span>
+    </span>
+    <span className="text-3xl text-slate-300 transition-transform group-hover:translate-x-1 group-hover:text-blue-500">›</span>
+  </Link>
+}
+
 export default function Workbench() {
   const devicesQuery = useQuery({ queryKey: ['devices'], queryFn: fetchDevices, refetchInterval: 5000 })
   const runsQuery = useQuery({ queryKey: ['runs'], queryFn: () => fetchRuns(), refetchInterval: 15000 })
@@ -49,109 +79,86 @@ export default function Workbench() {
   const suites = suitesQuery.data?.items || []
   const online = devices.filter(device => device.status === 'online')
   const runningRuns = runs.filter(run => ['running', 'queued', 'pending'].includes(run.status))
-  const recentRuns = useMemo(() => [...runs].sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime()).slice(0, 7), [runs])
+  const recentRuns = useMemo(() => [...runs].sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime()).slice(0, 6), [runs])
   const completed = runs.filter(run => !['running', 'queued', 'pending'].includes(run.status))
   const passTotal = completed.reduce((sum, run) => sum + (run.passed || 0), 0)
   const caseTotal = completed.reduce((sum, run) => sum + (run.total || 0), 0)
-  const passRate = caseTotal ? Math.round(passTotal / caseTotal * 100) : 0
-  const androidCount = devices.filter(device => deviceKind(device) === 'Android').length
-  const harmonyCount = devices.filter(device => deviceKind(device) === 'HarmonyOS').length
-  const iosCount = devices.filter(device => deviceKind(device) === 'iOS').length
+  const passRate = caseTotal ? Math.round(passTotal / caseTotal * 1000) / 10 : 0
+  const recordingTotal = runs.filter(run => run.has_recording || run.recording_status === 'saved').length
   const failedRecent = runs.filter(run => ['failed', 'error', 'errored'].includes(run.status)).length
   const loading = devicesQuery.isLoading || runsQuery.isLoading
 
-  return <div className="space-y-7">
-    <header className="flex flex-wrap items-end justify-between gap-4">
-      <div>
-        <div className="text-xs font-semibold tracking-[0.18em] text-primary uppercase">AI TERMINAL TESTING PLATFORM</div>
-        <h1 className="mt-2 text-3xl font-semibold tracking-tight text-ink">测试工作台</h1>
-        <p className="mt-2 text-sm text-ink-mute">统一查看设备接入、Agent 调试与自动化测试运行状态。</p>
+  return <div className="space-y-9">
+    <section className="relative isolate flex min-h-[360px] items-center overflow-hidden rounded-[26px] bg-gradient-to-br from-[#D7F1FF] via-[#C7E1FF] to-[#C9C8FF] px-8 py-10 shadow-[0_12px_32px_rgba(73,133,213,0.13)] sm:px-11 xl:min-h-[420px] xl:px-12">
+      <div className="absolute inset-0 -z-10 bg-[radial-gradient(circle_at_12%_16%,rgba(255,255,255,0.75),transparent_38%),linear-gradient(135deg,transparent_48%,rgba(255,255,255,0.18)_48.2%,transparent_68%)]" />
+      <div className="relative z-10 max-w-[58%]">
+        <div className="mb-5 inline-flex items-center gap-2 rounded-full border border-white/60 bg-white/40 px-4 py-2 text-xs font-semibold tracking-[0.16em] text-blue-700 backdrop-blur">AI TERMINAL TESTING PLATFORM</div>
+        <h1 className="text-3xl font-bold leading-[1.35] tracking-tight text-[#10213E] sm:text-4xl xl:text-[42px]">欢迎使用<br className="hidden sm:block" />AI 终端智能测试平台</h1>
+        <p className="mt-6 text-lg font-medium text-slate-600 sm:text-xl">让终端测试更智能、更高效</p>
+        <Link to="/quick" className="mt-9 inline-flex items-center gap-3 rounded-full bg-gradient-to-r from-blue-600 to-blue-500 px-7 py-4 text-base font-semibold text-white shadow-lg shadow-blue-400/30 transition hover:-translate-y-0.5 hover:shadow-xl">
+          <span className="text-lg">▶</span>开始工作
+        </Link>
       </div>
-      <div className="flex flex-wrap gap-2">
-        <Link to="/debug" className="rounded-lg bg-primary px-4 py-2.5 text-sm font-semibold text-white shadow-sm hover:bg-primary-deep">进入调试控制台 <span aria-hidden="true">↗</span></Link>
-        <Link to="/quick" className="rounded-lg border border-hairline bg-white px-4 py-2.5 text-sm font-medium text-ink hover:bg-canvas-cool">创建测试任务</Link>
-      </div>
-    </header>
-
-    {loading && <div className="rounded-lg border border-hairline bg-white px-4 py-3 text-sm text-ink-mute">正在读取平台数据…</div>}
-    {(devicesQuery.isError || runsQuery.isError || suitesQuery.isError) && <div className="rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800">部分工作台数据暂时无法读取，请检查后端连接或刷新页面。</div>}
-
-    <section className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
-      <MetricCard label="接入设备" value={devices.length} hint={`在线 ${online.length}`} tone="blue" />
-      <MetricCard label="在线设备" value={online.length} hint={devices.length ? `离线 ${devices.length - online.length}` : '等待接入'} tone="green" />
-      <MetricCard label="运行中任务" value={runningRuns.length} hint="实时更新" tone={runningRuns.length ? 'amber' : 'blue'} />
-      <MetricCard label="用例套件" value={suitesQuery.isLoading ? '—' : suites.length} hint="已纳入管理" tone="blue" />
+      <img src="/workbench-hero.svg" alt="" className="pointer-events-none absolute -right-2 bottom-0 top-0 h-full w-[56%] object-contain object-center" />
+      <div className="pointer-events-none absolute -right-12 -top-20 h-64 w-64 rounded-full bg-white/25 blur-3xl" />
     </section>
 
-    <section className="grid gap-5 xl:grid-cols-[minmax(0,1.55fr)_minmax(320px,0.85fr)]">
-      <div className="rounded-xl border border-hairline bg-white p-5 shadow-sm">
-        <div className="flex items-center justify-between gap-3">
-          <div><h2 className="font-semibold text-ink">设备接入概况</h2><p className="mt-1 text-xs text-ink-mute">按设备平台分类，状态每 5 秒刷新</p></div>
-          <Link to="/devices" className="text-sm font-medium text-primary hover:underline">设备管理 →</Link>
+    {loading && <div className="rounded-2xl border border-blue-100 bg-white/80 px-5 py-4 text-sm text-slate-500">正在读取平台数据…</div>}
+    {(devicesQuery.isError || runsQuery.isError || suitesQuery.isError) && <div className="rounded-2xl border border-amber-200 bg-amber-50 px-5 py-4 text-sm text-amber-800">部分工作台数据暂时无法读取，请检查后端连接或刷新页面。</div>}
+
+    <section className="grid gap-4 lg:grid-cols-3">
+      <MetricCard label="已连接设备" value={online.length} detail={`在线 ${online.length} / 总计 ${devices.length}`} icon="▯" tone="blue" trend={`+${Math.max(0, online.length)}`} />
+      <MetricCard label="测试成功率" value={caseTotal ? `${passRate}%` : '—'} detail={`累计 ${caseTotal} 个用例`} icon="✓" tone="purple" trend={`+${passTotal}`} />
+      <MetricCard label="录像文件" value={recordingTotal.toLocaleString()} detail="已保存的测试录像" icon="▶" tone="orange" trend={`+${recordingTotal}`} />
+    </section>
+
+    <section className="space-y-5">
+      <div className="flex items-center gap-4"><span className="h-9 w-[6px] rounded-full bg-gradient-to-b from-blue-500 to-indigo-500" /><h2 className="text-[27px] font-bold tracking-tight text-[#1A2A48]">快速开始</h2></div>
+      <div className="grid gap-4 xl:grid-cols-3">
+        <QuickCard to="/quick" icon="🚀" title="创建测试任务" subtitle="快速创建并执行测试任务" tone="blue" />
+        <QuickCard to="/suites" icon="⬡" title="管理用例" subtitle="管理测试用例库" tone="purple" />
+        <QuickCard to="/runs" icon="▥" title="查看报告" subtitle="查看测试结果报告" tone="teal" />
+      </div>
+    </section>
+
+    <section className="grid gap-5 xl:grid-cols-[1.12fr_0.88fr]">
+      <div className="overflow-hidden rounded-[22px] border border-[#E8EFFB] bg-white shadow-[0_5px_20px_rgba(56,102,174,0.06)]">
+        <div className="flex items-center justify-between border-b border-slate-100 px-6 py-5">
+          <div><h2 className="text-lg font-bold text-[#1B2B4A]">设备接入概况</h2><p className="mt-1 text-xs text-slate-400">设备状态每 5 秒自动刷新</p></div>
+          <Link to="/devices" className="text-sm font-semibold text-blue-600 hover:text-blue-700">设备管理 →</Link>
         </div>
-        <div className="mt-5 grid gap-3 sm:grid-cols-3">
-          {[{ label: 'Android', count: androidCount, dot: 'bg-emerald-500' }, { label: 'HarmonyOS', count: harmonyCount, dot: 'bg-sky-500' }, { label: 'iOS', count: iosCount, dot: 'bg-violet-500' }].map(item =>
-            <div key={item.label} className="rounded-lg bg-canvas-soft p-4">
-              <div className="flex items-center gap-2 text-sm text-ink-mute"><span className={`h-2 w-2 rounded-full ${item.dot}`} />{item.label}</div>
-              <div className="mt-2 text-2xl font-semibold tabular-nums">{item.count}<span className="ml-1 text-xs font-normal text-ink-mute">台</span></div>
-            </div>
-          )}
-        </div>
-        <div className="mt-5 space-y-2">
-          {devices.slice(0, 6).map(device => <div key={device.id} className="flex items-center gap-3 rounded-lg border border-hairline px-3 py-2.5">
-            <span className={`h-2.5 w-2.5 shrink-0 rounded-full ${device.status === 'online' ? 'bg-emerald-500' : 'bg-slate-300'}`} />
-            <div className="min-w-0 flex-1"><div className="truncate text-sm font-medium">{device.name}</div><div className="mt-0.5 text-xs text-ink-mute">{deviceKind(device)} · {device.connection_type}</div></div>
-            <span className={`text-xs ${device.status === 'online' ? 'text-emerald-700' : 'text-ink-mute'}`}>{device.status === 'online' ? '在线' : '离线'}</span>
+        <div className="grid grid-cols-3 gap-3 p-5">
+          {[
+            { label: 'Android', count: devices.filter(d => deviceKind(d) === 'Android').length, color: 'bg-emerald-400' },
+            { label: 'HarmonyOS', count: devices.filter(d => deviceKind(d) === 'HarmonyOS').length, color: 'bg-sky-400' },
+            { label: 'iOS', count: devices.filter(d => deviceKind(d) === 'iOS').length, color: 'bg-violet-400' },
+          ].map(item => <div key={item.label} className="rounded-2xl bg-slate-50/90 p-4">
+            <div className="flex items-center gap-2 text-sm text-slate-500"><span className={`h-2.5 w-2.5 rounded-full ${item.color}`} />{item.label}</div>
+            <div className="mt-3 text-3xl font-bold text-[#1B2B4A]">{item.count}<span className="ml-1 text-xs font-medium text-slate-400">台</span></div>
           </div>)}
-          {!devices.length && !devicesQuery.isLoading && <div className="rounded-lg border border-dashed border-hairline p-6 text-center"><div className="text-sm font-medium">还没有接入设备</div><p className="mt-1 text-xs text-ink-mute">连接 Android 或 HarmonyOS 设备后，设备状态会显示在这里。</p><Link to="/devices" className="mt-3 inline-block text-sm text-primary">前往设备管理 →</Link></div>}
-          {devices.length > 6 && <div className="text-right text-xs text-ink-mute">另有 {devices.length - 6} 台设备 · <Link to="/devices" className="text-primary">查看全部</Link></div>}
+        </div>
+        <div className="space-y-2 px-5 pb-5">
+          {devices.slice(0, 5).map(device => <div key={device.id} className="flex items-center gap-3 rounded-xl border border-slate-100 px-4 py-3">
+            <span className={`h-2.5 w-2.5 shrink-0 rounded-full ${device.status === 'online' ? 'bg-emerald-400' : 'bg-slate-300'}`} />
+            <div className="min-w-0 flex-1"><div className="truncate text-sm font-semibold text-slate-700">{device.name}</div><div className="mt-1 text-xs text-slate-400">{deviceKind(device)} · {device.connection_type}</div></div>
+            <span className={`text-xs font-medium ${device.status === 'online' ? 'text-emerald-600' : 'text-slate-400'}`}>{device.status === 'online' ? '在线' : '离线'}</span>
+          </div>)}
+          {!devices.length && !devicesQuery.isLoading && <div className="rounded-2xl border border-dashed border-slate-200 p-7 text-center"><div className="text-sm font-semibold text-slate-700">还没有接入设备</div><p className="mt-2 text-xs text-slate-400">连接 Android 或 HarmonyOS 设备后，会在这里显示。</p><Link to="/devices" className="mt-4 inline-block text-sm font-semibold text-blue-600">前往设备管理 →</Link></div>}
+          {devices.length > 5 && <div className="pt-1 text-right text-xs text-slate-400">另有 {devices.length - 5} 台设备</div>}
         </div>
       </div>
 
-      <div className="rounded-xl border border-hairline bg-white p-5 shadow-sm">
-        <div className="flex items-center justify-between"><div><h2 className="font-semibold">测试质量概览</h2><p className="mt-1 text-xs text-ink-mute">基于已结束的测试运行记录</p></div><Link to="/runs" className="text-sm text-primary hover:underline">运行结果 →</Link></div>
-        <div className="mt-6 flex items-end gap-3"><div className="text-4xl font-semibold tabular-nums">{caseTotal ? `${passRate}%` : '—'}</div><div className="pb-1 text-xs text-ink-mute">用例通过率</div></div>
-        <div className="mt-3 h-2 overflow-hidden rounded-full bg-slate-100"><div className="h-full rounded-full bg-emerald-500 transition-all" style={{ width: `${passRate}%` }} /></div>
-        <div className="mt-4 grid grid-cols-3 gap-2 text-center">
-          <div className="rounded-lg bg-emerald-50 p-3"><div className="text-xl font-semibold text-emerald-700">{passTotal}</div><div className="mt-1 text-[11px] text-emerald-700">通过</div></div>
-          <div className="rounded-lg bg-rose-50 p-3"><div className="text-xl font-semibold text-rose-700">{completed.reduce((sum, run) => sum + (run.failed || 0), 0)}</div><div className="mt-1 text-[11px] text-rose-700">失败</div></div>
-          <div className="rounded-lg bg-amber-50 p-3"><div className="text-xl font-semibold text-amber-700">{completed.reduce((sum, run) => sum + (run.errored || 0), 0)}</div><div className="mt-1 text-[11px] text-amber-700">异常</div></div>
+      <div className="overflow-hidden rounded-[22px] border border-[#E8EFFB] bg-white shadow-[0_5px_20px_rgba(56,102,174,0.06)]">
+        <div className="flex items-center justify-between border-b border-slate-100 px-6 py-5"><div><h2 className="text-lg font-bold text-[#1B2B4A]">最近测试任务</h2><p className="mt-1 text-xs text-slate-400">最近 6 条运行记录 · {runningRuns.length} 个任务正在执行</p></div><Link to="/runs" className="text-sm font-semibold text-blue-600">全部任务 →</Link></div>
+        <div className="divide-y divide-slate-100">
+          {recentRuns.map((run: Run) => <Link key={run.id} to={`/runs/${run.id}`} className="flex items-center gap-3 px-5 py-4 transition hover:bg-blue-50/50">
+            <span className="grid h-10 w-10 shrink-0 place-items-center rounded-xl bg-gradient-to-br from-blue-100 to-indigo-100 text-lg text-blue-600">✓</span>
+            <span className="min-w-0 flex-1"><span className="block truncate text-sm font-semibold text-slate-700">{run.suite_name || '快速任务'}</span><span className="mt-1 block text-xs text-slate-400">{timeText(run.created_at)}</span></span>
+            <StatusPill status={run.status} />
+          </Link>)}
+          {!recentRuns.length && <div className="p-10 text-center text-sm text-slate-400">暂无测试记录，创建一个任务后将在这里显示。</div>}
         </div>
-        <p className="mt-4 text-xs text-ink-mute">累计统计 {completed.length} 次已结束运行 · {caseTotal} 个用例结果</p>
-      </div>
-    </section>
-
-    <section className="grid gap-5 xl:grid-cols-[minmax(0,1.5fr)_minmax(300px,0.8fr)]">
-      <div className="overflow-hidden rounded-xl border border-hairline bg-white shadow-sm">
-        <div className="flex items-center justify-between border-b border-hairline px-5 py-4"><div><h2 className="font-semibold">最近测试任务</h2><p className="mt-1 text-xs text-ink-mute">最近 7 条运行记录</p></div><Link to="/runs" className="text-sm text-primary hover:underline">全部记录 →</Link></div>
-        <div className="overflow-x-auto">
-          <table className="w-full min-w-[620px] text-left text-sm">
-            <thead className="bg-canvas-soft text-xs text-ink-mute"><tr><th className="px-5 py-3 font-medium">任务 / 套件</th><th className="px-3 py-3 font-medium">设备</th><th className="px-3 py-3 font-medium">结果</th><th className="px-3 py-3 font-medium">用例统计</th><th className="px-5 py-3 font-medium">创建时间</th></tr></thead>
-            <tbody className="divide-y divide-hairline">
-              {recentRuns.map((run: Run) => <tr key={run.id} className="hover:bg-canvas-soft/70"><td className="px-5 py-3"><Link to={`/runs/${run.id}`} className="font-medium text-ink hover:text-primary">{run.suite_name || '快速任务'}</Link><div className="mt-1 max-w-[240px] truncate font-mono text-[10px] text-ink-mute">{run.id}</div></td><td className="px-3 py-3 text-xs text-ink-mute">{devices.find(d => d.id === run.device_id)?.name || run.device_id.slice(0, 8)}</td><td className="px-3 py-3"><StatusPill status={run.status} /></td><td className="px-3 py-3 text-xs tabular-nums"><span className="text-emerald-700">{run.passed} 通过</span><span className="mx-1 text-ink-faint">/</span><span className="text-rose-700">{run.failed} 失败</span><span className="mx-1 text-ink-faint">/</span><span className="text-amber-700">{run.errored} 异常</span></td><td className="px-5 py-3 whitespace-nowrap text-xs text-ink-mute">{timeText(run.created_at)}</td></tr>)}
-              {!recentRuns.length && <tr><td colSpan={5} className="px-5 py-10 text-center text-sm text-ink-mute">暂无测试记录，创建一个任务后将在这里显示。</td></tr>}
-            </tbody>
-          </table>
-        </div>
-      </div>
-      <div className="space-y-5">
-        <div className="rounded-xl border border-hairline bg-white p-5 shadow-sm">
-          <div className="flex items-center justify-between"><h2 className="font-semibold">异常与告警</h2><span className="text-xs text-ink-mute">实时汇总</span></div>
-          <div className="mt-4 space-y-3">
-            <div className="flex items-center gap-3"><span className="grid h-8 w-8 place-items-center rounded-lg bg-amber-50 text-amber-700">!</span><div className="min-w-0 flex-1"><div className="text-sm font-medium">离线设备</div><div className="text-xs text-ink-mute">需要检查连接或设备端 Agent</div></div><div className="text-lg font-semibold tabular-nums">{devices.length - online.length}</div></div>
-            <div className="flex items-center gap-3"><span className="grid h-8 w-8 place-items-center rounded-lg bg-rose-50 text-rose-700">×</span><div className="min-w-0 flex-1"><div className="text-sm font-medium">失败任务</div><div className="text-xs text-ink-mute">当前返回的运行记录中失败状态</div></div><div className="text-lg font-semibold tabular-nums">{failedRecent}</div></div>
-          </div>
-          <p className="mt-4 border-t border-hairline pt-3 text-[11px] leading-5 text-ink-mute">告警目前由设备在线状态和测试运行结果汇总生成；后续可扩展为独立告警规则与通知中心。</p>
-        </div>
-        <div className="rounded-xl border border-primary/15 bg-primary-soft/50 p-5">
-          <div className="text-xs font-semibold tracking-wide text-primary-deep">快速入口</div>
-          <div className="mt-3 grid grid-cols-2 gap-2">
-            <Link to="/debug" className="rounded-lg border border-primary/15 bg-white px-3 py-3 text-sm font-medium hover:border-primary">⌘ Agent 调试</Link>
-            <Link to="/devices" className="rounded-lg border border-primary/15 bg-white px-3 py-3 text-sm font-medium hover:border-primary">▣ 设备管理</Link>
-            <Link to="/suites" className="rounded-lg border border-primary/15 bg-white px-3 py-3 text-sm font-medium hover:border-primary">◇ 用例中心</Link>
-            <Link to="/quick" className="rounded-lg border border-primary/15 bg-white px-3 py-3 text-sm font-medium hover:border-primary">＋ 新建任务</Link>
-          </div>
-        </div>
+        <div className="border-t border-slate-100 px-6 py-4 text-xs text-slate-400">用例套件 {suites.length} 个 · 失败任务 {failedRecent} 个 · 累计通过 {passTotal} 个用例</div>
       </div>
     </section>
   </div>
