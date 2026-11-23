@@ -1,0 +1,33 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 720 420" fill="none">
+<defs>
+ <linearGradient id="phone" x1="250" y1="35" x2="500" y2="350" gradientUnits="userSpaceOnUse"><stop stop-color="#5CEBFF"/><stop offset=".48" stop-color="#168BFF"/><stop offset="1" stop-color="#6A55F7"/></linearGradient>
+ <linearGradient id="plate" x1="190" y1="280" x2="590" y2="380" gradientUnits="userSpaceOnUse"><stop stop-color="#E9FBFF"/><stop offset=".55" stop-color="#9BDFFF"/><stop offset="1" stop-color="#B7A8FF"/></linearGradient>
+ <linearGradient id="chip" x1="350" y1="85" x2="490" y2="250" gradientUnits="userSpaceOnUse"><stop stop-color="#45E9FF"/><stop offset=".55" stop-color="#178BFF"/><stop offset="1" stop-color="#7458F8"/></linearGradient>
+ <linearGradient id="ring" x1="190" y1="210" x2="600" y2="250" gradientUnits="userSpaceOnUse"><stop stop-color="#9CFBFF"/><stop offset=".5" stop-color="#fff"/><stop offset="1" stop-color="#C7B8FF"/></linearGradient>
+ <filter id="shadow" x="80" y="0" width="620" height="440" filterUnits="userSpaceOnUse"><feGaussianBlur stdDeviation="18"/></filter>
+ <filter id="glow" x="120" y="30" width="600" height="370" filterUnits="userSpaceOnUse"><feGaussianBlur stdDeviation="7"/></filter>
+</defs>
+<ellipse cx="405" cy="350" rx="220" ry="42" fill="#4B8DFF" fill-opacity=".18" filter="url(#shadow)"/>
+<path d="M158 300 378 206c12-5 26-5 38 0l190 77c17 7 18 29 1 37l-205 88c-12 5-26 5-38 0l-206-72c-19-7-19-28 0-36Z" fill="url(#plate)" fill-opacity=".68" stroke="#fff" stroke-opacity=".9" stroke-width="3"/>
+<path d="m176 277 205-91c12-5 25-5 37 0l185 75c17 7 18 27 1 35l-191 83c-12 5-25 5-37 1l-200-67c-19-7-19-27 0-36Z" fill="#DDF6FF" fill-opacity=".8" stroke="#fff" stroke-width="3"/>
+<path d="m210 251 178-79c11-5 24-5 35 0l160 64c16 6 17 25 1 32l-166 73c-11 5-24 5-35 1l-172-58c-18-6-18-25-1-33Z" fill="#A9DFFF" fill-opacity=".45" stroke="#fff" stroke-opacity=".9" stroke-width="3"/>
+<g transform="rotate(-12 410 190)">
+ <rect x="275" y="70" width="250" height="235" rx="38" fill="#226DFF" fill-opacity=".18" filter="url(#glow)"/>
+ <rect x="280" y="62" width="250" height="230" rx="34" fill="url(#phone)" stroke="#D9F9FF" stroke-width="5"/>
+ <rect x="292" y="74" width="226" height="205" rx="27" fill="#fff" fill-opacity=".08" stroke="#fff" stroke-opacity=".24" stroke-width="2"/>
+ <path d="M309 94c50-26 118-27 191-8" stroke="#fff" stroke-opacity=".3" stroke-width="3" stroke-linecap="round"/>
+ <rect x="350" y="112" width="112" height="112" rx="25" fill="url(#chip)" stroke="#BDF8FF" stroke-width="4"/>
+ <text x="406" y="185" fill="#fff" font-family="Arial,sans-serif" font-size="58" font-weight="700" text-anchor="middle">AI</text>
+ <path d="M350 145h-15m127 0h-15M406 112V97m0 142v-15" stroke="#D8FFFF" stroke-width="5" stroke-linecap="round"/>
+ <circle cx="335" cy="145" r="5" fill="#fff"/><circle cx="462" cy="145" r="5" fill="#fff"/>
+</g>
+<path d="M145 220c30-80 132-133 253-125 107 7 190 54 221 112 31 59-28 111-116 130" stroke="#A8FFFF" stroke-opacity=".6" stroke-width="4" stroke-linecap="round"/>
+<path d="M165 235c43 55 140 80 236 67 91-12 159-56 177-101" stroke="url(#ring)" stroke-width="5" stroke-linecap="round"/>
+<path d="M152 219c38-70 136-112 245-103 94 8 172 50 205 101" stroke="#fff" stroke-opacity=".38" stroke-width="2" stroke-dasharray="5 11"/>
+<g>
+ <path d="m120 192 28-15 28 15v32l-28 16-28-16v-32Z" fill="#1AA9FF"/><path d="m120 192 28 15 28-15-28-16-28 16Z" fill="#63EFFF"/><path d="M148 207v33l28-16v-32l-28 15Z" fill="#5966F4"/>
+ <path d="m574 70 25-14 26 14v29l-26 15-25-15V70Z" fill="#9D83FF"/><path d="m574 70 25 14 26-14-26-14-25 14Z" fill="#E4D7FF"/><path d="M599 84v30l26-15V70l-26 14Z" fill="#6D6CFA"/>
+ <path d="m575 290 23-13 23 13v27l-23 14-23-14v-27Z" fill="#258FFF"/><path d="m575 290 23 13 23-13-23-13-23 13Z" fill="#66E9FF"/><path d="M598 303v28l23-14v-27l-23 13Z" fill="#6C58EE"/>
+</g>
+<g fill="#fff"><circle cx="217" cy="94" r="4"/><circle cx="548" cy="166" r="3"/><circle cx="245" cy="300" r="3"/><path d="m570 140 4 10 10 4-10 4-4 10-4-10-10-4 10-4 4-10Z"/></g>
+</svg>
