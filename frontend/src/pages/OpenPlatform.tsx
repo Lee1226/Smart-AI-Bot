@@ -3,7 +3,7 @@ import { useT } from '../lib/i18n'
 
 const capabilities = [
   { icon: '▯', title: '设备与资产', description: '查询设备状态、测试用例套件及可复用技能。' },
-  { icon: '▶', title: '测试任务', description: '通过接口创建、查询和管理测试任务。' },
+  { icon: '▶', title: '测试任务', description: '查询测试任务及其执行状态。' },
   { icon: '◷', title: '实时进度', description: '通过服务端事件流获取任务执行进度。' },
   { icon: '▤', title: '结果与视频', description: '获取测试结果、评估信息和测试视频记录。' },
 ]
