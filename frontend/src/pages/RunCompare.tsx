@@ -73,17 +73,17 @@ export default function RunCompare() {
         <div>
           <label className="mb-2 block text-sm font-semibold text-slate-700">新版本运行（B）</label>
           <select
-            className="w-full border rounded px-3 py-2 text-sm"
+            className="w-full rounded-xl border border-slate-200 bg-slate-50/60 px-3.5 py-3 text-sm text-slate-700 outline-none transition focus:border-blue-400 focus:bg-white focus:ring-4 focus:ring-blue-500/10"
             value={runB}
             onChange={e => setRunB(e.target.value)}
           >
-            <option value="">Select run...</option>
+            <option value="">选择一次测试运行…</option>
             {doneRuns.map(r => (
               <option key={r.id} value={r.id}>{runLabel(r)}</option>
             ))}
           </select>
         </div>
-      </div>
+      </section>
 
       {runA && runB && runA === runB && (
         <p className="rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-700">请选择两次不同的测试运行。</p>
@@ -104,7 +104,7 @@ export default function RunCompare() {
             <div className="rounded-2xl border border-slate-200 bg-slate-50/80 p-5 shadow-[0_6px_20px_rgba(31,75,135,0.03)]">
               <div className="text-xs font-semibold text-slate-600">保持不变</div><div className="mt-2 text-3xl font-bold tabular-nums text-slate-700">{comparison.summary.unchanged}</div>
             </div>
-          </div>
+          </section>
 
           {/* Run meta */}
           <section className="grid gap-4 md:grid-cols-2">
@@ -114,10 +114,10 @@ export default function RunCompare() {
             <div className="rounded-2xl border border-slate-200/80 bg-white px-5 py-4 text-sm text-slate-600 shadow-[0_6px_22px_rgba(31,75,135,0.04)]">
               <span className="mr-2 inline-flex rounded-md bg-cyan-50 px-2 py-1 text-xs font-bold text-cyan-700">新版本 B</span> {comparison.run_b.provider}/{comparison.run_b.model} — {comparison.run_b.passed}P/{comparison.run_b.failed}F/{comparison.run_b.total}T
             </div>
-          </div>
+          </section>
 
           {/* Comparison table */}
-          <div className="overflow-hidden rounded-2xl border border-slate-200/80 bg-white shadow-[0_10px_32px_rgba(31,75,135,0.06)]">
+          <div className="overflow-x-auto rounded-2xl border border-slate-200/80 bg-white shadow-[0_10px_32px_rgba(31,75,135,0.06)]">
             <table className="w-full min-w-[760px] text-sm">
               <thead>
                 <tr className="border-b border-slate-200 bg-slate-50 text-left text-xs font-semibold tracking-wide text-slate-500">
