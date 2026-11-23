@@ -300,7 +300,7 @@ export default function LivePanel({ device, defaultMode = 'off', storageKey = 'l
           }}
         >
           {!device ? (
-            <Placeholder text={t('请先在右侧选择设备，连接后将在此显示手机画面', 'Select a device on the right to display its screen here')} />
+            <Placeholder text={t('请选择一台设备', 'Select a device')} />
           ) : mode === 'off' ? (
             <Placeholder text={t('实时画面已关闭', 'Live view is off')} />
           ) : !canStream ? (
