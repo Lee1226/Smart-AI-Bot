@@ -229,9 +229,9 @@ function AppLayout() {
       </header>
 
       <div className="flex min-h-[calc(100vh-72px)] 2xl:min-h-[calc(100vh-80px)]">
-        <aside className={`${sidebarCollapsed ? 'w-[80px]' : 'w-[250px] 2xl:w-[280px]'} sticky top-0 flex h-[calc(100vh-72px)] 2xl:h-[calc(100vh-80px)] shrink-0 flex-col border-r border-hairline bg-white/75 transition-[width] duration-200`}>
-          <nav aria-label={t('主导航', 'Main navigation')} className={`flex-1 overflow-y-auto ${sidebarCollapsed ? 'px-3' : 'px-3 xl:px-4'} py-5`}>
-            <div className="space-y-2">
+        <aside className={`${sidebarCollapsed ? 'w-[72px]' : 'w-[232px] 2xl:w-[256px]'} sticky top-0 flex h-[calc(100vh-72px)] 2xl:h-[calc(100vh-80px)] shrink-0 flex-col border-r border-hairline bg-white/75 transition-[width] duration-200`}>
+          <nav aria-label={t('主导航', 'Main navigation')} className={`flex-1 overflow-y-auto ${sidebarCollapsed ? 'px-2.5' : 'px-2.5 xl:px-3'} py-5`}>
+            <div className="space-y-1.5">
               {NAV_GROUPS.map(group => <div key={group.label.en} className="space-y-2">
                 {group.items.map(({ to, label, icon, iconStyle, paths }) => {
                   const active = paths.some(path => matchesPath(pathname, path))
@@ -240,10 +240,10 @@ function AppLayout() {
                     to={to}
                     aria-current={active ? "page" : undefined}
                     title={sidebarCollapsed ? t(label.zh, label.en) : undefined}
-                    className={`group relative flex min-h-[48px] 2xl:min-h-[52px] items-center rounded-xl transition-all duration-200 ${sidebarCollapsed ? 'justify-center px-2' : 'gap-3 px-3'} ${active ? 'bg-[#E8F1FF] text-[#2674F5] shadow-[inset_3px_0_0_#3478F6]' : 'text-slate-700 hover:bg-slate-50 hover:text-blue-700'}`}
+                    className={`group relative flex min-h-[44px] 2xl:min-h-[48px] items-center rounded-lg transition-all duration-200 ${sidebarCollapsed ? 'justify-center px-1.5' : 'gap-2.5 px-2.5'} ${active ? 'bg-[#E8F1FF] text-[#2674F5] shadow-[inset_3px_0_0_#3478F6]' : 'text-slate-700 hover:bg-slate-50 hover:text-blue-700'}`}
                   >
-                    <span aria-hidden="true" className={`flex h-9 w-9 2xl:h-10 2xl:w-10 shrink-0 items-center justify-center rounded-xl bg-gradient-to-br text-lg font-semibold leading-none text-white shadow-sm shadow-blue-100/60 ${iconStyle}`}>{icon}</span>
-                    {!sidebarCollapsed && <span className="min-w-0 truncate text-sm font-medium 2xl:text-[15px]">{t(label.zh, label.en)}</span>}
+                    <span aria-hidden="true" className={`flex h-8 w-8 2xl:h-9 2xl:w-9 shrink-0 items-center justify-center rounded-lg bg-gradient-to-br text-base font-semibold leading-none text-white shadow-sm shadow-blue-100/60 ${iconStyle}`}>{icon}</span>
+                    {!sidebarCollapsed && <span className="min-w-0 truncate text-[13px] font-medium 2xl:text-sm">{t(label.zh, label.en)}</span>}
                   </Link>
                 })}
               </div>)}
