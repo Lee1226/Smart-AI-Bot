@@ -4,6 +4,8 @@
 
 @layer base {
   html {
+    /* Desktop density baseline: approximate Chrome's 80% visual scale without browser zoom. */
+    font-size: 80%;
     font-family: theme('fontFamily.sans');
     -webkit-font-smoothing: antialiased;
     text-rendering: optimizeLegibility;
