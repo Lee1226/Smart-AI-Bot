@@ -364,7 +364,7 @@ async def execute_execution_plan_run(
                                 value = str(element.get("text") or element.get("contentDescription") or element.get("content_description") or "").strip()
                                 if value and value not in visible_texts:
                                     visible_texts.append(value)
-                            response_text = "\\n".join(visible_texts)[:6000]
+                            response_text = "\n".join(visible_texts)[:6000]
                         except Exception as ui_error:
                             await emit(f"  本轮 UI 文本读取失败：{ui_error}")
                         round_result = (
