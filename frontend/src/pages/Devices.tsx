@@ -149,13 +149,13 @@ export default function Devices() {
   const usbCount = devices.filter(device => ['adb_usb', 'adb_bridge', 'hdc_bridge', 'ios_bridge'].includes(device.connection_type)).length
 
   return (
-    <div className="space-y-8">
+    <div className="space-y-6">
       <header className="flex flex-wrap items-center justify-between gap-5">
         <div className="flex items-center gap-4">
-          <span className="grid h-14 w-14 place-items-center rounded-[18px] bg-gradient-to-br from-cyan-400 via-blue-500 to-indigo-600 text-3xl text-white shadow-lg shadow-blue-200/60">▯</span>
+          <span className="grid h-11 w-11 place-items-center rounded-[14px] bg-gradient-to-br from-cyan-400 via-blue-500 to-indigo-600 text-2xl text-white shadow-md shadow-blue-200/60">▯</span>
           <div>
             <div className="text-[11px] font-bold uppercase tracking-[0.2em] text-blue-500">DEVICE FLEET MANAGEMENT</div>
-            <h1 className="mt-1 text-3xl font-bold tracking-tight text-[#172744]">{t('设备管理', 'Device management')}</h1>
+            <h1 className="mt-1 text-2xl font-bold tracking-tight text-[#172744]">{t('设备管理', 'Device management')}</h1>
             <p className="mt-1 text-sm text-slate-500">{t('统一接入、监控和管理 Android、HarmonyOS 与 iOS 测试终端。', 'Connect, monitor and manage Android, HarmonyOS and iOS test devices.')}</p>
           </div>
         </div>
@@ -164,18 +164,18 @@ export default function Devices() {
           {t('设备状态每 5 秒自动刷新', 'Device status refreshes every 5 seconds')}
         </div>
       </header>
-      <section className="grid gap-4 sm:grid-cols-2 2xl:grid-cols-4">
+      <section className="grid gap-3 sm:grid-cols-2 2xl:grid-cols-4">
         {[
           { label: t('接入设备', 'Registered devices'), value: devices.length, note: t('平台已登记终端', 'Devices registered'), tone: 'text-[#1B2B4A]', icon: '▯', iconTone: 'from-sky-400 to-blue-600', glow: 'from-sky-50' },
           { label: t('在线设备', 'Online devices'), value: onlineCount, note: t('当前可连接与调试', 'Available for testing'), tone: 'text-emerald-600', icon: '✓', iconTone: 'from-emerald-400 to-teal-500', glow: 'from-emerald-50' },
           { label: t('Android 设备', 'Android devices'), value: androidCount, note: t('ADB / Portal 接入', 'ADB / Portal'), tone: 'text-blue-600', icon: 'A', iconTone: 'from-blue-400 to-indigo-600', glow: 'from-blue-50' },
           { label: t('USB 桥接设备', 'USB bridge devices'), value: usbCount, note: t('本机或桥接连接', 'Local or bridge transport'), tone: 'text-violet-600', icon: '⌁', iconTone: 'from-violet-400 to-purple-600', glow: 'from-violet-50' },
-        ].map(item => <div key={item.label} className={`relative overflow-hidden rounded-[22px] border border-[#E8EFFB] bg-gradient-to-br ${item.glow} via-white to-white p-5 shadow-[0_5px_18px_rgba(56,102,174,0.07)]`}>
+        ].map(item => <div key={item.label} className={`relative overflow-hidden rounded-[18px] border border-[#E8EFFB] bg-gradient-to-br ${item.glow} via-white to-white p-4 shadow-[0_4px_14px_rgba(56,102,174,0.06)]`}>
           <div className="flex items-center gap-4">
-            <span className={`grid h-14 w-14 shrink-0 place-items-center rounded-[17px] bg-gradient-to-br ${item.iconTone} text-2xl font-bold text-white shadow-lg shadow-blue-100/70`}>{item.icon}</span>
+            <span className={`grid h-11 w-11 shrink-0 place-items-center rounded-[14px] bg-gradient-to-br ${item.iconTone} text-xl font-bold text-white shadow-md shadow-blue-100/70`}>{item.icon}</span>
             <div className="min-w-0">
               <div className="text-xs font-medium text-slate-500">{item.label}</div>
-              <div className={`mt-1 text-3xl font-bold tabular-nums tracking-tight ${item.tone}`}>{item.value}</div>
+              <div className={`mt-1 text-2xl font-bold tabular-nums tracking-tight ${item.tone}`}>{item.value}</div>
               <div className="mt-1 text-[11px] text-slate-400">{item.note}</div>
             </div>
           </div>
@@ -183,7 +183,7 @@ export default function Devices() {
         </div>)}
       </section>
       <DeviceWall devices={devices} selectedId={selectedId} onSelect={setSelectedId} />
-      <section className="rounded-[24px] border border-[#E8EFFB] bg-white p-6 shadow-[0_6px_24px_rgba(56,102,174,0.06)]">
+      <section className="rounded-[20px] border border-[#E8EFFB] bg-white p-5 shadow-[0_5px_18px_rgba(56,102,174,0.05)]">
         <div className="flex items-center justify-between gap-4">
           <div>
             <h2 className="font-semibold">{t('Android · 本机 ADB USB 直连', 'Android · Local ADB USB')}</h2>
@@ -220,8 +220,8 @@ export default function Devices() {
       <AdbBridgeSetup transport="ios" devices={devices} server={import.meta.env.DEV ? `${location.protocol}//${location.hostname}:${backendPort || 8000}` : location.origin} />
       <AdbBridgeSetup transport="hdc" devices={devices} server={import.meta.env.DEV ? `${location.protocol}//${location.hostname}:${backendPort || 8000}` : location.origin} />
       </section>
-      <section className="rounded-xl border border-hairline bg-white p-5 shadow-sm space-y-4">
-      <div className="flex items-center justify-between mb-6">
+      <section className="rounded-xl border border-hairline bg-white p-4 shadow-sm space-y-3">
+      <div className="flex items-center justify-between mb-4">
         <h1 className="text-2xl font-bold">{t('远程模式 · App 配对', 'Remote mode · App pairing')}</h1>
         <div className="flex gap-2">
           <button
@@ -251,7 +251,7 @@ export default function Devices() {
 
       {!isLoading && (
         <details
-          className="mb-6 border rounded-lg bg-primary-soft/40 px-4 py-3 text-sm"
+          className="mb-4 border rounded-lg bg-primary-soft/40 px-3 py-2.5 text-sm"
           open={guideOpen ?? devices.length === 0}
           onToggle={e => setGuideOpen((e.target as HTMLDetailsElement).open)}
         >
@@ -295,7 +295,7 @@ export default function Devices() {
       )}
 
       {devices.length === 0 && !isLoading && (
-        <div className="text-center py-16 text-gray-400">
+        <div className="text-center py-12 text-gray-400">
           <p className="text-lg">{t('还没有设备', 'No devices yet')}</p>
           <p className="text-sm mt-1">{t('使用上方本机 ADB USB 直连，或通过 App 配对连接手机。', 'Connect a local ADB USB phone above, or pair through the Portal app.')}</p>
         </div>
@@ -310,7 +310,7 @@ export default function Devices() {
                 <div
                   key={d.id}
                   onClick={() => setSelectedId(d.id)}
-                  className={`flex cursor-pointer items-center gap-4 rounded-[20px] border border-[#E8EFFB] bg-white p-4 shadow-[0_4px_16px_rgba(56,102,174,0.05)] transition-all ${
+                  className={`flex cursor-pointer items-center gap-3 rounded-[16px] border border-[#E8EFFB] bg-white p-3 shadow-[0_3px_12px_rgba(56,102,174,0.04)] transition-all ${
                     d.id === selectedId ? 'ring-2 ring-blue-500 border-blue-300 shadow-[0_8px_22px_rgba(52,102,174,0.12)]' : 'hover:border-blue-200 hover:shadow-md'
                   }`}
                 >
@@ -393,7 +393,7 @@ export default function Devices() {
               ))}
             </div>
 
-            <div className="mt-6 p-4 bg-primary-soft rounded-lg text-sm text-primary-deep">
+            <div className="mt-4 p-3 bg-primary-soft rounded-lg text-sm text-primary-deep">
               <strong>Portal setup:</strong> In the Portal app, tap <strong>{t('扫码连接', 'Scan QR')}</strong> and point it at a
               device's QR code — or set the server URL to{' '}
               <code className="bg-primary-soft px-1 rounded">{wsJoinUrl(lanIp, backendPort)}</code>{' '}
