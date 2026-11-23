@@ -265,8 +265,14 @@ class RunRecorder:
                             raise RuntimeError(f"{name} capture failed: {item['error']}")
                         batch.append((name, item))
 
-                stats["max_video_queue"] = max(stats["max_video_queue"], queues["video"].qsize())
-                stats["max_audio_queue"] = max(stats["max_audio_queue"], queues["audio"].qsize())
+                stats["max_video_queue"] = max(
+                    stats["max_video_queue"],
+                    getattr(queues["video"], "_recorder_peak_size", queues["video"].qsize()),
+                )
+                stats["max_audio_queue"] = max(
+                    stats["max_audio_queue"],
+                    getattr(queues["audio"], "_recorder_peak_size", queues["audio"].qsize()),
+                )
                 await write_items(batch)
 
                 if self._stop.is_set() and queues["video"].empty() and queues["audio"].empty():
