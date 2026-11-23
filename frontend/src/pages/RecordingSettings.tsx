@@ -83,7 +83,7 @@ export default function RecordingSettings() {
 
       <div>
         <label htmlFor="recording-storage-dir" className="mb-1 block text-sm font-medium text-ink">
-          {t('录像保存目录', 'Recording storage directory')}
+          {t('视频保存目录', 'Recording storage directory')}
         </label>
         <input
           id="recording-storage-dir"
@@ -95,12 +95,12 @@ export default function RecordingSettings() {
           className="w-full rounded-xl border border-slate-200 bg-slate-50/70 px-4 py-2.5 text-sm font-mono text-slate-700 outline-none transition focus:border-blue-400 focus:bg-white focus:ring-4 focus:ring-blue-100"
         />
         <p className="mt-1 text-xs text-ink-mute">
-          {t('填写后端运行电脑上的绝对路径。修改目录时，已有录像会迁移到新目录；请确保后端进程对该目录有读写权限。', 'Use an absolute path on the backend host. Existing recordings are moved when the directory changes; the backend process must have read/write access.')}
+          {t('填写后端运行电脑上的绝对路径。修改目录时，已有视频会迁移到新目录；请确保后端进程对该目录有读写权限。', 'Use an absolute path on the backend host. Existing recordings are moved when the directory changes; the backend process must have read/write access.')}
         </p>
       </div>
 
       <div>
-        <label className="mb-1 block text-sm font-medium text-ink">{t('录像保留时间', 'Retention period')}</label>
+        <label className="mb-1 block text-sm font-medium text-ink">{t('视频保留时间', 'Retention period')}</label>
         <select value={String(form.recording_retention_days ?? 30)}
           onChange={e => setForm(prev => ({ ...prev, recording_retention_days: Number(e.target.value) }))}
           className="w-full rounded-lg border border-hairline bg-white px-3 py-2 text-sm">
@@ -122,7 +122,7 @@ export default function RecordingSettings() {
       <div className="flex items-center justify-between gap-3">
         <div>
           <h2 className="text-base font-semibold text-ink">{t('存储空间', 'Storage usage')}</h2>
-          <p className="mt-1 text-xs text-ink-mute">{t('统计当前账号录像目录所在磁盘的实际占用。', 'Actual disk usage for the drive containing this account’s recording directory.')}</p>
+          <p className="mt-1 text-xs text-ink-mute">{t('统计当前账号视频目录所在磁盘的实际占用。', 'Actual disk usage for the drive containing this account’s recording directory.')}</p>
         </div>
         <button onClick={() => qc.invalidateQueries({ queryKey: ['recording-storage'] })}
           className="rounded-md border border-hairline px-3 py-1.5 text-xs text-ink hover:bg-canvas-soft">{t('刷新', 'Refresh')}</button>
@@ -130,8 +130,8 @@ export default function RecordingSettings() {
       {storageLoading && <p className="text-sm text-ink-mute">Loading…</p>}
       {storage && <>
         <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-          <UsageCard title={t('录像文件数', 'Recording files')} value={String(storage.recording_count)} />
-          <UsageCard title={t('录像占用空间', 'Recording size')} value={formatBytes(storage.recording_bytes)} />
+          <UsageCard title={t('视频文件数', 'Recording files')} value={String(storage.recording_count)} />
+          <UsageCard title={t('视频占用空间', 'Recording size')} value={formatBytes(storage.recording_bytes)} />
           <UsageCard title={t('磁盘剩余空间', 'Disk free space')} value={formatBytes(storage.disk_free_bytes)} detail={t('总容量', 'Total') + ': ' + formatBytes(storage.disk_total_bytes)} />
         </div>
         <div>
