@@ -191,8 +191,27 @@ async def update_execution_plan(
         args = step.get("args") if isinstance(step.get("args"), dict) else {}
         if executor not in {"deterministic", "ai", "hybrid", "system"}:
             raise HTTPException(status_code=422, detail=f"steps[{index}].executor is invalid")
-        if executor == "system" and action not in SYSTEM_ACTIONS:
-            raise HTTPException(status_code=422, detail=f"steps[{index}] system executor only supports {sorted(SYSTEM_ACTIONS)}")
+        if executor == "system" and action not in SYSTEM_ACTIONS and action != "audio_play":
+            raise HTTPException(status_code=422, detail=f"steps[{index}] system executor only supports {sorted(SYSTEM_ACTIONS | {'audio_play'})}")
+        if action == "audio_play":
+            turns = args.get("turns")
+            if not isinstance(turns, list) or not turns or len(turns) > 20:
+                raise HTTPException(status_code=422, detail=f"steps[{index}] audio_play requires 1..20 turns")
+            for turn_index, turn in enumerate(turns):
+                if not isinstance(turn, dict) or not str(turn.get("corpus_id") or "").strip():
+                    raise HTTPException(status_code=422, detail=f"steps[{index}].turns[{turn_index}] requires corpus_id")
+                try:
+                    wait_ms = int(turn.get("wait_after_ms", 12000))
+                except (TypeError, ValueError):
+                    wait_ms = -1
+                if wait_ms < 0 or wait_ms > 120000:
+                    raise HTTPException(status_code=422, detail=f"steps[{index}].turns[{turn_index}].wait_after_ms must be 0..120000")
+            try:
+                volume = int(args.get("volume_percent", 80))
+            except (TypeError, ValueError):
+                volume = -1
+            if not 0 <= volume <= 100:
+                raise HTTPException(status_code=422, detail=f"steps[{index}].volume_percent must be 0..100")
         if action == "start_app" and not str(args.get("package_name") or args.get("package") or "").strip():
             raise HTTPException(status_code=422, detail=f"steps[{index}] start_app requires args.package_name")
 
@@ -244,8 +263,27 @@ async def create_plan_version(
         args = step.get("args") if isinstance(step.get("args"), dict) else {}
         if executor not in {"deterministic", "ai", "hybrid", "system"}:
             raise HTTPException(status_code=422, detail=f"steps[{index}].executor is invalid")
-        if executor == "system" and action not in SYSTEM_ACTIONS:
-            raise HTTPException(status_code=422, detail=f"steps[{index}] system executor only supports {sorted(SYSTEM_ACTIONS)}")
+        if executor == "system" and action not in SYSTEM_ACTIONS and action != "audio_play":
+            raise HTTPException(status_code=422, detail=f"steps[{index}] system executor only supports {sorted(SYSTEM_ACTIONS | {'audio_play'})}")
+        if action == "audio_play":
+            turns = args.get("turns")
+            if not isinstance(turns, list) or not turns or len(turns) > 20:
+                raise HTTPException(status_code=422, detail=f"steps[{index}] audio_play requires 1..20 turns")
+            for turn_index, turn in enumerate(turns):
+                if not isinstance(turn, dict) or not str(turn.get("corpus_id") or "").strip():
+                    raise HTTPException(status_code=422, detail=f"steps[{index}].turns[{turn_index}] requires corpus_id")
+                try:
+                    wait_ms = int(turn.get("wait_after_ms", 12000))
+                except (TypeError, ValueError):
+                    wait_ms = -1
+                if wait_ms < 0 or wait_ms > 120000:
+                    raise HTTPException(status_code=422, detail=f"steps[{index}].turns[{turn_index}].wait_after_ms must be 0..120000")
+            try:
+                volume = int(args.get("volume_percent", 80))
+            except (TypeError, ValueError):
+                volume = -1
+            if not 0 <= volume <= 100:
+                raise HTTPException(status_code=422, detail=f"steps[{index}].volume_percent must be 0..100")
         if action == "start_app" and not str(args.get("package_name") or args.get("package") or "").strip():
             raise HTTPException(status_code=422, detail=f"steps[{index}] start_app requires args.package_name")
 
