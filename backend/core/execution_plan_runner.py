@@ -355,8 +355,8 @@ async def execute_execution_plan_run(
                         except Exception as screenshot_error:
                             await emit(f"  本轮截图采集失败：{screenshot_error}")
                         round_result = (
-                            f"语料={audio_name}; 播放={playback['started_at']}~{playback['finished_at']}; "
-                            f"音频时长={playback['duration_seconds']}s; 固定等待={wait_ms}ms"
+                            f"语料={audio_name}（{corpus_id}）；播放={playback['started_at']}~{playback['finished_at']}；"
+                            f"音频时长={playback['duration_seconds']}s；固定等待={wait_ms}ms；预期响应={audio_expected}"
                         )
                         round_summaries.append({
                             "round": round_index + 1, "corpus_id": corpus_id, "name": audio_name,
