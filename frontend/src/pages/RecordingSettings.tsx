@@ -59,7 +59,7 @@ export default function RecordingSettings() {
     <div className="rounded-3xl bg-gradient-to-br from-[#175CD3] via-[#2878E8] to-[#38A6D9] p-7 text-white shadow-[0_16px_40px_rgba(37,99,235,0.18)] sm:p-8">
       <div className="text-xs font-semibold tracking-[0.18em] text-blue-100">AI 终端 · 平台配置</div>
       <h1 className="mt-2 text-2xl font-bold text-white">{t('录制与存储', 'Recording & storage')}</h1>
-      <p className="mt-1 text-sm text-ink-mute">{t('统一管理测试任务的视频录制、文件保存位置和存储空间。', 'Manage task video recording, file location and storage usage in one place.')}</p>
+      <p className="mt-2 text-sm leading-6 text-blue-100">{t('统一管理测试任务的视频录制、文件保存位置和存储空间。', 'Manage task video recording, file location and storage usage in one place.')}</p>
     </div>
 
     <div className="rounded-2xl border border-slate-200/80 bg-white p-6 shadow-[0_8px_28px_rgba(31,75,135,0.05)] space-y-5">
