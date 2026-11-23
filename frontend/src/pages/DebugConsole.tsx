@@ -68,7 +68,7 @@ export default function DebugConsole() {
       </div>
     </header>
 
-    <div className="grid items-start gap-6 2xl:grid-cols-[minmax(360px,0.95fr)_minmax(520px,1.25fr)]">
+    <div className="grid items-start gap-5 xl:grid-cols-[minmax(380px,0.9fr)_minmax(520px,1.1fr)] 2xl:gap-6">
       <section className="min-w-0 space-y-4">
         <div className="flex items-center justify-between rounded-[20px] border border-[#E8EFFB] bg-white px-5 py-4 shadow-[0_5px_18px_rgba(56,102,174,0.05)]">
           <div><h2 className="text-base font-bold text-[#1B2B4A]">设备实时画面</h2><p className="mt-1 text-xs text-slate-500">支持实时视频与鼠标远程操作</p></div>
