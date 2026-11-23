@@ -24,16 +24,16 @@ export default function DeviceWall({ devices, selectedId, onSelect }: {
   const shown = showOffline ? devices : online
   const selected = devices.find(d => d.id === selectedId) || null
 
-  return <section className="rounded-xl border border-hairline bg-white p-5 shadow-sm" aria-label={t('设备屏幕墙', 'Device screen wall')}>
-    <div className="flex flex-wrap items-center justify-between gap-3 mb-5">
+  return <section className="rounded-[24px] border border-[#E8EFFB] bg-white p-6 shadow-[0_6px_24px_rgba(56,102,174,0.06)]" aria-label={t('设备屏幕墙', 'Device screen wall')}>
+    <div className="flex flex-wrap items-center justify-between gap-3 mb-6">
       <div>
-        <h2 className="text-lg font-semibold text-ink">{t('实时设备监控', 'Live device monitoring')}</h2>
-        <p className="text-sm text-ink-mute mt-1">{t('在线', 'Online')} {online.length} / {devices.length} · {t('小屏默认截图流，点击设备切换右侧预览', 'Thumbnails show screenshots. Select a device for the large preview.')}</p>
+        <h2 className="text-xl font-bold text-[#1B2B4A]">{t('实时设备监控', 'Live device monitoring')}</h2>
+        <p className="mt-1 text-sm text-slate-500">{t('在线', 'Online')} {online.length} / {devices.length} · {t('小屏默认截图流，点击设备切换右侧预览', 'Thumbnails show screenshots. Select a device for the large preview.')}</p>
       </div>
       <div className="flex flex-wrap items-center gap-4 text-sm">
         <label className="flex items-center gap-2"><input type="checkbox" checked={showOffline} onChange={e => setShowOffline(e.target.checked)} />{t('显示离线设备', 'Show offline devices')}</label>
         <label className="flex items-center gap-2">{t('排列', 'Layout')}
-          <select aria-label={t('屏幕排列', 'Screen layout')} value={layout} className="border rounded px-2 py-1.5 bg-white" onChange={e => {
+          <select aria-label={t('屏幕排列', 'Screen layout')} value={layout} className="rounded-xl border border-[#E5ECF7] bg-white px-3 py-2 text-sm text-slate-600 shadow-sm" onChange={e => {
             const value = e.target.value as Layout
             setLayout(value); localStorage.setItem('device-wall-layout', value)
           }}>
@@ -45,10 +45,10 @@ export default function DeviceWall({ devices, selectedId, onSelect }: {
         </label>
       </div>
     </div>
-    <div className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_360px] items-start">
-      <div className={`grid gap-3 ${gridClasses[layout]}`}>
+    <div className="grid items-start gap-6 2xl:grid-cols-[minmax(0,1fr)_390px]">
+      <div className={`grid gap-4 ${gridClasses[layout]}`}>
         {shown.map(d => <button key={d.id} type="button" aria-label={`${t('预览设备', 'Preview device')} ${d.name}`} aria-pressed={d.id === selectedId}
-          onClick={() => onSelect(d.id)} className={`min-w-0 bg-white border rounded-xl p-3 text-left transition-colors ${d.id === selectedId ? 'ring-2 ring-primary border-primary' : 'hover:border-primary'}`}>
+          onClick={() => onSelect(d.id)} className={`min-w-0 rounded-[20px] border border-[#E8EFFB] bg-white p-3 text-left shadow-[0_4px_14px_rgba(56,102,174,0.05)] transition-all ${d.id === selectedId ? 'ring-2 ring-blue-500 border-blue-300 shadow-[0_8px_22px_rgba(52,120,246,0.12)]' : 'hover:-translate-y-0.5 hover:border-blue-200 hover:shadow-md'}`}>
           <div className="relative bg-terminal rounded-lg overflow-hidden mx-auto" style={{ aspectRatio: '9 / 19.5', maxWidth: 160 }}>
             {d.status === 'online' ? <>
               <ScreenshotView deviceId={d.id} source="screenshot" />
