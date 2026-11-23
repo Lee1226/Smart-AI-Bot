@@ -126,11 +126,12 @@ export default function Suites() {
   const selectTag = (t: string) => { setTag(t); setPage(1) }
 
   return (
-    <div>
-      <div className="flex items-center justify-between mb-4">
+    <div className="mx-auto max-w-[1500px] space-y-6">
+      <div className="relative overflow-hidden rounded-3xl bg-gradient-to-br from-[#175CD3] via-[#2878E8] to-[#38A6D9] px-7 py-8 text-white shadow-[0_18px_45px_rgba(37,99,235,0.18)] sm:px-9"><div className="pointer-events-none absolute -right-12 -top-20 h-64 w-64 rounded-full border-[36px] border-white/10"/><div className="relative"><div className="mb-3 inline-flex rounded-full border border-white/20 bg-white/10 px-3 py-1 text-xs font-semibold text-blue-50">AI 终端 · 用例管理</div><h1 className="text-2xl font-bold tracking-tight sm:text-3xl">用例套件</h1><p className="mt-3 max-w-2xl text-sm leading-6 text-blue-50/90">集中管理测试套件，支持手动创建、智能导入、标签分类与用例维护。</p></div></div>
+      <div className="flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-slate-200/80 bg-white p-4 shadow-[0_6px_22px_rgba(31,75,135,0.04)]">
         <h1 className="text-2xl font-bold">用例套件</h1>
         <div className="flex gap-2 flex-wrap">
-          <button className="bg-primary text-white px-4 py-1.5 rounded text-sm" onClick={() => { setCreating(true); setCreateError('') }}>+ 手动创建用例套件</button>
+          <button className="rounded-xl bg-gradient-to-r from-blue-600 to-blue-500 px-4 py-2.5 text-sm font-semibold text-white shadow-sm shadow-blue-500/20 transition hover:-translate-y-0.5" onClick={() => { setCreating(true); setCreateError('') }}>+ 手动创建用例套件</button>
           <AISuiteImport />
           <input
             ref={fileRef}
@@ -147,14 +148,14 @@ export default function Suites() {
             onChange={e => { if (e.target.files?.[0]) handleImportFile(e.target.files[0]) }}
           />
           <button
-            className="border border-gray-300 text-gray-700 px-4 py-1.5 rounded text-sm hover:bg-gray-50 disabled:opacity-50"
+            className="rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-sm font-medium text-slate-600 transition hover:border-blue-200 hover:bg-blue-50 disabled:opacity-50"
             onClick={() => importJsonRef.current?.click()}
             disabled={importMut.isPending}
           >
             {importMut.isPending ? '导入中…' : '导入 JSON'}
           </button>
           <button
-            className="bg-primary text-white px-4 py-1.5 rounded text-sm hover:bg-primary-deep disabled:opacity-50"
+            className="rounded-xl border border-blue-200 bg-blue-50 px-4 py-2.5 text-sm font-medium text-blue-700 transition hover:bg-blue-100 disabled:opacity-50"
             onClick={() => fileRef.current?.click()}
             disabled={uploadMut.isPending}
           >
@@ -163,17 +164,17 @@ export default function Suites() {
         </div>
       </div>
 
-      {creating && <form className="bg-white border rounded-lg p-4 mb-4" onSubmit={e => { e.preventDefault(); if (name.trim()) createMut.mutate() }}>
-        <h2 className="font-semibold mb-3">手动创建用例套件</h2>
+      {creating && <form className="rounded-2xl border border-blue-100 bg-white p-5 shadow-[0_8px_28px_rgba(31,75,135,0.05)] space-y-3" onSubmit={e => { e.preventDefault(); if (name.trim()) createMut.mutate() }}>
+        <h2 className="text-lg font-semibold text-slate-900">手动创建用例套件</h2>
         <div className="grid gap-3 sm:grid-cols-3">
-          <label className="text-sm">套件名称（必填）<input autoFocus required maxLength={120} value={name} onChange={e => setName(e.target.value)} className="block w-full border rounded px-3 py-2 mt-1" /></label>
+          <label className="text-sm">套件名称（必填）<input autoFocus required maxLength={120} value={name} onChange={e => setName(e.target.value)} className="mt-1 block w-full rounded-xl border border-slate-200 bg-slate-50/60 px-3 py-2.5 text-sm outline-none transition focus:border-blue-400 focus:bg-white focus:ring-4 focus:ring-blue-500/10" /></label>
           <label className="text-sm">所属项目（可选）<select value={projectId} onChange={e => setProjectId(e.target.value)} className="block w-full border rounded px-3 py-2 mt-1">
             <option value="">未关联项目</option>
             {projects.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
           </select></label>
           <label className="text-sm">标签（可选）<input value={newTag} onChange={e => setNewTag(e.target.value)} className="block w-full border rounded px-3 py-2 mt-1" /></label>
         </div>
-        {!projectId && <label className="block text-sm mt-3">旧版 Android 包名（可选）<input value={appPackage} onChange={e => setAppPackage(e.target.value)} placeholder="com.example.app" className="block border rounded px-3 py-2 mt-1" /></label>}
+        {!projectId && <label className="block text-sm mt-3">旧版 Android 包名（可选）<input value={appPackage} onChange={e => setAppPackage(e.target.value)} placeholder="com.example.app" className="mt-1 block w-full rounded-xl border border-slate-200 bg-slate-50/60 px-3 py-2.5 text-sm outline-none focus:border-blue-400 focus:ring-4 focus:ring-blue-500/10" /></label>}
         <p className="text-sm text-gray-500 mt-3">创建后进入套件详情，可手动添加用例步骤和预期结果。</p>
         {createError && <p role="alert" className="text-sm text-red-600 mt-2">{createError}</p>}
         <div className="flex gap-2 mt-3">
@@ -188,11 +189,11 @@ export default function Suites() {
         value={q}
         onChange={e => setQ(e.target.value)}
         placeholder="搜索套件名称…"
-        className="w-full border rounded px-3 py-2 text-sm mb-3 focus:outline-none focus:ring-2 focus:ring-primary"
+        className="w-full rounded-xl border border-slate-200 bg-white px-4 py-3 text-sm text-slate-700 shadow-sm outline-none transition placeholder:text-slate-400 focus:border-blue-400 focus:ring-4 focus:ring-blue-500/10"
       />
 
       {/* Tag grouping chips */}
-      <div className="flex items-center gap-2 mb-4 flex-wrap">
+      <div className="flex flex-wrap items-center gap-2 rounded-2xl border border-slate-200/80 bg-white p-4 shadow-[0_6px_22px_rgba(31,75,135,0.04)]">
         <button
           onClick={() => selectTag('')}
           className={`text-xs px-3 py-1 rounded-full border ${tag === '' ? 'bg-primary text-white border-transparent' : 'border-gray-300 text-gray-600 hover:bg-gray-50'}`}
@@ -239,19 +240,19 @@ export default function Suites() {
             </div>
             <Link
               to={`/suites/${s.id}`}
-              className="text-sm px-3 py-1.5 bg-primary text-white rounded hover:bg-primary-deep"
+              className="rounded-lg bg-blue-600 px-3 py-2 text-sm font-medium text-white transition hover:bg-blue-700"
             >
               Run
             </Link>
             <a
               href={`/api/suites/${s.id}/export?token=${encodeURIComponent(getToken() || '')}`}
               download
-              className="text-sm px-3 py-1.5 border border-gray-300 text-gray-700 rounded hover:bg-gray-50"
+              className="rounded-lg border border-slate-200 px-3 py-2 text-sm font-medium text-slate-600 transition hover:bg-slate-50"
             >
               导出
             </a>
             <button
-              className="text-sm px-3 py-1.5 border border-red-200 text-red-600 rounded hover:bg-red-50"
+              className="rounded-lg border border-rose-200 px-3 py-2 text-sm font-medium text-rose-600 transition hover:bg-rose-50"
               onClick={() => {
                 if (confirm(`Delete suite "${s.name}"?`)) deleteMut.mutate(s.id)
               }}
