@@ -8,6 +8,8 @@ import {
 } from '../lib/api'
 import { useT } from '../lib/i18n'
 import LifecycleActionEditor, { type LifecycleAction } from './LifecycleActionEditor'
+import AudioCorpusPicker from './AudioCorpusPicker'
+import type { AudioPlaybackTurn } from '../lib/api'
 
 const STATUS_STYLE: Record<string, string> = {
   draft: 'bg-amber-100 text-amber-700',
@@ -24,6 +26,7 @@ const ACTIONS = [
   { value: 'press_key', label: '按下按键' },
   { value: 'global_action', label: '系统操作' },
   { value: 'tap_element', label: '点击页面元素（旧格式）' },
+  { value: 'audio_play', label: '播放音频语料' },
 ]
 
 const fieldClass = 'w-full min-w-0 rounded-xl border border-slate-200 bg-slate-50/60 px-3 py-2.5 text-sm text-slate-700 outline-none transition focus:border-blue-400 focus:bg-white focus:ring-4 focus:ring-blue-500/10'
@@ -408,7 +411,7 @@ export default function ExecutionPlanManager({ suiteId, platform, device }: { su
                 const actions = Array.isArray(selectedPlan.metadata?.[phase]) ? selectedPlan.metadata[phase] as LifecycleAction[] : []
                 return <div key={phase} className="rounded-xl border border-slate-200/80 bg-white p-4 shadow-sm">
                   <div className="text-xs font-semibold text-gray-700">{phase === 'pre_actions' ? '执行前处理' : '执行后处理'}</div>
-                  {actions.filter(action => action.enabled !== false).length ? <div className="mt-2 space-y-1">{actions.filter(action => action.enabled !== false).map((action, index) => <div key={action.id || index} className="text-xs text-gray-600">{index + 1}. {({ stop_app: '强制停止应用', start_app: '启动应用', global_action: '系统导航', press_key: '按键操作', tap: '点击坐标', input_text: '输入文本', swipe: '滑动屏幕', scroll: '滚动页面', wait: '等待' } as Record<string, string>)[action.action] || action.action} · {String(action.args?.package_name || action.args?.package || action.args?.action || action.args?.key || action.args?.duration_ms || '')}</div>)}</div> : <p className="mt-2 text-xs text-gray-400">未配置，不执行任何处理</p>}
+                  {actions.filter(action => action.enabled !== false).length ? <div className="mt-2 space-y-1">{actions.filter(action => action.enabled !== false).map((action, index) => <div key={action.id || index} className="text-xs text-gray-600">{index + 1}. {({ stop_app: '强制停止应用', start_app: '启动应用', global_action: '系统导航', press_key: '按键操作', tap: '点击坐标', input_text: '输入文本', swipe: '滑动屏幕', scroll: '滚动页面', wait: '等待', audio_play: '播放音频语料' } as Record<string, string>)[action.action] || action.action} · {String(action.args?.package_name || action.args?.package || action.args?.action || action.args?.key || action.args?.duration_ms || '')}</div>)}</div> : <p className="mt-2 text-xs text-gray-400">未配置，不执行任何处理</p>}
                 </div>
               })}
             </div>
@@ -500,14 +503,14 @@ export default function ExecutionPlanManager({ suiteId, platform, device }: { su
                     </div>
                     <div>
                       <label className={labelClass}>{t('操作类型', 'Action')}</label>
-                      <select className={fieldClass} value={step.action} onChange={e => { const action = e.target.value; patchStep(index, { action, ...( ['start_app', 'global_action', 'press_key'].includes(action) ? { executor: 'system' } : step.executor === 'system' ? { executor: 'deterministic' } : {}) }) }}>
+                      <select className={fieldClass} value={step.action} onChange={e => { const action = e.target.value; patchStep(index, { action, ...( ['start_app', 'global_action', 'press_key', 'audio_play'].includes(action) ? { executor: 'system' } : step.executor === 'system' ? { executor: 'deterministic' } : {}) }) }}>
                         {ACTIONS.map(a => <option key={a.value} value={a.value}>{a.label}</option>)}
                       </select>
                     </div>
                     <div>
                       <label className={labelClass}>{t('执行方式', 'Execution strategy')}</label>
                       <select className={fieldClass} value={step.executor} onChange={e => patchStep(index, { executor: e.target.value as ExecutionPlanStep['executor'] })}>
-                        <option value="system" disabled={!["start_app", "global_action", "press_key"].includes(step.action)}>{t('系统 API / Package 执行', 'System API / Package')}</option>
+                        <option value="system" disabled={!["start_app", "global_action", "press_key", "audio_play"].includes(step.action)}>{t('系统 API / Package 执行', 'System API / Package')}</option>
                         <option value="deterministic">{t('UI 确定性自动执行（优先）', 'Deterministic UI automation (preferred)')}</option>
                         <option value="hybrid">{t('混合执行（必要时调用 AI）', 'Hybrid (AI fallback)')}</option>
                         <option value="ai">{t('AI 执行', 'AI execution')}</option>
@@ -542,6 +545,18 @@ export default function ExecutionPlanManager({ suiteId, platform, device }: { su
                       </>
                     )}
 
+                    {step.action === 'audio_play' && (
+                      <AudioCorpusPicker
+                        mode={step.args?.mode === 'conversation' ? 'conversation' : 'single'}
+                        turns={Array.isArray(step.args?.turns) ? step.args.turns as AudioPlaybackTurn[] : []}
+                        volumePercent={Number(step.args?.volume_percent ?? 80)}
+                        outputDeviceIndex={step.args?.output_device_index === undefined || step.args?.output_device_index === null ? null : Number(step.args.output_device_index)}
+                        onModeChange={mode => patchArgs(index, 'mode', mode)}
+                        onTurnsChange={turns => patchArgs(index, 'turns', turns)}
+                        onVolumeChange={value => patchArgs(index, 'volume_percent', value)}
+                        onOutputDeviceChange={value => patchArgs(index, 'output_device_index', value)}
+                      />
+                    )}
                     {step.action === 'input_text' && (
                       <div className="md:col-span-2">
                         <label className={labelClass}>{t('输入内容', 'Text to enter')}</label>
