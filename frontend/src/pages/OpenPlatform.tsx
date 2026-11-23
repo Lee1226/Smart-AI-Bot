@@ -25,9 +25,9 @@ export default function OpenPlatform() {
         <div className="flex flex-wrap items-center justify-between gap-3">
           <div>
             <h2 className="text-base font-semibold text-slate-800">{t('接口服务建设', 'API service status')}</h2>
-            <p className="mt-1 text-sm text-slate-500">{t('第一阶段：统一 HTTP REST API', 'Phase 1: Unified HTTP REST API')}</p>
+            <p className="mt-1 text-sm text-slate-500">{t('第一阶段：HTTP REST API 已开放（只读接口）', 'Phase 1: HTTP REST API available (read-only)')}</p>
           </div>
-          <span className="rounded-full bg-amber-50 px-3 py-1 text-xs font-medium text-amber-700">{t('建设中', 'In progress')}</span>
+          <span className="rounded-full bg-amber-50 px-3 py-1 text-xs font-medium text-amber-700">{t('只读接口已开放', 'Read-only API available')}</span>
         </div>
         <div className="mt-5 grid gap-3 sm:grid-cols-2">
           <div className="rounded-xl bg-slate-50 p-4">
@@ -40,8 +40,15 @@ export default function OpenPlatform() {
           </div>
         </div>
         <p className="mt-3 text-xs leading-5 text-slate-500">
-          {t('说明：上述为规划中的开放接口规范。专用接口路由、权限校验和 OpenAPI 文档尚在建设，当前不能将该前缀视为已可调用的正式 API。', 'Note: This is the planned public API contract. Dedicated routes, permission checks and OpenAPI documentation are still being implemented; this prefix is not yet a production-ready API.')}
+          {t('当前已开放设备、用例套件和测试任务的只读查询接口。接口使用独立租户隔离与 API Key 权限校验；创建任务、取消任务、实时进度等能力将在后续阶段开放。', 'Read-only device, suite and run endpoints are now available with tenant isolation and API key scope checks. Run creation, cancellation and live progress will be added in a later phase.')}
         </p>
+      </section>
+
+      <section className="rounded-2xl border border-slate-200/80 bg-white p-5 shadow-[0_8px_28px_rgba(31,75,135,0.05)] sm:p-6">
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <div><h2 className="text-base font-semibold text-slate-800">{t('接口文档', 'API documentation')}</h2><p className="mt-1 text-sm text-slate-500">{t('查看认证方式、接口参数和调用示例。', 'Review authentication, parameters and request examples.')}</p></div>
+          <Link to="/open-platform/docs" className="rounded-lg border border-blue-200 px-4 py-2 text-sm font-medium text-blue-700 transition hover:bg-blue-50">{t('查看文档', 'View docs')}</Link>
+        </div>
       </section>
 
       <section className="grid gap-3 sm:grid-cols-2">
