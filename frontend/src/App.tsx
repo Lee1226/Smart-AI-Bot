@@ -196,7 +196,7 @@ function AppLayout() {
       {/* Left sidebar */}
       <aside className="w-52 shrink-0 border-r border-hairline bg-canvas flex flex-col sticky top-0 h-screen">
         <div className="h-14 flex items-center gap-2 px-4 border-b border-hairline">
-          <img src="/favicon.png" alt="" className="w-6 h-6 rounded-md" />
+          <img src="/brand-icon.svg" alt="" className="w-8 h-8 shrink-0 rounded-[10px]" />
           <span className="font-mono font-semibold text-base tracking-tight text-ink">AI 终端智能测试平台</span>
         </div>
         <nav aria-label={t('主导航', 'Main navigation')} className="flex-1 p-2 space-y-6 overflow-y-auto">
