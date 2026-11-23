@@ -55,13 +55,14 @@ export default function RecordingSettings() {
   const usedPercent = storage && storage.disk_total_bytes > 0
     ? Math.min(100, Math.round(storage.disk_used_bytes / storage.disk_total_bytes * 100)) : 0
 
-  return <div className="max-w-4xl space-y-6">
-    <div>
-      <h1 className="text-2xl font-bold text-ink">{t('录制与存储', 'Recording & storage')}</h1>
+  return <div className="mx-auto max-w-5xl space-y-6">
+    <div className="rounded-3xl bg-gradient-to-br from-[#175CD3] via-[#2878E8] to-[#38A6D9] p-7 text-white shadow-[0_16px_40px_rgba(37,99,235,0.18)] sm:p-8">
+      <div className="text-xs font-semibold tracking-[0.18em] text-blue-100">AI 终端 · 平台配置</div>
+      <h1 className="mt-2 text-2xl font-bold text-white">{t('录制与存储', 'Recording & storage')}</h1>
       <p className="mt-1 text-sm text-ink-mute">{t('统一管理测试任务的视频录制、文件保存位置和存储空间。', 'Manage task video recording, file location and storage usage in one place.')}</p>
     </div>
 
-    <div className="rounded-xl border border-hairline bg-white p-5 shadow-sm space-y-5">
+    <div className="rounded-2xl border border-slate-200/80 bg-white p-6 shadow-[0_8px_28px_rgba(31,75,135,0.05)] space-y-5">
       <div>
         <h2 className="text-base font-semibold text-ink">{t('录制设置', 'Recording')}</h2>
         <p className="mt-1 text-xs text-ink-mute">
@@ -91,7 +92,7 @@ export default function RecordingSettings() {
           onChange={e => setForm(prev => ({ ...prev, recording_storage_dir: e.target.value }))}
           placeholder={t('例如：E:\\AI-Test\\recordings', 'For example: E:\\AI-Test\\recordings')}
           spellCheck={false}
-          className="w-full rounded-lg border border-hairline bg-white px-3 py-2 text-sm font-mono text-ink outline-none focus:border-primary"
+          className="w-full rounded-xl border border-slate-200 bg-slate-50/70 px-4 py-2.5 text-sm font-mono text-slate-700 outline-none transition focus:border-blue-400 focus:bg-white focus:ring-4 focus:ring-blue-100"
         />
         <p className="mt-1 text-xs text-ink-mute">
           {t('填写后端运行电脑上的绝对路径。修改目录时，已有录像会迁移到新目录；请确保后端进程对该目录有读写权限。', 'Use an absolute path on the backend host. Existing recordings are moved when the directory changes; the backend process must have read/write access.')}
@@ -111,13 +112,13 @@ export default function RecordingSettings() {
         {saveMut.isError && <span className="text-xs text-red-600">{t('保存失败，请检查目录是否有效以及后端是否有权限。', 'Save failed. Check that the directory is valid and writable by the backend.')}</span>}
         {saved && <span className="text-xs text-green-700">{t('已保存', 'Saved')}</span>}
         <button disabled={saveMut.isPending} onClick={() => saveMut.mutate()}
-          className="rounded-lg bg-primary px-4 py-2 text-sm font-medium text-white hover:bg-primary-deep disabled:opacity-50">
+          className="rounded-xl bg-gradient-to-r from-[#2169D5] to-[#328FE5] px-5 py-2.5 text-sm font-semibold text-white shadow-sm disabled:opacity-50">
           {saveMut.isPending ? t('保存中…', 'Saving…') : t('保存设置', 'Save settings')}
         </button>
       </div>
     </div>
 
-    <div className="rounded-xl border border-hairline bg-white p-5 shadow-sm space-y-4">
+    <div className="rounded-2xl border border-slate-200/80 bg-white p-6 shadow-[0_8px_28px_rgba(31,75,135,0.05)] space-y-4">
       <div className="flex items-center justify-between gap-3">
         <div>
           <h2 className="text-base font-semibold text-ink">{t('存储空间', 'Storage usage')}</h2>
