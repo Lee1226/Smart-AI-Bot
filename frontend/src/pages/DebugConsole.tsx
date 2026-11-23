@@ -62,7 +62,7 @@ export default function DebugConsole() {
         <h1 className="text-3xl font-bold tracking-tight text-[#172744]">调试控制台</h1>
         <p className="mt-2 max-w-3xl text-sm leading-6 text-slate-500">实时观察设备画面与 Agent 执行过程。调试会话独立于正式测试记录，并与正式任务共用设备独占锁。</p>
       </div>
-      <div className="flex items-center gap-2">
+      <div className="flex items-center gap-3 rounded-2xl border border-[#E8EFFB] bg-white/90 px-4 py-3 shadow-[0_5px_18px_rgba(56,102,174,0.06)]">
         <span className={`rounded-full px-3 py-1.5 text-xs font-medium ${statusTone}`}>{statusLabel}</span>
         <span className="text-xs text-ink-mute">{selectedDevice ? selectedDevice.name : '未选择设备'}</span>
       </div>
@@ -71,12 +71,12 @@ export default function DebugConsole() {
     <div className="grid items-start gap-6 2xl:grid-cols-[minmax(360px,0.95fr)_minmax(520px,1.25fr)]">
       <section className="min-w-0 space-y-4">
         <div className="flex items-center justify-between rounded-[20px] border border-[#E8EFFB] bg-white px-5 py-4 shadow-[0_5px_18px_rgba(56,102,174,0.05)]">
-          <div><h2 className="text-sm font-semibold">设备实时画面</h2><p className="mt-0.5 text-xs text-ink-mute">支持实时视频与鼠标远程操作</p></div>
+          <div><h2 className="text-base font-bold text-[#1B2B4A]">设备实时画面</h2><p className="mt-1 text-xs text-slate-500">支持实时视频与鼠标远程操作</p></div>
           {selectedDevice && <span className={`text-xs ${selectedDevice.status === 'online' ? 'text-emerald-700' : 'text-rose-600'}`}>{selectedDevice.status === 'online' ? '● 在线' : '● 离线'}</span>}
         </div>
         <LivePanel device={selectedDevice as Device | null} defaultMode="on" storageKey="debug-live-mode" forceCanvas2D />
         <div className="rounded-[22px] border border-[#E8EFFB] bg-white p-5 shadow-[0_6px_24px_rgba(56,102,174,0.06)]">
-          <div className="flex items-center justify-between"><h3 className="text-sm font-semibold">本次调试配置</h3><span className="text-[11px] text-ink-mute">独立会话</span></div>
+          <div className="flex items-center justify-between"><h3 className="text-base font-bold text-[#1B2B4A]">本次调试配置</h3><span className="rounded-full bg-blue-50 px-3 py-1 text-[11px] font-medium text-blue-600">独立会话</span></div>
           <div className="mt-3 grid grid-cols-2 gap-3 text-xs">
             <div className="rounded-lg bg-canvas-soft p-3"><div className="text-ink-mute">设备类型</div><div className="mt-1 font-medium text-ink">{selectedDevice?.platform === 'harmony' ? 'HarmonyOS' : selectedDevice?.platform === 'ios' ? 'iOS' : 'Android'}</div></div>
             <div className="rounded-lg bg-canvas-soft p-3"><div className="text-ink-mute">连接方式</div><div className="mt-1 font-medium text-ink">{selectedDevice?.connection_type || '—'}</div></div>
@@ -86,10 +86,10 @@ export default function DebugConsole() {
 
       <section className="min-w-0 space-y-4">
         <div className="rounded-[24px] border border-[#E8EFFB] bg-white p-6 shadow-[0_6px_24px_rgba(56,102,174,0.06)]">
-          <div className="flex items-center justify-between gap-3"><div><h2 className="text-xl font-bold text-[#1B2B4A]">Agent 任务配置</h2><p className="mt-1 text-xs text-ink-mute">选择目标设备与模型，输入自然语言操作目标</p></div><span className="rounded-md bg-primary-soft px-2 py-1 text-[11px] font-medium text-primary-deep">自然语言驱动</span></div>
+          <div className="flex items-center justify-between gap-3"><div><h2 className="text-xl font-bold text-[#1B2B4A]">Agent 任务配置</h2><p className="mt-1 text-xs text-ink-mute">选择目标设备与模型，输入自然语言操作目标</p></div><span className="rounded-full border border-blue-100 bg-blue-50 px-3 py-1.5 text-[11px] font-semibold text-blue-600">自然语言驱动</span></div>
           <div className="mt-4 grid grid-cols-1 gap-4 md:grid-cols-2">
             <label className="block text-xs font-medium text-ink-mute">目标设备
-              <select className="mt-1.5 w-full rounded-lg border border-hairline bg-white px-3 py-2.5 text-sm text-ink" value={deviceId} onChange={e => setDeviceId(e.target.value)}>
+              <select className="mt-2 w-full rounded-xl border border-[#E5ECF7] bg-[#FBFDFF] px-4 py-3 text-sm text-[#243653] outline-none transition focus:border-blue-300 focus:bg-white focus:ring-4 focus:ring-blue-100/70" value={deviceId} onChange={e => setDeviceId(e.target.value)}>
                 <option value="">请选择在线设备</option>
                 {devices.map(d => <option key={d.id} value={d.id} disabled={d.status !== 'online'}>{d.name} · {d.status === 'online' ? '在线' : '离线'}</option>)}
               </select>
@@ -100,26 +100,26 @@ export default function DebugConsole() {
               </select>
             </label>
             <label className="block text-xs font-medium text-ink-mute md:col-span-2">模型名称
-              <input className="mt-1.5 w-full rounded-lg border border-hairline px-3 py-2.5 text-sm" value={model} onChange={e => setModel(e.target.value)} list="debug-models" />
+              <input className="mt-2 w-full rounded-xl border border-[#E5ECF7] bg-[#FBFDFF] px-4 py-3 text-sm text-[#243653] outline-none transition focus:border-blue-300 focus:bg-white focus:ring-4 focus:ring-blue-100/70" value={model} onChange={e => setModel(e.target.value)} list="debug-models" />
               <datalist id="debug-models">{(PROVIDER_MODELS[provider] || []).map(m => <option key={m} value={m} />)}</datalist>
               <span className="mt-1 block text-[11px] font-normal text-ink-mute">严格使用所选模型，不启用 fallback。</span>
             </label>
           </div>
           <label className="mt-4 block text-xs font-medium text-ink-mute">执行指令
-            <textarea rows={4} className="mt-1.5 w-full resize-y rounded-lg border border-hairline px-3 py-3 text-sm text-ink outline-none focus:border-primary focus:ring-2 focus:ring-primary/10" placeholder="例如：打开系统设置，进入 WLAN 页面，读取当前连接状态。" value={goal} onChange={e => setGoal(e.target.value)} />
+            <textarea rows={4} className="mt-2 w-full resize-y rounded-xl border border-[#E5ECF7] bg-[#FBFDFF] px-4 py-3 text-sm leading-6 text-[#243653] outline-none transition placeholder:text-slate-400 focus:border-blue-300 focus:bg-white focus:ring-4 focus:ring-blue-100/70" placeholder="例如：打开系统设置，进入 WLAN 页面，读取当前连接状态。" value={goal} onChange={e => setGoal(e.target.value)} />
           </label>
           <label className="mt-3 block text-xs font-medium text-ink-mute">预期结果 <span className="font-normal">（可选）</span>
             <input className="mt-1.5 w-full rounded-lg border border-hairline px-3 py-2.5 text-sm" placeholder="例如：成功进入 WLAN 页面并说明连接状态" value={expected} onChange={e => setExpected(e.target.value)} />
           </label>
-          <div className="mt-4 rounded-lg bg-canvas-soft p-3">
+          <div className="mt-4 rounded-2xl border border-blue-50 bg-gradient-to-r from-[#F0F7FF] to-[#F8FAFF] p-4">
             <div className="flex items-center justify-between text-xs"><span className="font-medium text-ink-mute">最大执行步数</span><span className="font-semibold tabular-nums text-ink">{maxSteps} 步</span></div>
-            <input type="range" min={1} max={60} value={maxSteps} onChange={e => setMaxSteps(Number(e.target.value))} className="mt-2 block w-full accent-primary" />
+            <input type="range" min={1} max={60} value={maxSteps} onChange={e => setMaxSteps(Number(e.target.value))} className="mt-3 block w-full accent-blue-600" />
             <div className="mt-1 flex justify-between text-[10px] text-ink-faint"><span>1 步</span><span>60 步</span></div>
           </div>
-          <div className="mt-4 flex flex-wrap gap-2 border-t border-hairline pt-4">
-            <button disabled={!canStart} onClick={() => { setSessionId(''); setCursor(0); setLogLines([]); start.mutate({ device_id: deviceId, goal, expected: expected || '完成用户要求的操作，并说明执行结果', provider, model, max_steps: maxSteps }) }} className="rounded-lg bg-primary px-5 py-2.5 text-sm font-semibold text-white shadow-sm hover:bg-primary-deep disabled:cursor-not-allowed disabled:opacity-40">{start.isPending ? '正在启动…' : '▶ 开始调试'}</button>
-            <button disabled={!busy || stop.isPending} onClick={() => stop.mutate(sessionId)} className="rounded-lg border border-rose-200 px-4 py-2.5 text-sm font-medium text-rose-700 hover:bg-rose-50 disabled:cursor-not-allowed disabled:opacity-40">■ 停止任务</button>
-            <button onClick={() => { setSessionId(''); setCursor(0); setLogLines([]) }} className="rounded-lg border border-hairline px-4 py-2.5 text-sm text-ink-mute hover:bg-canvas-cool">清空日志</button>
+          <div className="mt-5 flex flex-wrap gap-3 border-t border-[#EDF1F8] pt-5">
+            <button disabled={!canStart} onClick={() => { setSessionId(''); setCursor(0); setLogLines([]); start.mutate({ device_id: deviceId, goal, expected: expected || '完成用户要求的操作，并说明执行结果', provider, model, max_steps: maxSteps }) }} className="rounded-xl bg-gradient-to-r from-blue-600 to-blue-500 px-6 py-3 text-sm font-semibold text-white shadow-lg shadow-blue-200/60 transition hover:-translate-y-0.5 hover:shadow-xl disabled:cursor-not-allowed disabled:opacity-40">{start.isPending ? '正在启动…' : '▶ 开始调试'}</button>
+            <button disabled={!busy || stop.isPending} onClick={() => stop.mutate(sessionId)} className="rounded-xl border border-rose-200 bg-white px-5 py-3 text-sm font-semibold text-rose-600 transition hover:bg-rose-50 disabled:cursor-not-allowed disabled:opacity-40">■ 停止任务</button>
+            <button onClick={() => { setSessionId(''); setCursor(0); setLogLines([]) }} className="rounded-xl border border-[#E2EAF5] bg-white px-5 py-3 text-sm font-semibold text-slate-500 transition hover:bg-slate-50">清空日志</button>
           </div>
           {start.isPending && <p className="mt-2 text-xs text-ink-mute">正在创建调试会话…</p>}
         </div>
