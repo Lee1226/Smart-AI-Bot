@@ -186,10 +186,11 @@ async def subscribe_local_adb_recorder(device_id: str, serial: str):
     """
     consumer_id = "rec-" + uuid.uuid4().hex
     lock = _local_adb_hub_lock(device_id)
-    # Bound backlog to about 4.3s of 30fps video and 5.1s of 20ms audio.
-    # Overflow fails only this recording; it never blocks preview or capture.
-    video_queue = asyncio.Queue(maxsize=128)
-    audio_queue = asyncio.Queue(maxsize=256)
+    # Keep a bounded burst buffer for transient mux/disk scheduling jitter.
+    # Approximate capacity: 10s of 30fps video and 10s of 20ms AAC audio.
+    # Overflow remains isolated to this recording and never blocks preview.
+    video_queue = asyncio.Queue(maxsize=300)
+    audio_queue = asyncio.Queue(maxsize=512)
 
     while True:
         wait_for_stopping_hub = None
@@ -287,8 +288,10 @@ async def _run_local_adb_hub(device_id: str, serial: str, hub: dict) -> None:
                             break
                     target.put_nowait({"error": f"{kind} recorder queue overflow"})
                 logger.warning(
-                    "[LIVE HUB] recorder dropped: queue full device_id=%s recorder=%s stream=%s",
-                    device_id, recorder_id, kind,
+                    "[LIVE HUB] recorder overflow: device_id=%s recorder=%s stream=%s "
+                    "queue_size=%d queue_max=%d video_size=%d audio_size=%d",
+                    device_id, recorder_id, kind, queue.qsize(), queue.maxsize,
+                    recorder["video"].qsize(), recorder["audio"].qsize(),
                 )
 
     async def publish(data: bytes, idle_flush: bool = False, recorder_packet=None) -> None:
