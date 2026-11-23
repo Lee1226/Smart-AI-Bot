@@ -29,23 +29,23 @@ import AppManagement from './pages/AppManagement'
 import ExplorationCenter from './pages/ExplorationCenter'
 import SkillLibrary from './pages/SkillLibrary'
 
-type NavigationItem = { to: string; label: { zh: string; en: string }; icon: string; paths: string[] }
+type NavigationItem = { to: string; label: { zh: string; en: string }; icon: string; iconStyle: string; paths: string[] }
 const NAV_GROUPS: { label: { zh: string; en: string }; items: NavigationItem[] }[] = [
   { label: { zh: '测试工作台', en: 'Test workspace' }, items: [
-    { to: '/', label: { zh: '工作台', en: 'Workbench' }, icon: '▦', paths: ['/'] },
-    { to: '/devices', label: { zh: '设备管理', en: 'Devices' }, icon: '📱', paths: ['/devices'] },
-    { to: '/debug', label: { zh: '调试控制台', en: 'Debug console' }, icon: '⌘', paths: ['/debug'] },
-    { to: '/quick', label: { zh: '任务执行', en: 'Execution' }, icon: '⚡', paths: ['/quick', '/regressions'] },
-    { to: '/suites', label: { zh: '用例中心', en: 'Cases' }, icon: '🧪', paths: ['/suites', '/library', '/automation', '/recorder', '/knowledge', '/execution-plans', '/apps'] },
-    { to: '/runs', label: { zh: '测试任务', en: 'Test tasks' }, icon: '▶', paths: ['/runs'] },
-    { to: '/recordings', label: { zh: '录像文件', en: 'Recordings' }, icon: '▣', paths: ['/recordings'] },
+    { to: '/', label: { zh: '工作台', en: 'Workbench' }, icon: '▦', iconStyle: 'from-blue-500 to-indigo-600', paths: ['/'] },
+    { to: '/devices', label: { zh: '设备管理', en: 'Devices' }, icon: '▯', iconStyle: 'from-teal-400 to-cyan-600', paths: ['/devices'] },
+    { to: '/debug', label: { zh: '调试控制台', en: 'Debug console' }, icon: '⌘', iconStyle: 'from-violet-500 to-indigo-600', paths: ['/debug'] },
+    { to: '/quick', label: { zh: '任务执行', en: 'Execution' }, icon: 'ϟ', iconStyle: 'from-amber-400 to-orange-600', paths: ['/quick', '/regressions'] },
+    { to: '/suites', label: { zh: '用例中心', en: 'Cases' }, icon: '⚗', iconStyle: 'from-fuchsia-500 to-purple-600', paths: ['/suites', '/library', '/automation', '/recorder', '/knowledge', '/execution-plans', '/apps'] },
+    { to: '/runs', label: { zh: '测试任务', en: 'Test tasks' }, icon: '▶', iconStyle: 'from-sky-400 to-blue-600', paths: ['/runs'] },
+    { to: '/recordings', label: { zh: '录像文件', en: 'Recordings' }, icon: '▣', iconStyle: 'from-pink-400 to-rose-600', paths: ['/recordings'] },
   ] },
   { label: { zh: 'AI 探索', en: 'AI exploration' }, items: [
-    { to: '/exploration', label: { zh: 'AI 探索中心', en: 'Exploration center' }, icon: '✧', paths: ['/exploration'] },
-    { to: '/skills', label: { zh: '技能库', en: 'Skill library' }, icon: '◇', paths: ['/skills'] },
+    { to: '/exploration', label: { zh: 'AI 探索中心', en: 'Exploration center' }, icon: '✧', iconStyle: 'from-cyan-400 to-violet-600', paths: ['/exploration'] },
+    { to: '/skills', label: { zh: '技能库', en: 'Skill library' }, icon: '◇', iconStyle: 'from-violet-400 to-fuchsia-600', paths: ['/skills'] },
   ] },
   { label: { zh: '管理', en: 'Manage' }, items: [
-    { to: '/settings', label: { zh: '设置与账号', en: 'Settings & account' }, icon: '⚙', paths: ['/settings', '/account'] },
+    { to: '/settings', label: { zh: '设置与账号', en: 'Settings & account' }, icon: '⚙', iconStyle: 'from-slate-400 to-slate-600', paths: ['/settings', '/account'] },
   ] },
 ]
 const PAGE_TABS = {
@@ -204,10 +204,11 @@ function AppLayout() {
             <div className="px-3 pt-3 pb-2 text-[11px] font-medium text-ink-faint tracking-wide">{t(group.label.zh, group.label.en)}</div>
             <div className="space-y-1">{group.items.map(({ to, label, icon, paths }) => {
               const active = paths.some(path => matchesPath(pathname, path))
+              const item = group.items.find(entry => entry.to === to)
               return <Link key={to} to={to} aria-current={active ? "page" : undefined}
-                className={`flex items-center gap-2.5 px-3 py-2.5 rounded-md text-sm font-medium transition-colors ${active ? 'bg-primary-soft text-primary-deep' : 'text-ink-mute hover:bg-canvas-cool hover:text-ink'}`}>
-                <span aria-hidden="true" className="w-4 text-center text-xs">{icon}</span>
-                {t(label.zh, label.en)}
+                className={`flex min-h-[44px] items-center gap-2.5 px-2.5 py-1.5 rounded-lg text-[13px] font-medium leading-5 transition-colors ${active ? 'bg-primary-soft text-primary-deep' : 'text-ink-mute hover:bg-canvas-cool hover:text-ink'}`}>
+                <span aria-hidden="true" className={`flex h-[30px] w-[30px] shrink-0 items-center justify-center rounded-[9px] bg-gradient-to-br text-[16px] font-semibold leading-none text-white shadow-sm ${item?.iconStyle ?? 'from-slate-400 to-slate-600'}`}>{icon}</span>
+                <span className="min-w-0 truncate">{t(label.zh, label.en)}</span>
               </Link>
             })}</div>
           </div>)}
