@@ -54,10 +54,14 @@ export default function Account() {
   }
 
   return (
-    <div className="max-w-2xl">
-      <h1 className="text-2xl font-bold mb-6">{t('账号 / API Key', 'Account / API Keys')}</h1>
+    <div className="mx-auto max-w-4xl space-y-6">
+      <header className="rounded-3xl bg-gradient-to-br from-[#175CD3] via-[#2878E8] to-[#38A6D9] p-7 text-white shadow-[0_16px_40px_rgba(37,99,235,0.18)] sm:p-8">
+        <div className="text-xs font-semibold tracking-[0.18em] text-blue-100">AI 终端 · 账号安全</div>
+        <h1 className="mt-2 text-2xl font-bold">{t('账号 / API Key', 'Account / API Keys')}</h1>
+        <p className="mt-2 text-sm text-blue-100">管理账号信息、API 凭证及自动化调用权限。</p>
+      </header>
 
-      <div className="bg-white border rounded-lg p-6 shadow-sm space-y-5">
+      <div className="rounded-2xl border border-slate-200/80 bg-white p-6 shadow-[0_8px_28px_rgba(31,75,135,0.05)] space-y-5">
         {/* 账号信息 */}
         <div>
           <p className="text-sm text-gray-600">
@@ -79,13 +83,13 @@ export default function Account() {
             <>
               <div className="flex gap-2">
                 <input
-                  className="flex-1 border rounded px-3 py-1.5 text-sm"
+                  className="min-w-0 flex-1 rounded-xl border border-slate-200 bg-slate-50/70 px-3 py-2 text-sm outline-none transition focus:border-blue-400 focus:bg-white focus:ring-4 focus:ring-blue-100"
                   placeholder={t('名称（可选）', 'Name (optional)')}
                   value={newName}
                   onChange={e => setNewName(e.target.value)}
                 />
                 <button
-                  className="px-4 py-1.5 bg-primary text-white text-sm rounded hover:bg-primary-deep disabled:opacity-50"
+                  className="rounded-xl bg-gradient-to-r from-[#2169D5] to-[#328FE5] px-4 py-2 text-sm font-semibold text-white shadow-sm disabled:opacity-50"
                   disabled={createMut.isPending}
                   onClick={() => createMut.mutate()}
                 >
