@@ -29,7 +29,7 @@ import AppManagement from './pages/AppManagement'
 import ExplorationCenter from './pages/ExplorationCenter'
 import SkillLibrary from './pages/SkillLibrary'
 
-type NavigationItem = { to: string; label: { zh: string; en: string }; icon: string; iconStyle: string; paths: string[] }
+type NavigationItem = { to: string; label: { zh: string; en: string }; icon: string; iconStyle: string; paths: string[]; children?: NavigationItem[] }
 const NAV_GROUPS: { label: { zh: string; en: string }; items: NavigationItem[] }[] = [
   { label: { zh: '测试工作台', en: 'Test workspace' }, items: [
     { to: '/', label: { zh: '工作台', en: 'Workbench' }, icon: '▦', iconStyle: 'from-blue-500 to-indigo-600', paths: ['/'] },
@@ -37,8 +37,11 @@ const NAV_GROUPS: { label: { zh: string; en: string }; items: NavigationItem[] }
     { to: '/debug', label: { zh: '调试控制台', en: 'Debug console' }, icon: '⌘', iconStyle: 'from-violet-500 to-indigo-600', paths: ['/debug'] },
     { to: '/quick', label: { zh: '任务执行', en: 'Execution' }, icon: 'ϟ', iconStyle: 'from-amber-400 to-orange-600', paths: ['/quick', '/regressions'] },
     { to: '/suites', label: { zh: '用例中心', en: 'Cases' }, icon: '⚗', iconStyle: 'from-fuchsia-500 to-purple-600', paths: ['/suites', '/library', '/automation', '/recorder', '/knowledge', '/execution-plans', '/apps'] },
-    { to: '/runs', label: { zh: '测试任务', en: 'Test tasks' }, icon: '▶', iconStyle: 'from-sky-400 to-blue-600', paths: ['/runs'] },
-    { to: '/recordings', label: { zh: '测试视频记录', en: 'Test video records' }, icon: '▣', iconStyle: 'from-pink-400 to-rose-600', paths: ['/recordings'] },
+    { to: '/runs', label: { zh: '测试结果中心', en: 'Test results' }, icon: '▤', iconStyle: 'from-sky-400 to-blue-600', paths: ['/runs', '/recordings'], children: [
+      { to: '/runs', label: { zh: '测试任务', en: 'Test tasks' }, icon: '▶', iconStyle: 'from-sky-400 to-blue-600', paths: ['/runs'] },
+      { to: '/runs/compare', label: { zh: '结果对比', en: 'Result comparison' }, icon: '⇄', iconStyle: 'from-indigo-400 to-violet-600', paths: ['/runs/compare'] },
+      { to: '/recordings', label: { zh: '测试视频记录', en: 'Test video records' }, icon: '▣', iconStyle: 'from-pink-400 to-rose-600', paths: ['/recordings'] },
+    ] },
   ] },
   { label: { zh: 'AI 探索', en: 'AI exploration' }, items: [
     { to: '/exploration', label: { zh: 'AI 探索中心', en: 'Exploration center' }, icon: '✧', iconStyle: 'from-cyan-400 to-violet-600', paths: ['/exploration'] },
@@ -193,8 +196,12 @@ function AppLayout() {
     }
   }, [])
   const t = useT()
-  const activeItem = NAV_GROUPS.flatMap(group => group.items).find(item => item.paths.some(path => matchesPath(pathname, path)))
+  const activeItem = NAV_GROUPS.flatMap(group => group.items.flatMap(item => [item, ...(item.children ?? [])])).find(item => item.paths.some(path => matchesPath(pathname, path)))
   const pageLabel = activeItem ? t(activeItem.label.zh, activeItem.label.en) : t('工作台', 'Workbench')
+  const [resultsExpanded, setResultsExpanded] = useState(['/runs', '/recordings'].some(path => matchesPath(pathname, path)))
+  useEffect(() => {
+    if (['/runs', '/recordings'].some(path => matchesPath(pathname, path))) setResultsExpanded(true)
+  }, [pathname])
 
   return (
     <div className="min-h-screen bg-canvas-soft text-ink">
@@ -233,8 +240,40 @@ function AppLayout() {
           <nav aria-label={t('主导航', 'Main navigation')} className={`flex-1 overflow-y-auto ${sidebarCollapsed ? 'px-2.5' : 'px-2.5 xl:px-3'} py-4`}>
             <div className="space-y-1.5">
               {NAV_GROUPS.map(group => <div key={group.label.en} className="space-y-2">
-                {group.items.map(({ to, label, icon, iconStyle, paths }) => {
+                {group.items.map(({ to, label, icon, iconStyle, paths, children }) => {
                   const active = paths.some(path => matchesPath(pathname, path))
+                  if (children) return <div key={to} className="space-y-1">
+                    <button
+                      type="button"
+                      aria-expanded={resultsExpanded}
+                      aria-label={t(label.zh, label.en)}
+                      title={sidebarCollapsed ? t(label.zh, label.en) : undefined}
+                      onClick={() => {
+                        if (sidebarCollapsed) {
+                          setSidebarCollapsed(false)
+                          setResultsExpanded(true)
+                        } else {
+                          setResultsExpanded(value => !value)
+                        }
+                      }}
+                      className={`group relative flex min-h-[42px] 2xl:min-h-[44px] w-full items-center rounded-lg transition-all duration-200 ${sidebarCollapsed ? 'justify-center px-1.5' : 'gap-2.5 px-2.5'} ${active ? 'bg-[#E8F1FF] text-[#2674F5] shadow-[inset_3px_0_0_#3478F6]' : 'text-slate-700 hover:bg-slate-50 hover:text-blue-700'}`}
+                    >
+                      <span aria-hidden="true" className={`flex h-7 w-7 2xl:h-8 2xl:w-8 shrink-0 items-center justify-center rounded-lg bg-gradient-to-br text-base font-semibold leading-none text-white shadow-sm shadow-blue-100/60 ${iconStyle}`}>{icon}</span>
+                      {!sidebarCollapsed && <>
+                        <span className="min-w-0 flex-1 truncate text-left text-[13px] font-medium 2xl:text-sm">{t(label.zh, label.en)}</span>
+                        <span aria-hidden="true" className={`text-xs text-slate-400 transition-transform ${resultsExpanded ? 'rotate-180' : ''}`}>⌄</span>
+                      </>}
+                    </button>
+                    {!sidebarCollapsed && resultsExpanded && <div className="ml-5 space-y-1 border-l border-slate-200 pl-3">
+                      {children.map(child => {
+                        const childActive = child.paths.some(path => matchesPath(pathname, path))
+                        return <Link key={child.to} to={child.to} aria-current={childActive ? "page" : undefined}
+                          className={`flex min-h-[36px] items-center rounded-md px-2.5 text-[12px] transition-colors 2xl:text-[13px] ${childActive ? 'bg-blue-50 font-semibold text-blue-700' : 'text-slate-600 hover:bg-slate-50 hover:text-blue-700'}`}>
+                          <span className="min-w-0 truncate">{t(child.label.zh, child.label.en)}</span>
+                        </Link>
+                      })}
+                    </div>}
+                  </div>
                   return <Link
                     key={to}
                     to={to}
@@ -274,10 +313,10 @@ function AppLayout() {
               <Route path="/automation/:kind/:id" element={<PageTabs section="cases"><AutomationCatalog /></PageTabs>} />
               <Route path="/knowledge" element={<PageTabs section="cases"><Knowledge /></PageTabs>} />
               <Route path="/regressions" element={<PageTabs section="execution"><Regressions /></PageTabs>} />
-              <Route path="/runs" element={<PageTabs section="results"><Runs /></PageTabs>} />
-              <Route path="/recordings" element={<PageTabs section="results"><Recordings /></PageTabs>} />
-              <Route path="/runs/compare" element={<PageTabs section="results"><RunCompare /></PageTabs>} />
-              <Route path="/runs/:runId" element={<PageTabs section="results"><RunDetail /></PageTabs>} />
+              <Route path="/runs" element={<Runs />} />
+              <Route path="/recordings" element={<Recordings />} />
+              <Route path="/runs/compare" element={<RunCompare />} />
+              <Route path="/runs/:runId" element={<RunDetail />} />
               <Route path="/account" element={<PageTabs section="settings"><Account /></PageTabs>} />
               <Route path="/settings" element={<PageTabs section="settings"><Settings /></PageTabs>} />
               <Route path="/settings/recording" element={<PageTabs section="settings"><RecordingSettings /></PageTabs>} />
