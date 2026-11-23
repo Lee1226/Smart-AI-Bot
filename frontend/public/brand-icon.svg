@@ -1,46 +1,44 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128" fill="none">
   <defs>
-    <linearGradient id="bg" x1="8" y1="10" x2="119" y2="119" gradientUnits="userSpaceOnUse">
-      <stop stop-color="#22E6E5"/>
-      <stop offset=".48" stop-color="#1675FF"/>
-      <stop offset="1" stop-color="#C43BEE"/>
+    <linearGradient id="bg" x1="10" y1="7" x2="116" y2="122" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#25E7EC"/>
+      <stop offset=".42" stop-color="#087BFA"/>
+      <stop offset=".72" stop-color="#3538F5"/>
+      <stop offset="1" stop-color="#D83BEA"/>
     </linearGradient>
-    <linearGradient id="screen" x1="42" y1="35" x2="88" y2="95" gradientUnits="userSpaceOnUse">
-      <stop stop-color="#DDFBFF"/>
-      <stop offset=".48" stop-color="#8BDFFF"/>
-      <stop offset="1" stop-color="#D9B8FF"/>
+    <linearGradient id="glass" x1="43" y1="18" x2="91" y2="108" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#BDF7FF" stop-opacity=".58"/>
+      <stop offset=".48" stop-color="#4ABEFF" stop-opacity=".16"/>
+      <stop offset="1" stop-color="#F4B7FF" stop-opacity=".3"/>
     </linearGradient>
-    <linearGradient id="circuit" x1="12" y1="50" x2="116" y2="82" gradientUnits="userSpaceOnUse">
-      <stop stop-color="#E9FFFF"/>
-      <stop offset="1" stop-color="#F8E9FF"/>
+    <linearGradient id="orbit" x1="17" y1="82" x2="113" y2="55" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#65FFF5"/>
+      <stop offset=".5" stop-color="#D9FFFF"/>
+      <stop offset="1" stop-color="#FFB9F3"/>
     </linearGradient>
-    <filter id="glow" x="0" y="0" width="128" height="128" filterUnits="userSpaceOnUse">
+    <linearGradient id="shine" x1="24" y1="8" x2="105" y2="117" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#fff" stop-opacity=".28"/>
+      <stop offset=".55" stop-color="#fff" stop-opacity="0"/>
+      <stop offset="1" stop-color="#fff" stop-opacity=".12"/>
+    </linearGradient>
+    <filter id="softGlow" x="-20%" y="-20%" width="140%" height="140%">
       <feGaussianBlur stdDeviation="2.2"/>
     </filter>
   </defs>
   <rect x="3" y="3" width="122" height="122" rx="30" fill="url(#bg)"/>
-  <path d="M13 77C27 35 53 14 91 12c14-1 25 3 31 8v82c-19 16-49 19-77 9C24 103 12 92 13 77Z" fill="#fff" fill-opacity=".08"/>
-  <g stroke="url(#circuit)" stroke-width="5" stroke-linecap="round" stroke-linejoin="round">
-    <path d="M13 43h18l10 10h12"/>
-    <path d="M13 85h18l10-10h12"/>
-    <path d="M115 43H97L87 53H75"/>
-    <path d="M115 85H97L87 75H75"/>
+  <path d="M7 61C13 24 41 5 75 5h21c-8 24-29 39-54 57C24 75 14 94 14 117 4 105 2 82 7 61Z" fill="#fff" fill-opacity=".1"/>
+  <path d="M9 83C24 41 60 15 111 15v98c-25 15-68 13-91-6C11 99 7 91 9 83Z" fill="url(#shine)"/>
+  <path d="M26 70C39 42 85 30 104 48c18 17-1 42-29 51-22 7-48 4-57-7" stroke="#A8FFFF" stroke-opacity=".38" stroke-width="9" stroke-linecap="round" filter="url(#softGlow)"/>
+  <path d="M26 70C39 42 85 30 104 48c18 17-1 42-29 51-22 7-48 4-57-7" stroke="url(#orbit)" stroke-width="5.5" stroke-linecap="round"/>
+  <g transform="rotate(13 64 62)">
+    <rect x="43" y="16" width="43" height="94" rx="12" fill="#fff" fill-opacity=".16" stroke="#fff" stroke-width="3.8"/>
+    <rect x="47.5" y="22" width="34" height="82" rx="8" fill="url(#glass)"/>
+    <path d="M59 22h11" stroke="#fff" stroke-width="2.8" stroke-linecap="round"/>
+    <path d="M60 104h8" stroke="#fff" stroke-opacity=".85" stroke-width="2.5" stroke-linecap="round"/>
+    <text x="64.5" y="72" fill="#fff" font-family="Arial, Helvetica, sans-serif" font-size="34" font-weight="700" letter-spacing="-2" text-anchor="middle">AI</text>
   </g>
-  <g fill="#fff" fill-opacity=".22" filter="url(#glow)">
-    <circle cx="13" cy="43" r="8"/><circle cx="13" cy="85" r="8"/>
-    <circle cx="115" cy="43" r="8"/><circle cx="115" cy="85" r="8"/>
-  </g>
-  <g fill="none" stroke="#fff" stroke-width="4" stroke-linecap="round">
-    <circle cx="13" cy="43" r="5.5"/><circle cx="13" cy="85" r="5.5"/>
-    <circle cx="115" cy="43" r="5.5"/><circle cx="115" cy="85" r="5.5"/>
-  </g>
-  <rect x="42" y="18" width="44" height="92" rx="12" fill="#fff" fill-opacity=".16" stroke="#fff" stroke-width="4"/>
-  <rect x="47" y="28" width="34" height="71" rx="7" fill="url(#screen)" fill-opacity=".22"/>
-  <path d="M59 24h10" stroke="#fff" stroke-width="2.8" stroke-linecap="round"/>
-  <path d="M60 103h8" stroke="#fff" stroke-width="2.8" stroke-linecap="round"/>
-  <g stroke="#fff" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round">
-    <path d="M57 49h14v18H57z" fill="#fff" fill-opacity=".16"/>
-    <path d="M64 45v4M64 67v4M53 58h4M71 58h4"/>
-    <circle cx="64" cy="58" r="3.2" fill="#fff" fill-opacity=".8"/>
-  </g>
+  <path d="M15 81C31 100 72 100 101 79c12-9 17-19 14-27" stroke="#fff" stroke-opacity=".32" stroke-width="2" stroke-linecap="round"/>
+  <path d="M26 31l2.8 7.2L36 41l-7.2 2.8L26 51l-2.8-7.2L16 41l7.2-2.8L26 31Z" fill="#fff" fill-opacity=".92"/>
+  <path d="M16 57l1.5 3.8 3.8 1.5-3.8 1.5-1.5 3.8-1.5-3.8-3.8-1.5 3.8-1.5L16 57Z" fill="#fff" fill-opacity=".62"/>
+  <circle cx="105" cy="31" r="2" fill="#fff" fill-opacity=".8"/>
 </svg>
