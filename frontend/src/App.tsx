@@ -84,7 +84,7 @@ function PageTabs({ section, children }: { section: keyof typeof PAGE_TABS; chil
   const tabs = PAGE_TABS[section]
   const active = [...tabs].reverse().find(tab => matchesPath(pathname, tab.to))?.to
   return <>
-    <nav aria-label={t('页面分栏', 'Page sections')} className="flex flex-wrap gap-1 border-b border-hairline mb-6">
+    <nav aria-label={t('页面分栏', 'Page sections')} className="flex flex-wrap gap-1 border-b border-hairline mb-5">
       {tabs.map(tab => <Link key={tab.to} to={tab.to} aria-current={active === tab.to ? "page" : undefined}
         className={`px-4 py-2.5 text-sm border-b-2 -mb-px transition-colors ${active === tab.to ? 'border-primary text-primary-deep font-semibold' : 'border-transparent text-ink-mute hover:text-ink hover:bg-canvas-cool rounded-t-md'}`}>
         {t(tab.zh, tab.en)}
@@ -198,9 +198,9 @@ function AppLayout() {
 
   return (
     <div className="min-h-screen bg-canvas-soft text-ink">
-      <header className="relative z-20 flex h-[72px] shrink-0 items-center border-b border-hairline bg-white/95 px-5 shadow-[0_2px_14px_rgba(39,87,150,0.035)] backdrop-blur-xl lg:px-7 2xl:h-[80px] 2xl:px-9">
+      <header className="relative z-20 flex h-[68px] shrink-0 items-center border-b border-hairline bg-white/95 px-5 shadow-[0_2px_14px_rgba(39,87,150,0.035)] backdrop-blur-xl lg:px-7 2xl:h-[76px] 2xl:px-9">
         <div className="flex min-w-0 items-center gap-3">
-          <img src="/brand-icon.svg" alt="" className="h-12 w-12 shrink-0 rounded-xl shadow-sm shadow-blue-200/40 2xl:h-[52px] 2xl:w-[52px] 2xl:rounded-xl" />
+          <img src="/brand-icon.svg" alt="" className="h-11 w-11 shrink-0 rounded-xl shadow-sm shadow-blue-200/40 2xl:h-12 2xl:w-12 2xl:rounded-xl" />
           <span className="whitespace-nowrap text-[18px] font-bold tracking-tight text-slate-900 sm:text-[18px] 2xl:text-[20px]">翼矩AI终端测试系统</span>
         </div>
         <div className="mx-4 hidden h-10 w-px bg-slate-200 md:block" />
@@ -228,9 +228,9 @@ function AppLayout() {
         </div>
       </header>
 
-      <div className="flex min-h-[calc(100vh-72px)] 2xl:min-h-[calc(100vh-80px)]">
-        <aside className={`${sidebarCollapsed ? 'w-[72px]' : 'w-[232px] 2xl:w-[256px]'} sticky top-0 flex h-[calc(100vh-72px)] 2xl:h-[calc(100vh-80px)] shrink-0 flex-col border-r border-hairline bg-white/75 transition-[width] duration-200`}>
-          <nav aria-label={t('主导航', 'Main navigation')} className={`flex-1 overflow-y-auto ${sidebarCollapsed ? 'px-2.5' : 'px-2.5 xl:px-3'} py-5`}>
+      <div className="flex min-h-[calc(100vh-68px)] 2xl:min-h-[calc(100vh-76px)]">
+        <aside className={`${sidebarCollapsed ? 'w-[72px]' : 'w-[232px] 2xl:w-[256px]'} sticky top-0 flex h-[calc(100vh-68px)] 2xl:h-[calc(100vh-76px)] shrink-0 flex-col border-r border-hairline bg-white/75 transition-[width] duration-200`}>
+          <nav aria-label={t('主导航', 'Main navigation')} className={`flex-1 overflow-y-auto ${sidebarCollapsed ? 'px-2.5' : 'px-2.5 xl:px-3'} py-4`}>
             <div className="space-y-1.5">
               {NAV_GROUPS.map(group => <div key={group.label.en} className="space-y-2">
                 {group.items.map(({ to, label, icon, iconStyle, paths }) => {
@@ -240,9 +240,9 @@ function AppLayout() {
                     to={to}
                     aria-current={active ? "page" : undefined}
                     title={sidebarCollapsed ? t(label.zh, label.en) : undefined}
-                    className={`group relative flex min-h-[44px] 2xl:min-h-[48px] items-center rounded-lg transition-all duration-200 ${sidebarCollapsed ? 'justify-center px-1.5' : 'gap-2.5 px-2.5'} ${active ? 'bg-[#E8F1FF] text-[#2674F5] shadow-[inset_3px_0_0_#3478F6]' : 'text-slate-700 hover:bg-slate-50 hover:text-blue-700'}`}
+                    className={`group relative flex min-h-[42px] 2xl:min-h-[44px] items-center rounded-lg transition-all duration-200 ${sidebarCollapsed ? 'justify-center px-1.5' : 'gap-2.5 px-2.5'} ${active ? 'bg-[#E8F1FF] text-[#2674F5] shadow-[inset_3px_0_0_#3478F6]' : 'text-slate-700 hover:bg-slate-50 hover:text-blue-700'}`}
                   >
-                    <span aria-hidden="true" className={`flex h-8 w-8 2xl:h-9 2xl:w-9 shrink-0 items-center justify-center rounded-lg bg-gradient-to-br text-base font-semibold leading-none text-white shadow-sm shadow-blue-100/60 ${iconStyle}`}>{icon}</span>
+                    <span aria-hidden="true" className={`flex h-7 w-7 2xl:h-8 2xl:w-8 shrink-0 items-center justify-center rounded-lg bg-gradient-to-br text-base font-semibold leading-none text-white shadow-sm shadow-blue-100/60 ${iconStyle}`}>{icon}</span>
                     {!sidebarCollapsed && <span className="min-w-0 truncate text-[13px] font-medium 2xl:text-sm">{t(label.zh, label.en)}</span>}
                   </Link>
                 })}
@@ -251,7 +251,7 @@ function AppLayout() {
           </nav>
         </aside>
 
-        <main className="min-w-0 flex-1 px-5 py-6 sm:px-7 sm:py-8 xl:px-9 xl:py-9 2xl:px-[38px]">
+        <main className="min-w-0 flex-1 px-4 py-5 sm:px-6 sm:py-6 xl:px-7 xl:py-7 2xl:px-8">
           <div className="mx-auto max-w-[1700px]">
             <Routes>
               <Route path="/" element={<Workbench />} />
