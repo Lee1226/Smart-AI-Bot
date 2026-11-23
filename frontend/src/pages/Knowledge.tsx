@@ -10,7 +10,7 @@ function Tags({ items, color }: { items: string[]; color: string }) {
       {items.map((x, i) => (
         <span key={i} className={`text-xs px-1.5 py-0.5 rounded ${color}`}>{x}</span>
       ))}
-    </section>
+    </div>
   )
 }
 
@@ -127,7 +127,7 @@ export default function Knowledge() {
             {notes.map(n => <NoteCard key={n.id} note={n} />)}
           </div>
         )}
-      </div>
+      </section>
     </div>
   )
 }
