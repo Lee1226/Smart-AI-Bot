@@ -149,29 +149,41 @@ export default function Devices() {
   const usbCount = devices.filter(device => ['adb_usb', 'adb_bridge', 'hdc_bridge', 'ios_bridge'].includes(device.connection_type)).length
 
   return (
-    <div className="space-y-6">
-      <header className="flex flex-wrap items-end justify-between gap-4">
-        <div>
-          <div className="text-xs font-semibold uppercase tracking-[0.18em] text-primary">DEVICE FLEET MANAGEMENT</div>
-          <h1 className="mt-2 text-2xl font-semibold tracking-tight text-ink">{t('设备管理', 'Device management')}</h1>
-          <p className="mt-1 text-sm text-ink-mute">{t('统一接入、监控和管理 Android、HarmonyOS 与 iOS 测试终端。', 'Connect, monitor and manage Android, HarmonyOS and iOS test devices.')}</p>
+    <div className="space-y-8">
+      <header className="flex flex-wrap items-center justify-between gap-5">
+        <div className="flex items-center gap-4">
+          <span className="grid h-14 w-14 place-items-center rounded-[18px] bg-gradient-to-br from-cyan-400 via-blue-500 to-indigo-600 text-3xl text-white shadow-lg shadow-blue-200/60">▯</span>
+          <div>
+            <div className="text-[11px] font-bold uppercase tracking-[0.2em] text-blue-500">DEVICE FLEET MANAGEMENT</div>
+            <h1 className="mt-1 text-3xl font-bold tracking-tight text-[#172744]">{t('设备管理', 'Device management')}</h1>
+            <p className="mt-1 text-sm text-slate-500">{t('统一接入、监控和管理 Android、HarmonyOS 与 iOS 测试终端。', 'Connect, monitor and manage Android, HarmonyOS and iOS test devices.')}</p>
+          </div>
         </div>
-        <div className="text-xs text-ink-mute">{t('设备状态每 5 秒自动刷新', 'Device status refreshes every 5 seconds')}</div>
+        <div className="flex items-center gap-2 rounded-full border border-blue-100 bg-white/80 px-4 py-2.5 text-xs font-medium text-slate-500 shadow-sm">
+          <span className="h-2 w-2 animate-pulse rounded-full bg-emerald-400" />
+          {t('设备状态每 5 秒自动刷新', 'Device status refreshes every 5 seconds')}
+        </div>
       </header>
-      <section className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+      <section className="grid gap-4 sm:grid-cols-2 2xl:grid-cols-4">
         {[
-          { label: t('接入设备', 'Registered devices'), value: devices.length, note: t('平台已登记终端', 'Devices registered'), tone: 'text-ink' },
-          { label: t('在线设备', 'Online devices'), value: onlineCount, note: t('当前可连接与调试', 'Available for testing'), tone: 'text-emerald-700' },
-          { label: t('Android 设备', 'Android devices'), value: androidCount, note: t('ADB / Portal 接入', 'ADB / Portal'), tone: 'text-sky-700' },
-          { label: t('USB 桥接设备', 'USB bridge devices'), value: usbCount, note: t('本机或桥接连接', 'Local or bridge transport'), tone: 'text-violet-700' },
-        ].map(item => <div key={item.label} className="rounded-xl border border-hairline bg-white p-4 shadow-sm">
-          <div className="text-xs text-ink-mute">{item.label}</div>
-          <div className={`mt-2 text-2xl font-semibold tabular-nums ${item.tone}`}>{item.value}</div>
-          <div className="mt-1 text-[11px] text-ink-mute">{item.note}</div>
+          { label: t('接入设备', 'Registered devices'), value: devices.length, note: t('平台已登记终端', 'Devices registered'), tone: 'text-[#1B2B4A]', icon: '▯', iconTone: 'from-sky-400 to-blue-600', glow: 'from-sky-50' },
+          { label: t('在线设备', 'Online devices'), value: onlineCount, note: t('当前可连接与调试', 'Available for testing'), tone: 'text-emerald-600', icon: '✓', iconTone: 'from-emerald-400 to-teal-500', glow: 'from-emerald-50' },
+          { label: t('Android 设备', 'Android devices'), value: androidCount, note: t('ADB / Portal 接入', 'ADB / Portal'), tone: 'text-blue-600', icon: 'A', iconTone: 'from-blue-400 to-indigo-600', glow: 'from-blue-50' },
+          { label: t('USB 桥接设备', 'USB bridge devices'), value: usbCount, note: t('本机或桥接连接', 'Local or bridge transport'), tone: 'text-violet-600', icon: '⌁', iconTone: 'from-violet-400 to-purple-600', glow: 'from-violet-50' },
+        ].map(item => <div key={item.label} className={`relative overflow-hidden rounded-[22px] border border-[#E8EFFB] bg-gradient-to-br ${item.glow} via-white to-white p-5 shadow-[0_5px_18px_rgba(56,102,174,0.07)]`}>
+          <div className="flex items-center gap-4">
+            <span className={`grid h-14 w-14 shrink-0 place-items-center rounded-[17px] bg-gradient-to-br ${item.iconTone} text-2xl font-bold text-white shadow-lg shadow-blue-100/70`}>{item.icon}</span>
+            <div className="min-w-0">
+              <div className="text-xs font-medium text-slate-500">{item.label}</div>
+              <div className={`mt-1 text-3xl font-bold tabular-nums tracking-tight ${item.tone}`}>{item.value}</div>
+              <div className="mt-1 text-[11px] text-slate-400">{item.note}</div>
+            </div>
+          </div>
+          <span className="absolute -bottom-8 -right-5 h-24 w-24 rounded-full bg-white/60 blur-xl" />
         </div>)}
       </section>
       <DeviceWall devices={devices} selectedId={selectedId} onSelect={setSelectedId} />
-      <section className="rounded-xl border border-hairline bg-white p-5 shadow-sm">
+      <section className="rounded-[24px] border border-[#E8EFFB] bg-white p-6 shadow-[0_6px_24px_rgba(56,102,174,0.06)]">
         <div className="flex items-center justify-between gap-4">
           <div>
             <h2 className="font-semibold">{t('Android · 本机 ADB USB 直连', 'Android · Local ADB USB')}</h2>
