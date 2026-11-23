@@ -57,8 +57,8 @@ export default function Account() {
     <div className="mx-auto max-w-4xl space-y-6">
       <header className="rounded-2xl bg-gradient-to-br from-[#175CD3] via-[#2878E8] to-[#38A6D9] p-5 text-white shadow-[0_16px_40px_rgba(37,99,235,0.18)] sm:p-6">
         <div className="text-xs font-semibold tracking-[0.18em] text-blue-100">AI 终端 · 账号安全</div>
-        <h1 className="mt-2 text-xl font-bold">{t('账号 / API Key', 'Account / API Keys')}</h1>
-        <p className="mt-2 text-sm text-blue-100">管理账号信息、API 凭证及自动化调用权限。</p>
+        <h1 className="mt-2 text-xl font-bold">{t('API 密钥管理', 'API Key Management')}</h1>
+        <p className="mt-2 text-sm text-blue-100">管理开放平台的 API 凭证。密钥权限范围将在开放 API 接口建设阶段进一步完善。</p>
       </header>
 
       <div className="rounded-2xl border border-slate-200/80 bg-white p-6 shadow-[0_8px_28px_rgba(31,75,135,0.05)] space-y-5">
@@ -68,7 +68,7 @@ export default function Account() {
             {t('账号', 'Account')}: <b>{me?.account_name}</b> · {me?.role}
           </p>
           <p className="text-xs text-gray-400 mt-1">
-            {t('API Key 用于 sab CLI / 脚本 / CI 调用 SAB 接口。', 'API Keys are used by the sab CLI / scripts / CI to call SAB APIs.')}
+            {t('API Key 用于授权外部系统访问开放平台接口。请妥善保管完整密钥。', 'API keys authorize external systems to access Open Platform APIs. Keep the full key secure.')}
           </p>
         </div>
 
