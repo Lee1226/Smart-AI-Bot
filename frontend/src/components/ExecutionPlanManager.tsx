@@ -304,13 +304,16 @@ export default function ExecutionPlanManager({ suiteId, platform, device }: { su
     const invalid = draftSteps.findIndex(step =>
       !step.action || !step.executor ||
       (step.force_coordinate && (!['tap', 'tap_element'].includes(step.action) || !hasValidTapCoordinates(step))) ||
-      (step.action === 'swipe' && !hasValidSwipeCoordinates(step))
+      (step.action === 'swipe' && !hasValidSwipeCoordinates(step)) ||
+      (step.action === 'audio_play' && (!Array.isArray(step.args?.turns) || step.args.turns.length === 0 || step.args.turns.some((turn: any) => !String(turn?.corpus_id || '').trim())))
     )
     if (invalid >= 0) {
       const invalidStep = draftSteps[invalid]
-      setEditError(invalidStep.action === 'swipe'
-        ? `第 ${invalid + 1} 步是坐标滑动，必须填写有效的起点 X/Y 和终点 X/Y。`
-        : invalidStep.force_coordinate
+      setEditError(invalidStep.action === 'audio_play'
+        ? `第 ${invalid + 1} 步尚未选择有效的音频语料。`
+        : invalidStep.action === 'swipe'
+          ? `第 ${invalid + 1} 步是坐标滑动，必须填写有效的起点 X/Y 和终点 X/Y。`
+          : invalidStep.force_coordinate
           ? `第 ${invalid + 1} 步已启用强制坐标点击，但没有有效的 X/Y 坐标，或该操作不是点击。`
           : `第 ${invalid + 1} 步缺少操作类型或执行策略。`)
       return
@@ -428,7 +431,7 @@ export default function ExecutionPlanManager({ suiteId, platform, device }: { su
                     <p className="mt-1 text-xs text-gray-600">{String(step.intent?.description || t('尚未填写操作意图', 'No operation intent defined'))}</p>
                     <p className="mt-1 truncate text-[11px] text-gray-400">{String(step.locator?.text || step.locator?.resource_id || step.args?.text || step.args?.package_name || step.args?.package || t('尚未设置目标控件或参数', 'Target or arguments not configured'))}</p>
                     {step.intent?.status !== 'confirmed' && <span className="mt-1 inline-block rounded bg-amber-50 px-1.5 py-0.5 text-[10px] text-amber-700">{t('操作意图待确认', 'Intent needs confirmation')}</span>}
-                    <button type="button" disabled={!device || executingStep !== null || step.executor === 'ai' || step.executor === 'hybrid'} onClick={() => void executeDeviceStep(step, i)} title={step.executor === 'ai' || step.executor === 'hybrid' ? t('AI / 混合策略请通过“运行执行计划”执行，单步调试暂不支持', 'Run the full plan for AI / hybrid steps; single-step debug does not support these strategies yet') : undefined} className="mt-2 rounded-md border border-blue-200 bg-blue-50 px-2.5 py-1.5 text-[11px] font-medium text-blue-700 disabled:opacity-40">{step.executor === 'ai' || step.executor === 'hybrid' ? t('请运行整份计划', 'Run full plan') : executingStep === i ? '执行中…' : '单步执行'}</button>
+                    <button type="button" disabled={!device || executingStep !== null || step.executor === 'ai' || step.executor === 'hybrid' || step.action === 'audio_play'} onClick={() => void executeDeviceStep(step, i)} title={step.action === 'audio_play' ? '音频播放请通过运行整份计划执行，以便逐轮等待并保存截图证据' : step.executor === 'ai' || step.executor === 'hybrid' ? t('AI / 混合策略请通过“运行执行计划”执行，单步调试暂不支持', 'Run the full plan for AI / hybrid steps; single-step debug does not support these strategies yet') : undefined} className="mt-2 rounded-md border border-blue-200 bg-blue-50 px-2.5 py-1.5 text-[11px] font-medium text-blue-700 disabled:opacity-40">{step.action === 'audio_play' || step.executor === 'ai' || step.executor === 'hybrid' ? t('请运行整份计划', 'Run full plan') : executingStep === i ? '执行中…' : '单步执行'}</button>
                   </div>
                 </div>
               ))}
@@ -482,7 +485,7 @@ export default function ExecutionPlanManager({ suiteId, platform, device }: { su
                       <span className="text-xs font-semibold text-gray-700">{ACTIONS.find(a => a.value === step.action)?.label || step.action}</span>
                     </div>
                     <div className="flex items-center gap-1">
-                      <button type="button" title={step.executor === 'ai' || step.executor === 'hybrid' ? 'AI / 混合计划执行器尚未接入' : '在真机上执行当前步骤'} disabled={!device || executingStep !== null || step.executor === 'ai' || step.executor === 'hybrid'} onClick={() => void executeDeviceStep(step, index)} className="rounded border border-blue-200 bg-blue-50 px-2 py-1 text-[11px] text-blue-700 disabled:opacity-40">{step.executor === 'ai' || step.executor === 'hybrid' ? '请运行整份计划' : executingStep === index ? '执行中…' : '单步执行'}</button>
+                      <button type="button" title={step.executor === 'ai' || step.executor === 'hybrid' ? 'AI / 混合计划执行器尚未接入' : '在真机上执行当前步骤'} disabled={!device || executingStep !== null || step.executor === 'ai' || step.executor === 'hybrid'} onClick={() => void executeDeviceStep(step, index)} className="rounded border border-blue-200 bg-blue-50 px-2 py-1 text-[11px] text-blue-700 disabled:opacity-40">{step.action === 'audio_play' || step.executor === 'ai' || step.executor === 'hybrid' ? '请运行整份计划' : executingStep === index ? '执行中…' : '单步执行'}</button>
                       <button title={t('上移', 'Move up')} disabled={index === 0} onClick={() => moveStep(index, -1)} className="rounded border px-2 py-1 text-xs disabled:opacity-30">↑</button>
                       <button title={t('下移', 'Move down')} disabled={index === draftSteps.length - 1} onClick={() => moveStep(index, 1)} className="rounded border px-2 py-1 text-xs disabled:opacity-30">↓</button>
                       <button title={t('删除步骤', 'Delete step')} onClick={() => removeStep(index)} className="rounded border border-red-200 px-2 py-1 text-xs text-red-600 hover:bg-red-50">×</button>
