@@ -43,11 +43,12 @@ export default function AudioCorpusPicker({
   const corpus = corpusQuery.data || []
   const devices = devicesQuery.data || []
 
+  const visibleTurns = turns.length ? turns : [{ corpus_id: '', wait_after_ms: 12000 }]
   const updateTurn = (index: number, patch: Partial<AudioPlaybackTurn>) => {
-    onTurnsChange(turns.map((turn, i) => i === index ? { ...turn, ...patch } : turn))
+    onTurnsChange(visibleTurns.map((turn, i) => i === index ? { ...turn, ...patch } : turn))
   }
-  const addTurn = () => onTurnsChange([...turns, { corpus_id: '', wait_after_ms: 12000 }])
-  const removeTurn = (index: number) => onTurnsChange(turns.filter((_, i) => i !== index))
+  const addTurn = () => onTurnsChange([...visibleTurns, { corpus_id: '', wait_after_ms: 12000 }])
+  const removeTurn = (index: number) => onTurnsChange(visibleTurns.filter((_, i) => i !== index))
   const uploadFile = (file?: File) => {
     if (file) uploadMutation.mutate(file)
   }
@@ -59,19 +60,23 @@ export default function AudioCorpusPicker({
           <div className="text-xs font-semibold text-gray-800">音频语料播放</div>
           <p className="mt-0.5 text-[11px] text-gray-500">从账号音频语料库选择素材；多轮模式按顺序播放，每轮播放后按配置等待眼镜响应。</p>
         </div>
-        <select className={fieldClass + ' max-w-[160px]'} value={mode} onChange={e => onModeChange(e.target.value as 'single' | 'conversation')}>
+        <select className={fieldClass + ' max-w-[160px]'} value={mode} onChange={e => {
+          const nextMode = e.target.value as 'single' | 'conversation'
+          onModeChange(nextMode)
+          if (nextMode === 'single' && visibleTurns.length > 1) onTurnsChange(visibleTurns.slice(0, 1))
+        }}>
           <option value="single">单条语料</option>
           <option value="conversation">多轮对话</option>
         </select>
       </div>
 
-      {turns.map((turn, index) => {
+      {visibleTurns.map((turn, index) => {
         const selected = corpus.find(item => item.id === turn.corpus_id)
         return (
           <div key={index} className="rounded-lg border border-slate-200 bg-white p-3">
             <div className="mb-2 flex items-center justify-between">
               <span className="text-xs font-semibold text-gray-700">{mode === 'single' ? '播放语料' : `第 ${index + 1} 轮`}</span>
-              {mode === 'conversation' && turns.length > 1 && <button type="button" className="text-xs text-red-600" onClick={() => removeTurn(index)}>移除</button>}
+              {mode === 'conversation' && visibleTurns.length > 1 && <button type="button" className="text-xs text-red-600" onClick={() => removeTurn(index)}>移除</button>}
             </div>
             <select className={fieldClass} value={turn.corpus_id} onChange={e => updateTurn(index, { corpus_id: e.target.value })}>
               <option value="">选择音频语料…</option>
