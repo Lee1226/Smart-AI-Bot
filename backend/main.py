@@ -24,6 +24,7 @@ from routers import execution_plans
 from routers import exploration, skills
 from routers import regressions
 from routers import open_api
+from routers import audio_corpus
 
 # Drop provider-unsupported params (e.g. vector_store_ids leaking into Anthropic)
 litellm.drop_params = True
@@ -104,6 +105,7 @@ app.include_router(testruns.router)
 app.include_router(debug.router)
 app.include_router(recorder.router)
 app.include_router(execution_plans.router)
+app.include_router(audio_corpus.router)
 app.include_router(exploration.router)
 app.include_router(skills.router)
 app.include_router(settings.router)
