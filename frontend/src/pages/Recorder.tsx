@@ -740,14 +740,21 @@ export default function Recorder() {
 
   // ── Render ──────────────────────────────────────────────────────────────────
   return (
-    <div>
-      <h1 className="text-2xl font-bold mb-6">{t('录制测试用例', 'Record test case')}</h1>
+    <div className="mx-auto max-w-[1600px] space-y-6">
+      <header className="relative overflow-hidden rounded-3xl bg-gradient-to-br from-[#175CD3] via-[#2878E8] to-[#38A6D9] px-7 py-7 text-white shadow-[0_18px_45px_rgba(37,99,235,0.16)] sm:px-9">
+        <div className="pointer-events-none absolute -right-12 -top-20 h-64 w-64 rounded-full border-[36px] border-white/10" />
+        <div className="relative">
+          <div className="mb-3 inline-flex rounded-full border border-white/20 bg-white/10 px-3 py-1 text-xs font-semibold text-blue-50">{t('AI 终端 · 用例管理', 'AI Terminal · Case Management')}</div>
+          <h1 className="text-2xl font-bold tracking-tight sm:text-3xl">{t('录制测试用例', 'Record test case')}</h1>
+          <p className="mt-2 max-w-2xl text-sm leading-6 text-blue-50/90">{t('通过网页操作或手机端触摸采集，将真实操作过程沉淀为可复用的自动化测试用例。', 'Capture real interactions through browser control or device-side touch, then save them as reusable automated test cases.')}</p>
+        </div>
+      </header>
 
       {/* Device selector (always visible) */}
       {!recording && (
-        <div className="bg-white border rounded-lg p-4 shadow-sm mb-6 flex items-end gap-4 flex-wrap">
+        <div className="rounded-2xl border border-slate-200/80 bg-white p-5 shadow-[0_8px_28px_rgba(31,75,135,0.05)] flex items-end gap-4 flex-wrap">
           <div className="flex-1 min-w-[200px]">
-            <label className="block text-sm font-medium mb-1">{t('选择设备', 'Select device')}</label>
+            <label className="mb-2 block text-sm font-semibold text-slate-700">{t('选择录制设备', 'Select recording device')}</label>
             {onlineDevices.length === 0 ? (
               <p className="text-sm text-gray-400">{t('暂无在线设备', 'No online devices')}</p>
             ) : (
@@ -777,7 +784,7 @@ export default function Recorder() {
           >
             {loading ? t('启动中…', 'Starting…') : t('手机端触摸采集（Portal）', 'Phone-side touch capture (Portal)')}
           </button>
-          <p className="w-full text-xs text-gray-400">
+          <p className="w-full rounded-xl bg-blue-50/70 px-4 py-3 text-xs leading-5 text-blue-700">
             {t('开始录制后，左侧显示手机实时画面；直接用鼠标点击或拖动即可操控手机，系统自动记录坐标和对应 UI 信息。', 'Start recording to view the live phone screen on the left. Click or drag with your mouse to control the phone; coordinates and matching UI metadata are recorded automatically.')}
           </p>
         </div>
@@ -793,7 +800,7 @@ export default function Recorder() {
       {recording && (
         <>
           {/* Control bar */}
-          <div className="flex items-center gap-3 mb-4">
+          <div className="mb-4 flex flex-wrap items-center gap-3 rounded-2xl border border-slate-200/80 bg-white px-4 py-3 shadow-sm">
             <span className="text-sm font-medium">
               <span className="inline-block w-2 h-2 rounded-full bg-red-500 animate-pulse mr-1.5" />
               {t('录制中 — ', 'Recording — ')}{selectedDevice?.name ?? deviceId}
@@ -808,7 +815,7 @@ export default function Recorder() {
           </div>
 
           {/* Main 2-column layout */}
-          <div className="grid grid-cols-[1fr_340px] gap-5 mb-6">
+          <div className="mb-6 grid grid-cols-1 items-start gap-5 xl:grid-cols-[minmax(0,1fr)_340px]">
             {/* Left: screenshot + action bar */}
             <div>
               <div className="mb-3 rounded-xl border border-slate-200 bg-slate-100 p-3">
@@ -835,7 +842,7 @@ export default function Recorder() {
               </div>
 
               {/* Action bar */}
-              <div className="bg-white border rounded-lg p-3 shadow-sm space-y-2">
+              <div className="space-y-3 rounded-2xl border border-slate-200/80 bg-white p-4 shadow-[0_8px_28px_rgba(31,75,135,0.05)]">
                 {/* Scroll */}
                 <div>
                   <div className="text-xs text-gray-400 mb-1.5 font-medium">{t('滚动', 'Scroll')}</div>
@@ -927,7 +934,7 @@ export default function Recorder() {
               <div className="text-xs font-medium text-gray-500 uppercase tracking-wide mb-2">
                 {t('UI 元素', 'UI elements')} ({elements.length})
               </div>
-              <div className="bg-white border rounded-lg shadow-sm overflow-y-auto" style={{ maxHeight: '70vh' }}>
+              <div className="overflow-y-auto rounded-2xl border border-slate-200/80 bg-white shadow-[0_8px_28px_rgba(31,75,135,0.05)]" style={{ maxHeight: '70vh' }}>
                 {elements.length === 0 && (
                   <p className="text-sm text-gray-400 px-4 py-6 text-center">{t('暂无可交互元素', 'No interactive elements')}</p>
                 )}
@@ -975,7 +982,7 @@ export default function Recorder() {
 
       {/* Unified recording workbench: event list, screenshot and payload inspector */}
       {(realRecording || recording || displayedEvents.length > 0) && (
-        <section className="mb-6 rounded-xl border bg-white shadow-sm overflow-hidden">
+        <section className="mb-6 overflow-hidden rounded-2xl border border-slate-200/80 bg-white shadow-[0_10px_32px_rgba(31,75,135,0.06)]">
           <div className="flex flex-wrap items-center gap-3 border-b px-4 py-3">
             <div>
               <div className="text-sm font-semibold">{t('录制事件工作台', 'Recording event workbench')}</div>
@@ -1149,7 +1156,7 @@ export default function Recorder() {
             </div>
           </div>
 
-          <div className="border-t bg-gray-50 px-4 py-3">
+          <div className="border-t border-slate-100 bg-slate-50/80 px-4 py-4">
             <div className="flex items-center justify-between mb-2">
               <div className="text-xs font-semibold text-gray-500">{t('操作时间线', 'TIMELINE')}</div>
               <div className="text-xs text-gray-400">{displayedEvents.length} {t('个事件', 'events')}</div>
@@ -1169,7 +1176,7 @@ export default function Recorder() {
 
       {/* Recorded steps */}
       {steps.length > 0 && (
-        <div className="bg-white border rounded-lg shadow-sm p-4 mb-5">
+        <div className="mb-5 rounded-2xl border border-slate-200/80 bg-white p-5 shadow-[0_8px_28px_rgba(31,75,135,0.05)]">
           <div className="text-sm font-semibold mb-2">{t('已录制步骤', 'Recorded steps')}（{steps.length}）</div>
           <ol className="space-y-1">
             {steps.map((s, i) => (
@@ -1192,9 +1199,9 @@ export default function Recorder() {
 
       {/* Save form (shown when stopped with steps, or while recording) */}
       {(steps.length > 0) && !saved && (
-        <div className="bg-white border rounded-lg shadow-sm p-4 space-y-3">
+        <div className="space-y-4 rounded-2xl border border-slate-200/80 bg-white p-5 shadow-[0_8px_28px_rgba(31,75,135,0.05)]">
           <div className="text-sm font-semibold">{t('保存为测试用例', 'Save as test case')}</div>
-          <div className="grid grid-cols-3 gap-3">
+          <div className="grid grid-cols-1 gap-3 md:grid-cols-3">
             <div>
               <label className="block text-xs text-gray-500 mb-1">{t('套件名称', 'Suite name')}</label>
               <input
@@ -1234,7 +1241,7 @@ export default function Recorder() {
               onChange={setPostActions}
             />
           </div>
-          <div className="flex gap-3">
+          <div className="flex flex-wrap gap-3">
             <button
               className={BTN_BLUE}
               disabled={!suiteName.trim() || !caseName.trim() || !expected.trim() || steps.length === 0 || loading}
@@ -1251,7 +1258,7 @@ export default function Recorder() {
 
       {/* Success state */}
       {saved && (
-        <div className="bg-green-50 border border-green-200 rounded-lg p-4 flex items-center gap-4">
+        <div className="flex flex-wrap items-center gap-4 rounded-2xl border border-emerald-200 bg-emerald-50 p-5">
           <span className="text-ok font-medium">{t('✓ 测试用例已保存', '✓ Test case saved')}</span>
           <button
             className="text-sm text-primary hover:underline"
