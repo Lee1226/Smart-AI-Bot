@@ -67,7 +67,7 @@ export default function QuickRun() {
 
   return (
     <div className="mx-auto max-w-5xl space-y-7">
-      <div className="relative overflow-hidden rounded-3xl bg-gradient-to-br from-[#175CD3] via-[#2878E8] to-[#38A6D9] px-7 py-8 text-white shadow-[0_18px_45px_rgba(37,99,235,0.18)] sm:px-9">
+      <div className="relative overflow-hidden rounded-2xl bg-gradient-to-br from-[#175CD3] via-[#2878E8] to-[#38A6D9] px-5 py-6 text-white shadow-[0_18px_45px_rgba(37,99,235,0.18)] sm:px-6">
         <div className="pointer-events-none absolute -right-12 -top-20 h-64 w-64 rounded-full border-[36px] border-white/10" />
         <div className="pointer-events-none absolute -bottom-28 right-40 h-56 w-56 rounded-full bg-white/10 blur-2xl" />
         <div className="relative max-w-2xl">
@@ -75,7 +75,7 @@ export default function QuickRun() {
             <span className="h-1.5 w-1.5 rounded-full bg-cyan-200" />
             {t('AI 终端 · 任务执行', 'AI Device · Task execution')}
           </div>
-          <h1 className="text-2xl font-bold tracking-tight sm:text-3xl">{t('快速任务', 'Quick Task')}</h1>
+          <h1 className="text-xl font-bold tracking-tight sm:text-2xl">{t('快速任务', 'Quick Task')}</h1>
           <p className="mt-3 max-w-xl text-sm leading-6 text-blue-50/90">{t('描述目标，选择设备与执行模型，让 Agent 在真实终端上完成操作并验证结果。', 'Describe the goal, choose a device and model, and let the agent execute and verify it on a real device.')}</p>
         </div>
       </div>
