@@ -23,6 +23,7 @@ from ws.video import provider_video_endpoint
 from routers import execution_plans
 from routers import exploration, skills
 from routers import regressions
+from routers import open_api
 
 # Drop provider-unsupported params (e.g. vector_store_ids leaking into Anthropic)
 litellm.drop_params = True
@@ -114,6 +115,7 @@ app.include_router(knowledge.router)
 app.include_router(automation.router)
 app.include_router(regressions.router)
 app.include_router(regressions.download_router)
+app.include_router(open_api.router)
 
 # Portal reverse WebSocket
 app.add_api_websocket_route("/v1/providers/join", portal_websocket_endpoint)
