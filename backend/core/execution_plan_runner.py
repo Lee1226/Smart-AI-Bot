@@ -350,13 +350,27 @@ async def execute_execution_plan_run(
                         if wait_ms:
                             await asyncio.sleep(wait_ms / 1000)
                         round_shot = ""
+                        response_text = ""
                         try:
                             round_shot = base64.b64encode(await device.screenshot()).decode("ascii")
                         except Exception as screenshot_error:
                             await emit(f"  本轮截图采集失败：{screenshot_error}")
+                        try:
+                            _, response_elements = await device.get_ui_state()
+                            visible_texts = []
+                            for element in response_elements:
+                                if element.get("visible", True) is False:
+                                    continue
+                                value = str(element.get("text") or element.get("contentDescription") or element.get("content_description") or "").strip()
+                                if value and value not in visible_texts:
+                                    visible_texts.append(value)
+                            response_text = "\\n".join(visible_texts)[:6000]
+                        except Exception as ui_error:
+                            await emit(f"  本轮 UI 文本读取失败：{ui_error}")
                         round_result = (
                             f"语料={audio_name}（{corpus_id}）；播放={playback['started_at']}~{playback['finished_at']}；"
-                            f"音频时长={playback['duration_seconds']}s；固定等待={wait_ms}ms；预期响应={audio_expected}"
+                            f"音频时长={playback['duration_seconds']}s；固定等待={wait_ms}ms；预期响应={audio_expected}；"
+                            f"手机 UI 文本（UI Tree 尽力采集）={response_text or '未读取到文本'}"
                         )
                         round_summaries.append({
                             "round": round_index + 1, "corpus_id": corpus_id, "name": audio_name,
