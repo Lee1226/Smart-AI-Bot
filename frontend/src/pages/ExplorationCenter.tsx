@@ -105,7 +105,7 @@ function Status({ value }: { value: string }) {
   return <span className={`inline-flex rounded-full px-2 py-1 text-xs ${statusClass[value] || 'bg-slate-100 text-slate-600'}`}>{statusLabel[value] || value}</span>
 }
 function PageTitle({ title, desc, action }: { title: string; desc: string; action?: React.ReactNode }) {
-  return <div className="mb-6 flex flex-wrap items-start justify-between gap-3 rounded-3xl bg-gradient-to-br from-[#175CD3] via-[#2878E8] to-[#38A6D9] p-7 text-white shadow-[0_16px_40px_rgba(37,99,235,0.18)] sm:p-8"><div><div className="text-xs font-semibold tracking-[0.18em] text-blue-100">AI 终端 · 探索工作台</div><h1 className="mt-2 text-2xl font-bold text-white">{title}</h1><p className="mt-1 text-sm text-ink-mute">{desc}</p></div>{action}</div>
+  return <div className="mb-6 flex flex-wrap items-start justify-between gap-3 rounded-3xl bg-gradient-to-br from-[#175CD3] via-[#2878E8] to-[#38A6D9] p-7 text-white shadow-[0_16px_40px_rgba(37,99,235,0.18)] sm:p-8"><div><div className="text-xs font-semibold tracking-[0.18em] text-blue-100">AI 终端 · 探索工作台</div><h1 className="mt-2 text-2xl font-bold text-white">{title}</h1><p className="mt-2 text-sm leading-6 text-blue-100">{desc}</p></div>{action}</div>
 }
 function Empty({ title, desc, action }: { title: string; desc: string; action?: React.ReactNode }) {
   return <div className="rounded-xl border border-dashed border-hairline bg-white px-5 py-12 text-center"><div className="text-sm font-semibold text-ink">{title}</div><p className="mt-1 text-xs text-ink-mute">{desc}</p>{action && <div className="mt-4">{action}</div>}</div>
@@ -373,7 +373,7 @@ export default function ExplorationCenter() {
     </div>
 
     {!isNew && !isHistory && !isKnowledge && !isPlans && <>
-      <PageTitle title="探索概览" desc="查看探索进度、待审核经验和近期探索活动。" action={<Link to="/exploration/new" className="rounded-lg border border-hairline bg-white px-3 py-2 text-sm">开始一次探索</Link>} />
+      <PageTitle title="探索概览" desc="查看探索进度、待审核经验和近期探索活动。" action={<Link to="/exploration/new" className="inline-flex items-center justify-center rounded-xl border border-white/40 bg-white px-4 py-2.5 text-sm font-semibold text-blue-700 shadow-sm transition hover:bg-blue-50 hover:shadow-md focus:outline-none focus:ring-4 focus:ring-white/30">＋ 开始一次探索</Link>} />
       <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
         {[
           ['探索会话', overview?.session_total ?? 0, '累计创建'],
