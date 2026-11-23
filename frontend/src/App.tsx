@@ -201,7 +201,7 @@ function AppLayout() {
       <header className="relative z-20 flex h-[132px] shrink-0 items-center border-b border-hairline bg-white/95 px-6 shadow-[0_2px_18px_rgba(39,87,150,0.04)] backdrop-blur-xl lg:px-8 2xl:h-[170px] 2xl:px-[42px]">
         <div className="flex min-w-0 items-center gap-5">
           <img src="/brand-icon.svg" alt="" className="h-[94px] w-[94px] shrink-0 rounded-[24px] shadow-lg shadow-blue-200/50 2xl:h-[126px] 2xl:w-[130px] 2xl:rounded-[30px]" />
-          <span className="whitespace-nowrap text-2xl font-bold tracking-tight text-slate-900 sm:text-3xl 2xl:text-[46px]">AI 终端智能测试平台</span>
+          <span className="whitespace-nowrap text-2xl font-bold tracking-tight text-slate-900 sm:text-3xl 2xl:text-[46px]">翼矩AI终端测试系统</span>
         </div>
         <div className="mx-6 hidden h-14 w-px bg-slate-200 md:block" />
         <button
