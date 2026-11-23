@@ -327,6 +327,11 @@ class RunRecorder:
                 logger.debug("[rec:%s] muxer abort failed", self.run_id, exc_info=True)
             temp_path.unlink(missing_ok=True)
         finally:
+            for task in get_tasks.values():
+                if not task.done():
+                    task.cancel()
+            if get_tasks:
+                await asyncio.gather(*get_tasks.values(), return_exceptions=True)
             executor.shutdown(wait=True, cancel_futures=True)
 
     async def stop(self) -> None:
