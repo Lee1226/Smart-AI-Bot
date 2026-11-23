@@ -159,8 +159,8 @@ function SuiteRuns({ suiteId }: { suiteId: string }) {
   if (runs.length === 0) return null
 
   return (
-    <div className="mt-6">
-      <div className="flex items-baseline justify-between mb-2">
+    <div className="mt-6 space-y-3">
+      <div className="flex flex-wrap items-baseline justify-between gap-2">
         <h2 className="text-sm font-semibold text-ink-secondary">{t('运行历史', 'Run history')}</h2>
         <span className="text-xs text-ink-faint">{runs.length} {t('次 · 删除整次运行会一并清掉它的用例结果与记忆', 'runs · deleting a whole run also clears its case results and memory')}</span>
       </div>
@@ -186,7 +186,7 @@ function SuiteRuns({ suiteId }: { suiteId: string }) {
               </div>
             </button>
             <button
-              className="px-2 py-0.5 text-xs border border-red-200 text-red-600 rounded hover:bg-red-50 opacity-0 group-hover:opacity-100 flex-shrink-0 disabled:opacity-40"
+              className="flex-shrink-0 rounded-lg border border-rose-200 px-2.5 py-1.5 text-xs text-rose-600 opacity-0 transition hover:bg-rose-50 group-hover:opacity-100 disabled:opacity-40"
               disabled={del.isPending}
               onClick={() => { if (confirm(t('删除整次运行记录？该次运行的所有用例结果和由它产生的记忆都会一并删除。', 'Delete this entire run? All its case results and the memory it produced will be deleted too.'))) del.mutate(r.id) }}
               title={t('删除整次运行（含其用例结果 + 派生记忆）', 'Delete the entire run (including its case results + derived memory)')}
@@ -304,8 +304,8 @@ export default function SuiteDetail() {
 
           {/* Pass rate trend chart */}
           {trends.length >= 2 && (
-            <div className="mt-6">
-              <div className="flex items-baseline justify-between mb-2">
+            <div className="mt-6 rounded-2xl border border-slate-200/80 bg-white p-5 shadow-[0_6px_22px_rgba(31,75,135,0.04)]">
+              <div className="mb-3 flex flex-wrap items-baseline justify-between gap-2">
                 <h2 className="text-sm font-semibold text-ink-secondary">{t('通过率趋势', 'Pass-rate trend')}</h2>
                 <span className="text-xs text-ink-faint">
                   {t('最近', 'last')} {trends.length} {t('次 · 最新', 'runs · latest')} {trends[trends.length - 1].pass_rate.toFixed(0)}%
@@ -345,7 +345,7 @@ export default function SuiteDetail() {
             <div className="mb-3"><TestAccountSelect projectId={suite?.project_id} value={testAccountId} onChange={setTestAccountId} platform={devices.find(d => d.id === deviceId)?.platform} /></div>
             <label className="block text-sm font-medium mb-1">Provider</label>
             <select
-              className="w-full border rounded px-2 py-1.5 text-sm mb-3"
+              className="mb-3 w-full rounded-xl border border-slate-200 bg-slate-50/60 px-3 py-2.5 text-sm text-slate-700 outline-none transition focus:border-blue-400 focus:bg-white focus:ring-4 focus:ring-blue-500/10"
               value={provider}
               onChange={e => handleProviderChange(e.target.value)}
             >
@@ -376,14 +376,14 @@ export default function SuiteDetail() {
                 <div className="flex gap-2 mb-3">
                   <button
                     type="button"
-                    className={`flex-1 px-3 py-1.5 text-sm rounded border ${mode === 'ai' ? 'bg-primary text-white border-transparent' : 'border-gray-300 text-gray-600 hover:bg-gray-50'}`}
+                    className={`flex-1 rounded-xl border px-3 py-2.5 text-sm font-medium transition ${mode === 'ai' ? 'border-blue-600 bg-blue-600 text-white shadow-sm' : 'border-slate-200 bg-white text-slate-600 hover:border-blue-200 hover:bg-blue-50'}`}
                     onClick={() => setMode('ai')}
                   >
                     {t('AI 执行', 'AI')}
                   </button>
                   <button
                     type="button"
-                    className={`flex-1 px-3 py-1.5 text-sm rounded border ${mode === 'replay' ? 'bg-primary text-white border-transparent' : 'border-gray-300 text-gray-600 hover:bg-gray-50'}`}
+                    className={`flex-1 rounded-xl border px-3 py-2.5 text-sm font-medium transition ${mode === 'replay' ? 'border-blue-600 bg-blue-600 text-white shadow-sm' : 'border-slate-200 bg-white text-slate-600 hover:border-blue-200 hover:bg-blue-50'}`}
                     onClick={() => setMode('replay')}
                   >
                     {t('回放', 'Replay')}
@@ -407,7 +407,7 @@ export default function SuiteDetail() {
               </button>
             ) : (
               <button
-                className="w-full bg-primary text-white py-2 rounded font-medium hover:bg-primary-deep disabled:opacity-50"
+                className="w-full rounded-xl bg-gradient-to-r from-blue-600 to-blue-500 py-3 text-sm font-semibold text-white shadow-lg shadow-blue-500/20 transition hover:-translate-y-0.5 disabled:cursor-not-allowed disabled:opacity-50"
                 disabled={!deviceId || treeRunMut.isPending}
                 onClick={() => treeRunMut.mutate()}
                 title={t('按步骤树做一次深度优先遍历，逐个叶子用例运行；共享前缀只导航一次', 'Run a depth-first traversal of the step tree, running each leaf case one by one; shared prefixes are navigated only once')}
