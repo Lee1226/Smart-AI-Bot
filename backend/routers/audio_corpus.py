@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import asyncio
 import hashlib
+import json
 from datetime import datetime
 from pathlib import Path
 from typing import Optional
@@ -16,6 +17,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from auth.access import require_account_id
 from core.audio_player import list_output_devices
 from db.audio_models import AudioCorpus
+from db.models import ExecutionPlan
 from db.database import AsyncSessionLocal
 
 router = APIRouter(prefix="/api/audio-corpus", tags=["audio-corpus"])
@@ -43,9 +45,10 @@ class AudioCorpusOut(BaseModel):
     category: str
     language: str
     created_at: str
+    usage_count: int = 0
 
 
-def _out(item: AudioCorpus) -> AudioCorpusOut:
+def _out(item: AudioCorpus, usage_count: int = 0) -> AudioCorpusOut:
     return AudioCorpusOut(
         id=item.id,
         name=item.name,
@@ -59,6 +62,7 @@ def _out(item: AudioCorpus) -> AudioCorpusOut:
         category=item.category or "general",
         language=item.language or "zh-CN",
         created_at=item.created_at.isoformat(),
+        usage_count=usage_count,
     )
 
 
@@ -83,7 +87,26 @@ async def list_audio_corpus(
             | (AudioCorpus.transcript.ilike(keyword))
         )
     rows = (await db.execute(statement.order_by(AudioCorpus.created_at.desc()))).scalars().all()
-    return [_out(row) for row in rows]
+    plans = (await db.execute(select(ExecutionPlan.steps_json).where(
+        ExecutionPlan.account_id == account_id
+    ))).scalars().all()
+    usage: dict[str, int] = {}
+    for raw_steps in plans:
+        try:
+            steps = json.loads(raw_steps or "[]")
+        except (TypeError, json.JSONDecodeError):
+            continue
+        if not isinstance(steps, list):
+            continue
+        for step in steps:
+            args = step.get("args") if isinstance(step, dict) else None
+            turns = args.get("turns") if isinstance(args, dict) else None
+            if isinstance(turns, list):
+                for turn in turns:
+                    corpus_id = str(turn.get("corpus_id") or "") if isinstance(turn, dict) else ""
+                    if corpus_id:
+                        usage[corpus_id] = usage.get(corpus_id, 0) + 1
+    return [_out(row, usage.get(row.id, 0)) for row in rows]
 
 
 @router.get("/output-devices")
@@ -156,6 +179,37 @@ async def upload_audio_corpus(
     return _out(item)
 
 
+class AudioCorpusUpdate(BaseModel):
+    name: str
+    transcript: str = ""
+    expected_result: str = ""
+    category: str = "general"
+    language: str = "zh-CN"
+
+
+@router.put("/{audio_id}", response_model=AudioCorpusOut)
+async def update_audio_corpus(
+    audio_id: str, body: AudioCorpusUpdate, request: Request, db: AsyncSession = Depends(get_db)
+):
+    account_id = require_account_id(request)
+    item = (await db.execute(select(AudioCorpus).where(
+        AudioCorpus.id == audio_id, AudioCorpus.account_id == account_id
+    ))).scalar_one_or_none()
+    if not item:
+        raise HTTPException(status_code=404, detail="音频语料不存在")
+    name = body.name.strip()
+    if not name:
+        raise HTTPException(status_code=422, detail="音频名称不能为空")
+    item.name = name[:200]
+    item.transcript = body.transcript.strip()
+    item.expected_result = body.expected_result.strip()
+    item.category = (body.category or "general").strip()[:80]
+    item.language = (body.language or "zh-CN").strip()[:32]
+    await db.commit()
+    await db.refresh(item)
+    return _out(item)
+
+
 @router.get("/{audio_id}/file")
 async def download_audio_corpus(audio_id: str, request: Request, db: AsyncSession = Depends(get_db)):
     account_id = require_account_id(request)
@@ -178,6 +232,22 @@ async def delete_audio_corpus(audio_id: str, request: Request, db: AsyncSession 
     ))).scalar_one_or_none()
     if not item:
         raise HTTPException(status_code=404, detail="音频语料不存在")
+    plans = (await db.execute(select(ExecutionPlan.steps_json).where(
+        ExecutionPlan.account_id == account_id
+    ))).scalars().all()
+    for raw_steps in plans:
+        try:
+            steps = json.loads(raw_steps or "[]")
+        except (TypeError, json.JSONDecodeError):
+            continue
+        for step in steps if isinstance(steps, list) else []:
+            args = step.get("args") if isinstance(step, dict) else None
+            turns = args.get("turns") if isinstance(args, dict) else None
+            if isinstance(turns, list) and any(
+                isinstance(turn, dict) and str(turn.get("corpus_id") or "") == audio_id
+                for turn in turns
+            ):
+                raise HTTPException(status_code=409, detail="该音频语料仍被执行计划引用，请先从相关执行计划中移除后再删除")
     path = Path(item.storage_path)
     path.unlink(missing_ok=True)
     await db.delete(item)
