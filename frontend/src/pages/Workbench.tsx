@@ -93,7 +93,7 @@ export default function Workbench() {
       <div className="absolute inset-0 -z-10 bg-[radial-gradient(circle_at_12%_16%,rgba(255,255,255,0.75),transparent_38%),linear-gradient(135deg,transparent_48%,rgba(255,255,255,0.18)_48.2%,transparent_68%)]" />
       <div className="relative z-10 max-w-[58%]">
         <div className="mb-5 inline-flex items-center gap-2 rounded-full border border-white/60 bg-white/40 px-4 py-2 text-xs font-semibold tracking-[0.16em] text-blue-700 backdrop-blur">AI TERMINAL TESTING PLATFORM</div>
-        <h1 className="text-3xl font-bold leading-[1.35] tracking-tight text-[#10213E] sm:text-4xl xl:text-[42px]">欢迎使用<br className="hidden sm:block" />AI 终端智能测试平台</h1>
+        <h1 className="text-3xl font-bold leading-[1.35] tracking-tight text-[#10213E] sm:text-4xl xl:text-[42px]">欢迎使用<br className="hidden sm:block" />翼矩AI终端测试系统</h1>
         <p className="mt-6 text-lg font-medium text-slate-600 sm:text-xl">让终端测试更智能、更高效</p>
         <Link to="/quick" className="mt-9 inline-flex items-center gap-3 rounded-full bg-gradient-to-r from-blue-600 to-blue-500 px-7 py-4 text-base font-semibold text-white shadow-lg shadow-blue-400/30 transition hover:-translate-y-0.5 hover:shadow-xl">
           <span className="text-lg">▶</span>开始工作
