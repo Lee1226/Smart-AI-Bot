@@ -375,10 +375,6 @@ async def execute_execution_plan_run(
                         await emit(f"  ✓ 第 {round_index + 1} 轮完成；已保存本轮截图证据")
                     step_result = f"音频播放完成，共 {len(round_summaries)} 轮；每轮按固定等待时间采集截图"
                     step_verified = False
-                    action_history.append({
-                        "step": index + 1, "executor": executor, "action": action,
-                        "result": step_result, "audio_rounds": round_summaries,
-                    })
                 elif executor == "ai":
                     ai_result = await _execute_ai(
                         device, step, provider, model, api_key, api_base,
