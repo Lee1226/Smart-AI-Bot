@@ -120,13 +120,13 @@ function UserMenu() {
         onClick={() => setOpen(!open)}
         aria-expanded={open}
         aria-label={t('用户菜单', 'User menu')}
-        className="flex items-center gap-3 rounded-full px-1.5 py-1.5 transition-colors hover:bg-slate-50"
+        className="flex items-center gap-2 rounded-full px-1.5 py-1 transition-colors hover:bg-slate-50"
       >
-        <span className="grid h-12 w-12 place-items-center rounded-full bg-gradient-to-br from-blue-500 to-indigo-600 text-lg font-semibold text-white shadow-sm">
+        <span className="grid h-10 w-10 place-items-center rounded-full bg-gradient-to-br from-blue-500 to-indigo-600 text-base font-semibold text-white shadow-sm">
           {initials}
         </span>
         <span className="hidden max-w-[140px] truncate text-sm font-medium text-slate-700 xl:block">{me.name || me.email}</span>
-        <span className="pr-1 text-lg text-slate-500">{open ? '⌃' : '⌄'}</span>
+        <span className="pr-1 text-base text-slate-500">{open ? '⌃' : '⌄'}</span>
       </button>
       {open && (
         <>
@@ -198,38 +198,38 @@ function AppLayout() {
 
   return (
     <div className="min-h-screen bg-canvas-soft text-ink">
-      <header className="relative z-20 flex h-[88px] shrink-0 items-center border-b border-hairline bg-white/95 px-6 shadow-[0_2px_18px_rgba(39,87,150,0.04)] backdrop-blur-xl lg:px-8 2xl:h-[96px] 2xl:px-[42px]">
-        <div className="flex min-w-0 items-center gap-4">
-          <img src="/brand-icon.svg" alt="" className="h-16 w-16 shrink-0 rounded-2xl shadow-md shadow-blue-200/50 2xl:h-[72px] 2xl:w-[72px] 2xl:rounded-[20px]" />
-          <span className="whitespace-nowrap text-[22px] font-bold tracking-tight text-slate-900 sm:text-[22px] 2xl:text-[26px]">翼矩AI终端测试系统</span>
+      <header className="relative z-20 flex h-[72px] shrink-0 items-center border-b border-hairline bg-white/95 px-5 shadow-[0_2px_14px_rgba(39,87,150,0.035)] backdrop-blur-xl lg:px-7 2xl:h-[80px] 2xl:px-9">
+        <div className="flex min-w-0 items-center gap-3">
+          <img src="/brand-icon.svg" alt="" className="h-12 w-12 shrink-0 rounded-xl shadow-sm shadow-blue-200/40 2xl:h-[52px] 2xl:w-[52px] 2xl:rounded-xl" />
+          <span className="whitespace-nowrap text-[18px] font-bold tracking-tight text-slate-900 sm:text-[18px] 2xl:text-[20px]">翼矩AI终端测试系统</span>
         </div>
-        <div className="mx-6 hidden h-14 w-px bg-slate-200 md:block" />
+        <div className="mx-4 hidden h-10 w-px bg-slate-200 md:block" />
         <button
           type="button"
           aria-label={t('折叠导航栏', 'Toggle navigation')}
           aria-expanded={!sidebarCollapsed}
           onClick={() => setSidebarCollapsed(value => !value)}
-          className="grid h-11 w-11 shrink-0 place-items-center rounded-xl text-2xl text-slate-600 transition-colors hover:bg-blue-50 hover:text-blue-600"
+          className="grid h-9 w-9 shrink-0 place-items-center rounded-lg text-xl text-slate-600 transition-colors hover:bg-blue-50 hover:text-blue-600"
         >
           <span aria-hidden="true">☰</span>
         </button>
-        <div className="mx-5 hidden h-10 w-px bg-slate-100 sm:block" />
-        <div className="flex min-w-0 items-center gap-3 text-slate-500">
-          <span className="text-xl text-slate-500" aria-hidden="true">⌂</span>
-          <span className="truncate text-base font-medium text-slate-600 sm:text-lg">{pageLabel}</span>
+        <div className="mx-4 hidden h-8 w-px bg-slate-100 sm:block" />
+        <div className="flex min-w-0 items-center gap-2.5 text-slate-500">
+          <span className="text-lg text-slate-500" aria-hidden="true">⌂</span>
+          <span className="truncate text-sm font-medium text-slate-600 sm:text-[15px]">{pageLabel}</span>
         </div>
-        <div className="ml-auto flex shrink-0 items-center gap-4 sm:gap-8">
-          <div className="hidden h-14 w-px bg-slate-200 sm:block" />
-          <div className="relative grid h-11 w-11 place-items-center text-[28px] text-slate-700" aria-label={t('通知', 'Notifications')}>
-            <svg aria-hidden="true" viewBox="0 0 24 24" className="h-8 w-8" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><path d="M18 8a6 6 0 0 0-12 0c0 7-3 7-3 9h18c0-2-3-2-3-9"/><path d="M10 21h4"/></svg>
-            <span className="absolute right-1 top-1 h-2.5 w-2.5 rounded-full border-2 border-white bg-rose-400" />
+        <div className="ml-auto flex shrink-0 items-center gap-3 sm:gap-5">
+          <div className="hidden h-10 w-px bg-slate-200 sm:block" />
+          <div className="relative grid h-9 w-9 place-items-center text-2xl text-slate-700" aria-label={t('通知', 'Notifications')}>
+            <svg aria-hidden="true" viewBox="0 0 24 24" className="h-6 w-6" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><path d="M18 8a6 6 0 0 0-12 0c0 7-3 7-3 9h18c0-2-3-2-3-9"/><path d="M10 21h4"/></svg>
+            <span className="absolute right-0.5 top-0.5 h-2 w-2 rounded-full border-2 border-white bg-rose-400" />
           </div>
           <UserMenu />
         </div>
       </header>
 
-      <div className="flex min-h-[calc(100vh-88px)] 2xl:min-h-[calc(100vh-96px)]">
-        <aside className={`${sidebarCollapsed ? 'w-[80px]' : 'w-[250px] 2xl:w-[280px]'} sticky top-0 flex h-[calc(100vh-88px)] 2xl:h-[calc(100vh-96px)] shrink-0 flex-col border-r border-hairline bg-white/75 transition-[width] duration-200`}>
+      <div className="flex min-h-[calc(100vh-72px)] 2xl:min-h-[calc(100vh-80px)]">
+        <aside className={`${sidebarCollapsed ? 'w-[80px]' : 'w-[250px] 2xl:w-[280px]'} sticky top-0 flex h-[calc(100vh-72px)] 2xl:h-[calc(100vh-80px)] shrink-0 flex-col border-r border-hairline bg-white/75 transition-[width] duration-200`}>
           <nav aria-label={t('主导航', 'Main navigation')} className={`flex-1 overflow-y-auto ${sidebarCollapsed ? 'px-3' : 'px-3 xl:px-4'} py-5`}>
             <div className="space-y-2">
               {NAV_GROUPS.map(group => <div key={group.label.en} className="space-y-2">
