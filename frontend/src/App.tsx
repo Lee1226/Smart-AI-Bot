@@ -87,6 +87,9 @@ const PAGE_TABS = {
 
 function matchesPath(pathname: string, path: string) {
   if (path === '/') return pathname === '/'
+  // These navigation entries are exact pages, not parent routes.
+  // Prevent the API overview from staying active on API keys/docs subpages.
+  if (path === '/open-platform') return pathname === path
   // /runs is the task list/detail route; /runs/compare is a separate navigation item.
   if (path === '/runs' && pathname.startsWith('/runs/compare')) return false
   return pathname === path || pathname.startsWith(path + '/')
