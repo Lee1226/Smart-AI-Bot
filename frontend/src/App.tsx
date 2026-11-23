@@ -38,7 +38,7 @@ const NAV_GROUPS: { label: { zh: string; en: string }; items: NavigationItem[] }
     { to: '/quick', label: { zh: '任务执行', en: 'Execution' }, icon: 'ϟ', iconStyle: 'from-amber-400 to-orange-600', paths: ['/quick', '/regressions'] },
     { to: '/suites', label: { zh: '用例中心', en: 'Cases' }, icon: '⚗', iconStyle: 'from-fuchsia-500 to-purple-600', paths: ['/suites', '/library', '/automation', '/recorder', '/knowledge', '/execution-plans', '/apps'] },
     { to: '/runs', label: { zh: '测试任务', en: 'Test tasks' }, icon: '▶', iconStyle: 'from-sky-400 to-blue-600', paths: ['/runs'] },
-    { to: '/recordings', label: { zh: '录像文件', en: 'Recordings' }, icon: '▣', iconStyle: 'from-pink-400 to-rose-600', paths: ['/recordings'] },
+    { to: '/recordings', label: { zh: '测试视频记录', en: 'Test video records' }, icon: '▣', iconStyle: 'from-pink-400 to-rose-600', paths: ['/recordings'] },
   ] },
   { label: { zh: 'AI 探索', en: 'AI exploration' }, items: [
     { to: '/exploration', label: { zh: 'AI 探索中心', en: 'Exploration center' }, icon: '✧', iconStyle: 'from-cyan-400 to-violet-600', paths: ['/exploration'] },
@@ -65,7 +65,7 @@ const PAGE_TABS = {
   results: [
     { to: '/runs', zh: '任务管理', en: 'Task management' },
     { to: '/runs/compare', zh: '结果对比', en: 'Compare' },
-    { to: '/recordings', zh: '录像文件', en: 'Recordings' },
+    { to: '/recordings', zh: '测试视频记录', en: 'Test video records' },
   ],
   settings: [
     { to: '/settings', zh: '平台设置', en: 'Settings' },
