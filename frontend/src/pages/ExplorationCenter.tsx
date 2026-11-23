@@ -373,7 +373,6 @@ export default function ExplorationCenter() {
     </div>
 
     {!isNew && !isHistory && !isKnowledge && !isPlans && <>
-      <PageTitle title="探索概览" desc="查看探索进度、待审核经验和近期探索活动。" action={<Link to="/exploration/new" className="inline-flex items-center justify-center rounded-xl border border-white/40 bg-white px-4 py-2.5 text-sm font-semibold text-blue-700 shadow-sm transition hover:bg-blue-50 hover:shadow-md focus:outline-none focus:ring-4 focus:ring-white/30">＋ 开始一次探索</Link>} />
       <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
         {[
           ['探索会话', overview?.session_total ?? 0, '累计创建'],
