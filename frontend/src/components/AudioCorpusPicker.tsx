@@ -1,3 +1,4 @@
+import { useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import {
   fetchAudioCorpus, fetchAudioOutputDevices, uploadAudioCorpus,
@@ -26,12 +27,16 @@ export default function AudioCorpusPicker({
   onOutputDeviceChange: (value: number | null) => void
 }) {
   const qc = useQueryClient()
+  const [transcript, setTranscript] = useState('')
+  const [expectedResult, setExpectedResult] = useState('')
   const corpusQuery = useQuery({ queryKey: ['audio-corpus'], queryFn: () => fetchAudioCorpus() })
   const devicesQuery = useQuery({ queryKey: ['audio-output-devices'], queryFn: fetchAudioOutputDevices })
   const uploadMutation = useMutation({
-    mutationFn: uploadAudioCorpus,
+    mutationFn: (file: File) => uploadAudioCorpus(file, { transcript, expected_result: expectedResult }),
     onSuccess: async item => {
       await qc.invalidateQueries({ queryKey: ['audio-corpus'] })
+      setTranscript('')
+      setExpectedResult('')
       const next = [...turns, { corpus_id: item.id, wait_after_ms: 12000 }]
       onTurnsChange(mode === 'single' ? next.slice(0, 1) : next)
     },
@@ -106,6 +111,11 @@ export default function AudioCorpusPicker({
           <label className="mb-1 block text-[11px] font-semibold text-gray-600">播放音量（{volumePercent}%）</label>
           <input type="range" min="0" max="100" step="5" className="w-full accent-violet-600" value={volumePercent} onChange={e => onVolumeChange(Number(e.target.value))} />
         </div>
+      </div>
+      <div className="space-y-2 rounded-lg border border-dashed border-slate-200 bg-white p-3">
+        <div className="text-[11px] font-semibold text-gray-700">上传素材时可补充语料信息（可选）</div>
+        <textarea rows={2} className={fieldClass} value={transcript} onChange={e => setTranscript(e.target.value)} placeholder="音频语音文本，例如：明天东京天气怎么样？" />
+        <textarea rows={2} className={fieldClass} value={expectedResult} onChange={e => setExpectedResult(e.target.value)} placeholder="预期响应，例如：助手应返回明天的天气信息" />
       </div>
       <div className="flex flex-wrap items-center justify-between gap-2 border-t border-violet-100 pt-3">
         <span className="text-[10px] text-gray-500">{corpusQuery.isLoading ? '正在加载音频语料…' : `语料库共 ${corpus.length} 条`}</span>
