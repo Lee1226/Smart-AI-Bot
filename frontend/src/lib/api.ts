@@ -730,6 +730,7 @@ export interface ApiKeyInfo {
   key_prefix: string
   created_at: string
   last_used_at: string | null
+  permissions: string[]
 }
 
 export interface CreateApiKeyResponse {
@@ -778,8 +779,8 @@ export const fetchMe = () =>
 export const fetchApiKeys = () =>
   api.get<ApiKeyInfo[]>('/account/api-keys').then(r => r.data)
 
-export const createApiKey = (name: string) =>
-  api.post<CreateApiKeyResponse>('/account/api-keys', { name }).then(r => r.data)
+export const createApiKey = (name: string, permissions: string[]) =>
+  api.post<CreateApiKeyResponse>('/account/api-keys', { name, permissions }).then(r => r.data)
 
 export const deleteApiKey = (id: string) =>
   api.delete(`/account/api-keys/${id}`)
