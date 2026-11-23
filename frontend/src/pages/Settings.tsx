@@ -65,7 +65,7 @@ function ProjectCard({ project, onDelete }: { project: Project; onDelete: () => 
     </div>
   )
   return (
-    <div className="border rounded-lg p-4 bg-white space-y-2">
+    <div className="rounded-2xl border border-slate-200/80 bg-white p-5 shadow-[0_8px_28px_rgba(31,75,135,0.05)] space-y-3">
       {field(t('名称 / Name', 'Name'), 'name', t('项目名', 'Project name'))}
       <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
         {(['android', 'harmony', 'ios'] as const).map(platform => (
@@ -182,7 +182,7 @@ export default function Settings() {
       <div className="flex items-center gap-2">
       <input
         type={f.type || 'text'}
-        className="w-full border rounded px-3 py-1.5 text-sm font-mono"
+        className="w-full rounded-xl border border-slate-200 bg-slate-50/70 px-3 py-2 text-sm font-mono outline-none transition focus:border-blue-400 focus:bg-white focus:ring-4 focus:ring-blue-100"
         disabled={clearSecrets.includes(f.key) || saveMut.isPending}
         placeholder={clearSecrets.includes(f.key)
           ? t('待删除，保存后生效', 'Pending deletion; save to apply')
@@ -227,16 +227,20 @@ export default function Settings() {
   )
 
   return (
-    <div className="max-w-xl">
-      <h1 className="text-2xl font-bold mb-6">Settings</h1>
+    <div className="mx-auto max-w-5xl space-y-6">
+      <header className="rounded-3xl bg-gradient-to-br from-[#175CD3] via-[#2878E8] to-[#38A6D9] p-7 text-white shadow-[0_16px_40px_rgba(37,99,235,0.18)] sm:p-8">
+        <div className="text-xs font-semibold tracking-[0.18em] text-blue-100">AI 终端 · 平台配置</div>
+        <h1 className="mt-2 text-2xl font-bold">平台设置</h1>
+        <p className="mt-2 text-sm text-blue-100">配置语言、Agent 模型、服务凭证、验证模型与通知方式。</p>
+      </header>
 
-      <div className="bg-white border rounded-lg p-6 shadow-sm space-y-5">
+      <div className="rounded-2xl border border-slate-200/80 bg-white p-6 shadow-[0_8px_28px_rgba(31,75,135,0.05)] space-y-5">
 
         {/* ── Main language (AI output + report follow it) ── */}
         <div>
           <label className="block text-sm font-medium mb-1">{t('语言 / Language', 'Language')}</label>
           <select
-            className="w-full border rounded px-3 py-1.5 text-sm"
+            className="w-full rounded-xl border border-slate-200 bg-slate-50/70 px-3 py-2 text-sm outline-none transition focus:border-blue-400 focus:bg-white focus:ring-4 focus:ring-blue-100"
             value={form.language || 'zh'}
             onChange={e => set('language', e.target.value)}
           >
@@ -401,7 +405,7 @@ export default function Settings() {
         </Collapsible>
 
         <button
-          className="w-full bg-primary text-white py-2 rounded font-medium hover:bg-primary-deep disabled:opacity-50"
+          className="w-full rounded-xl bg-gradient-to-r from-[#2169D5] to-[#328FE5] py-3 font-semibold text-white shadow-sm transition hover:brightness-105 disabled:opacity-50"
           disabled={saveMut.isPending}
           onClick={() => {
             if (clearSecrets.length && !confirm(t('确认删除已标记的凭证？保存后无法恢复原 Key，需要重新填写。', 'Delete the marked credentials? Saved keys cannot be recovered; you will need to enter them again.'))) return
