@@ -16,6 +16,7 @@ export default function Account() {
   const { data: me } = useQuery({ queryKey: ['me'], queryFn: fetchMe })
   const { data: keys = [] } = useQuery({ queryKey: ['api-keys'], queryFn: fetchApiKeys })
   const [newName, setNewName] = useState('')
+  const [permissions, setPermissions] = useState<string[]>(['devices:read', 'suites:read', 'runs:read'])
   const [fullKey, setFullKey] = useState<string | null>(null)
   const [copied, setCopied] = useState(false)
   const [error, setError] = useState<string | null>(null)
@@ -23,10 +24,11 @@ export default function Account() {
   const isAdmin = me?.role === 'owner' || me?.role === 'admin'
 
   const createMut = useMutation({
-    mutationFn: () => createApiKey(newName.trim() || 'API Key'),
+    mutationFn: () => createApiKey(newName.trim() || 'API Key', permissions),
     onSuccess: (data) => {
       setFullKey(data.full_key)
       setNewName('')
+      setPermissions(['devices:read', 'suites:read', 'runs:read'])
       setError(null)
       qc.invalidateQueries({ queryKey: ['api-keys'] })
     },
@@ -58,7 +60,7 @@ export default function Account() {
       <header className="rounded-2xl bg-gradient-to-br from-[#175CD3] via-[#2878E8] to-[#38A6D9] p-5 text-white shadow-[0_16px_40px_rgba(37,99,235,0.18)] sm:p-6">
         <div className="text-xs font-semibold tracking-[0.18em] text-blue-100">AI 终端 · 账号安全</div>
         <h1 className="mt-2 text-xl font-bold">{t('API 密钥管理', 'API Key Management')}</h1>
-        <p className="mt-2 text-sm text-blue-100">管理开放平台的 API 凭证。密钥权限范围将在开放 API 接口建设阶段进一步完善。</p>
+        <p className="mt-2 text-sm text-blue-100">管理开放平台 API 凭证，并为每个密钥分配最小必要权限。</p>
       </header>
 
       <div className="rounded-2xl border border-slate-200/80 bg-white p-6 shadow-[0_8px_28px_rgba(31,75,135,0.05)] space-y-5">
@@ -97,6 +99,23 @@ export default function Account() {
                 </button>
               </div>
 
+              <div className="mt-3 rounded-xl border border-slate-200 bg-slate-50/70 p-3">
+                <p className="mb-2 text-xs font-medium text-slate-700">{t('权限范围（仅开放 API）', 'Permission scopes (Open API only)')}</p>
+                <div className="grid gap-2 sm:grid-cols-3">
+                  {[
+                    ['devices:read', '读取设备'],
+                    ['suites:read', '读取用例套件'],
+                    ['runs:read', '读取测试任务'],
+                  ].map(([scope, label]) => (
+                    <label key={scope} className="flex items-center gap-2 text-xs text-slate-600">
+                      <input type="checkbox" checked={permissions.includes(scope)} onChange={e => setPermissions(current => e.target.checked ? [...current, scope] : current.filter(item => item !== scope))} />
+                      {t(label, scope)}
+                    </label>
+                  ))}
+                </div>
+                <p className="mt-2 text-[11px] leading-5 text-slate-400">{t('密钥仅能访问勾选的开放 API 读取接口，不能调用平台内部管理接口或执行设备操作。', 'Keys can only access the selected Open API read endpoints; internal management and device-control APIs are not available.')}</p>
+              </div>
+
               {fullKey && (
                 <div className="mt-3 bg-amber-50 border border-amber-200 rounded p-3">
                   <p className="text-xs text-amber-700 mb-1">
@@ -133,6 +152,7 @@ export default function Account() {
                     <p className="text-xs text-gray-400">
                       {k.name} · {fmtTime(k.created_at)}
                     </p>
+                    <p className="mt-1 text-[11px] text-slate-500">{(k.permissions || []).length ? k.permissions.join(' · ') : t('无权限（旧密钥）', 'No scopes (legacy key)')}</p>
                   </div>
                   {isAdmin && (
                     <button
