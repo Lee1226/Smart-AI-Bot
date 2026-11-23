@@ -296,8 +296,8 @@ export default function SkillLibrary() {
   )
 
   return <div className="mx-auto max-w-7xl space-y-6">
-    <header className="rounded-3xl bg-gradient-to-br from-[#175CD3] via-[#2878E8] to-[#38A6D9] p-7 text-white shadow-[0_16px_40px_rgba(37,99,235,0.18)] sm:p-8">
-      <div className="text-xs font-semibold tracking-[0.18em] text-blue-100">AI 终端 · 技能资产管理</div><h1 className="mt-2 text-2xl font-bold text-white">AI 技能库</h1>
+    <header className="rounded-2xl bg-gradient-to-br from-[#175CD3] via-[#2878E8] to-[#38A6D9] p-5 text-white shadow-[0_16px_40px_rgba(37,99,235,0.18)] sm:p-6">
+      <div className="text-xs font-semibold tracking-[0.18em] text-blue-100">AI 终端 · 技能资产管理</div><h1 className="mt-2 text-xl font-bold text-white">AI 技能库</h1>
       <p className="mt-2 max-w-3xl text-sm leading-6 text-blue-100">把一次成功探索沉淀为可重复使用的 AI 执行教学：保留原始任务提示词，提取页面观察、操作决策、成功步骤与异常经验。未经复现验证的技能不会被当作可执行能力。</p>
     </header>
 
