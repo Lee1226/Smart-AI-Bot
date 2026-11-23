@@ -9,6 +9,8 @@ from __future__ import annotations
 import asyncio
 import logging
 import os
+import time
+from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime
 from pathlib import Path
 from typing import Optional
@@ -176,68 +178,156 @@ class RunRecorder:
         temp_path = self.rec_dir / f"{self.run_id}.part.mp4"
         temp_path.unlink(missing_ok=True)
         muxer = ScrcpyMp4Muxer(temp_path, width, height)
-        mux_lock = asyncio.Lock()
-        consumers: set[asyncio.Task] = set()
+        executor = ThreadPoolExecutor(max_workers=1, thread_name_prefix=f"rec-mux-{self.run_id[:8]}")
+        loop = asyncio.get_running_loop()
+        get_tasks: dict[str, asyncio.Task] = {}
+        stats = {
+            "video_packets": 0, "audio_packets": 0,
+            "video_bytes": 0, "audio_bytes": 0,
+            "batches": 0, "write_seconds": 0.0, "max_batch_seconds": 0.0,
+            "max_video_queue": 0, "max_audio_queue": 0,
+        }
 
-        async def consume(queue: asyncio.Queue, write_packet, stream_name: str) -> None:
-            stop_quiet_since: float | None = None
-            loop = asyncio.get_running_loop()
-            while True:
-                if self._stop.is_set() and queue.empty():
-                    if stop_quiet_since is None:
-                        stop_quiet_since = loop.time()
-                    elif loop.time() - stop_quiet_since >= 0.5:
-                        return
-                try:
-                    item = await asyncio.wait_for(queue.get(), timeout=0.2)
-                except asyncio.TimeoutError:
-                    continue
-                stop_quiet_since = None
-                if item is None:
-                    return
-                if isinstance(item, dict) and item.get("error"):
-                    raise RuntimeError(f"{stream_name} capture failed: {item['error']}")
-                async with mux_lock:
-                    await asyncio.to_thread(write_packet, item)
+        def write_batch(batch: list[tuple[str, object]]) -> float:
+            started = time.perf_counter()
+            for stream_name, packet in batch:
+                if stream_name == "video":
+                    muxer.write_video(packet)
+                else:
+                    muxer.write_audio(packet)
+            return time.perf_counter() - started
+
+        async def write_items(items: list[tuple[str, object]]) -> None:
+            if not items:
+                return
+            items.sort(key=lambda entry: (
+                0 if entry[1].kind == "configuration" else 1,
+                -1 if entry[1].pts_us is None else entry[1].pts_us,
+                0 if entry[0] == "video" else 1,
+            ))
+            elapsed = await loop.run_in_executor(executor, write_batch, items)
+            stats["batches"] += 1
+            stats["write_seconds"] += elapsed
+            stats["max_batch_seconds"] = max(stats["max_batch_seconds"], elapsed)
+            for stream_name, packet in items:
+                if packet.kind != "configuration":
+                    stats[f"{stream_name}_packets"] += 1
+                    stats[f"{stream_name}_bytes"] += len(packet.payload)
 
         try:
             if self._video_queue is None or self._audio_queue is None:
                 raise RuntimeError("Recorder queues are not initialized")
-            consumers = {
-                asyncio.create_task(consume(self._video_queue, muxer.write_video, "video")),
-                asyncio.create_task(consume(self._audio_queue, muxer.write_audio, "audio")),
-            }
-            done, pending = await asyncio.wait(
-                consumers, return_when=asyncio.FIRST_EXCEPTION
-            )
-            failure = next((task.exception() for task in done if task.exception()), None)
-            if failure is not None:
-                for task in pending:
-                    task.cancel()
-                await asyncio.gather(*pending, return_exceptions=True)
-                raise failure
-            await asyncio.gather(*pending)
-            await asyncio.to_thread(muxer.close)
+            queues = {"video": self._video_queue, "audio": self._audio_queue}
+            for name, queue in queues.items():
+                get_tasks[name] = asyncio.create_task(queue.get(), name=f"rec-{name}-get-{self.run_id[:8]}")
+            idle_since: float | None = None
+
+            while True:
+                done, _ = await asyncio.wait(
+                    set(get_tasks.values()), timeout=0.2,
+                    return_when=asyncio.FIRST_COMPLETED,
+                )
+                batch: list[tuple[str, object]] = []
+                ended: set[str] = set()
+
+                for name, task in list(get_tasks.items()):
+                    if task not in done:
+                        continue
+                    item = task.result()
+                    if item is None:
+                        ended.add(name)
+                        get_tasks.pop(name, None)
+                    elif isinstance(item, dict) and item.get("error"):
+                        raise RuntimeError(f"{name} capture failed: {item['error']}")
+                    else:
+                        batch.append((name, item))
+                        get_tasks[name] = asyncio.create_task(
+                            queues[name].get(), name=f"rec-{name}-get-{self.run_id[:8]}"
+                        )
+
+                # Drain both bounded queues in batches, amortizing executor
+                # scheduling while preserving device PTS order within each batch.
+                for name, queue in queues.items():
+                    if name in ended or name not in get_tasks:
+                        continue
+                    for _ in range(64):
+                        try:
+                            item = queue.get_nowait()
+                        except asyncio.QueueEmpty:
+                            break
+                        if item is None:
+                            ended.add(name)
+                            task = get_tasks.pop(name, None)
+                            if task is not None:
+                                task.cancel()
+                            break
+                        if isinstance(item, dict) and item.get("error"):
+                            raise RuntimeError(f"{name} capture failed: {item['error']}")
+                        batch.append((name, item))
+
+                stats["max_video_queue"] = max(stats["max_video_queue"], queues["video"].qsize())
+                stats["max_audio_queue"] = max(stats["max_audio_queue"], queues["audio"].qsize())
+                await write_items(batch)
+
+                if self._stop.is_set() and queues["video"].empty() and queues["audio"].empty():
+                    if idle_since is None:
+                        idle_since = loop.time()
+                    elif loop.time() - idle_since >= 0.5:
+                        break
+                else:
+                    idle_since = None
+
+                if not get_tasks and queues["video"].empty() and queues["audio"].empty():
+                    break
+
+            for task in get_tasks.values():
+                task.cancel()
+            if get_tasks:
+                await asyncio.gather(*get_tasks.values(), return_exceptions=True)
+            get_tasks.clear()
+
+            await loop.run_in_executor(executor, muxer.close)
             os.replace(temp_path, final_path)
             self.saved = True
             self.status_message = f"录像已保存：{final_path.name}"
-            logger.info("[rec:%s] saved audio/video recording: %s", self.run_id, final_path)
+            average_ms = stats["write_seconds"] * 1000 / stats["batches"] if stats["batches"] else 0.0
+            logger.info(
+                "[rec:%s] saved A/V recording: %s; video=%d packets/%d bytes "
+                "audio=%d packets/%d bytes batches=%d mux_avg=%.2fms mux_max=%.2fms "
+                "queue_peak(video=%d,audio=%d)",
+                self.run_id, final_path, stats["video_packets"], stats["video_bytes"],
+                stats["audio_packets"], stats["audio_bytes"], stats["batches"],
+                average_ms, stats["max_batch_seconds"] * 1000,
+                stats["max_video_queue"], stats["max_audio_queue"],
+            )
         except asyncio.CancelledError:
-            for task in consumers:
+            for task in get_tasks.values():
                 task.cancel()
-            if consumers:
-                await asyncio.gather(*consumers, return_exceptions=True)
-            await asyncio.to_thread(muxer.abort)
-            raise
+            if get_tasks:
+                await asyncio.gather(*get_tasks.values(), return_exceptions=True)
+            try:
+                await loop.run_in_executor(executor, muxer.abort)
+            finally:
+                raise
         except Exception as exc:
             self._recording_error = str(exc)
             self.status_message = f"录像未保存：{exc}"
-            logger.warning("[rec:%s] audio/video recording incomplete: %s", self.run_id, exc, exc_info=True)
+            logger.warning(
+                "[rec:%s] A/V recording incomplete: %s; video=%d packets/%d bytes "
+                "audio=%d packets/%d bytes batches=%d mux_total=%.3fs mux_max=%.2fms "
+                "queue_peak(video=%d,audio=%d)",
+                self.run_id, exc, stats["video_packets"], stats["video_bytes"],
+                stats["audio_packets"], stats["audio_bytes"], stats["batches"],
+                stats["write_seconds"], stats["max_batch_seconds"] * 1000,
+                stats["max_video_queue"], stats["max_audio_queue"], exc_info=True,
+            )
             try:
-                await asyncio.to_thread(muxer.abort)
+                await loop.run_in_executor(executor, muxer.abort)
             except Exception:
                 logger.debug("[rec:%s] muxer abort failed", self.run_id, exc_info=True)
             temp_path.unlink(missing_ok=True)
+        finally:
+            executor.shutdown(wait=True, cancel_futures=True)
 
     async def stop(self) -> None:
         if not self._started and self._release is None:
