@@ -39,7 +39,7 @@ const NAV_GROUPS: { label: { zh: string; en: string }; items: NavigationItem[] }
     { to: '/devices', label: { zh: '设备管理', en: 'Devices' }, icon: '▯', iconStyle: 'from-teal-400 to-cyan-600', paths: ['/devices'] },
     { to: '/debug', label: { zh: '调试控制台', en: 'Debug console' }, icon: '⌘', iconStyle: 'from-violet-500 to-indigo-600', paths: ['/debug'] },
     { to: '/quick', label: { zh: '任务执行', en: 'Execution' }, icon: 'ϟ', iconStyle: 'from-amber-400 to-orange-600', paths: ['/quick', '/regressions'] },
-    { to: '/suites', label: { zh: '用例中心', en: 'Cases' }, icon: '⚗', iconStyle: 'from-fuchsia-500 to-purple-600', paths: ['/suites', '/library', '/automation', '/recorder', '/knowledge', '/execution-plans', '/apps', '/audio-corpus'] },
+    { to: '/audio-corpus', label: { zh: '语料库', en: 'Corpus library' }, icon: '▤', iconStyle: 'from-cyan-500 to-blue-600', paths: ['/audio-corpus'], children: [\n      { to: '/audio-corpus', label: { zh: '音频语料库', en: 'Audio corpus' }, icon: '♫', iconStyle: 'from-cyan-500 to-blue-600', paths: ['/audio-corpus'] },\n    ] },\n    { to: '/suites', label: { zh: '用例中心', en: 'Cases' }, icon: '⚗', iconStyle: 'from-fuchsia-500 to-purple-600', paths: ['/suites', '/library', '/automation', '/recorder', '/knowledge', '/execution-plans', '/apps'] },
     { to: '/runs', label: { zh: '测试结果中心', en: 'Test results' }, icon: '▤', iconStyle: 'from-sky-400 to-blue-600', paths: ['/runs', '/recordings'], children: [
       { to: '/runs', label: { zh: '测试任务', en: 'Test tasks' }, icon: '▶', iconStyle: 'from-sky-400 to-blue-600', paths: ['/runs'] },
       { to: '/runs/compare', label: { zh: '结果对比', en: 'Result comparison' }, icon: '⇄', iconStyle: 'from-indigo-400 to-violet-600', paths: ['/runs/compare'] },
@@ -74,6 +74,8 @@ const PAGE_TABS = {
     { to: '/execution-plans', zh: '执行计划', en: 'Execution plans' },
     { to: '/apps', zh: '设备应用库', en: 'App library' },
     { to: '/knowledge', zh: '知识库', en: 'Knowledge' },
+  ],
+  corpus: [
     { to: '/audio-corpus', zh: '音频语料库', en: 'Audio corpus' },
   ],
   results: [
@@ -215,10 +217,10 @@ function AppLayout() {
   const activeItem = NAV_GROUPS.flatMap(group => group.items.flatMap(item => [item, ...(item.children ?? [])])).find(item => item.paths.some(path => matchesPath(pathname, path)))
   const pageLabel = activeItem ? t(activeItem.label.zh, activeItem.label.en) : t('工作台', 'Workbench')
   const [resultsExpanded, setResultsExpanded] = useState(['/runs', '/recordings'].some(path => matchesPath(pathname, path)))
-  const [openPlatformExpanded, setOpenPlatformExpanded] = useState(['/open-platform'].some(path => matchesPath(pathname, path)))
+  const [openPlatformExpanded, setOpenPlatformExpanded] = useState(['/open-platform'].some(path => matchesPath(pathname, path)))\n  const [corpusExpanded, setCorpusExpanded] = useState(['/audio-corpus'].some(path => matchesPath(pathname, path)))
   useEffect(() => {
     if (['/runs', '/recordings'].some(path => matchesPath(pathname, path))) setResultsExpanded(true)
-    if (matchesPath(pathname, '/open-platform')) setOpenPlatformExpanded(true)
+    if (matchesPath(pathname, '/open-platform')) setOpenPlatformExpanded(true)\n    if (matchesPath(pathname, '/audio-corpus')) setCorpusExpanded(true)
   }, [pathname])
 
   return (
@@ -338,7 +340,7 @@ function AppLayout() {
               <Route path="/automation" element={<PageTabs section="cases"><AutomationCatalog /></PageTabs>} />
               <Route path="/automation/:kind/:id" element={<PageTabs section="cases"><AutomationCatalog /></PageTabs>} />
               <Route path="/knowledge" element={<PageTabs section="cases"><Knowledge /></PageTabs>} />
-              <Route path="/audio-corpus" element={<PageTabs section="cases"><AudioCorpus /></PageTabs>} />
+              <Route path="/audio-corpus" element={<PageTabs section="corpus"><AudioCorpus /></PageTabs>} />
               <Route path="/regressions" element={<PageTabs section="execution"><Regressions /></PageTabs>} />
               <Route path="/runs" element={<Runs />} />
               <Route path="/recordings" element={<Recordings />} />
