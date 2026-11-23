@@ -6,10 +6,10 @@ export default {
       colors: {
         // Electric-cyan primary (signature color event)
         primary: {
-          DEFAULT: '#06B6D4',
-          deep: '#0891B2',
-          soft: '#ECFEFF',
-          bright: '#22D3EE', // dark-block highlight only
+          DEFAULT: '#3478F6',
+          deep: '#245FE5',
+          soft: '#EAF2FF',
+          bright: '#62B8FF', // dark-block highlight only
         },
         // Cool near-black ink scale
         ink: {
@@ -21,12 +21,12 @@ export default {
         // Surfaces
         canvas: {
           DEFAULT: '#FFFFFF',
-          soft: '#F8FAFC',
-          cool: '#F1F5F9',
+          soft: '#F5F8FF',
+          cool: '#EDF3FC',
         },
         hairline: {
-          DEFAULT: '#E2E8F0',
-          strong: '#CBD5E1',
+          DEFAULT: '#E7EDF7',
+          strong: '#D4DEEC',
         },
         // Dark terminal block (logs / code / commands)
         terminal: {
@@ -49,8 +49,8 @@ export default {
         DEFAULT: '#E2E8F0',
       },
       boxShadow: {
-        card: '0 1px 3px rgba(15,23,42,0.06)',
-        pop: '0 4px 16px rgba(15,23,42,0.08)',
+        card: '0 5px 18px rgba(56,102,174,0.07)',
+        pop: '0 10px 28px rgba(56,102,174,0.12)',
       },
     },
   },
