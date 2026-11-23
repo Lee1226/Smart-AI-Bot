@@ -164,7 +164,7 @@ function SuiteRuns({ suiteId }: { suiteId: string }) {
         <h2 className="text-sm font-semibold text-ink-secondary">{t('运行历史', 'Run history')}</h2>
         <span className="text-xs text-ink-faint">{runs.length} {t('次 · 删除整次运行会一并清掉它的用例结果与记忆', 'runs · deleting a whole run also clears its case results and memory')}</span>
       </div>
-      <div className="bg-white border rounded-lg shadow-sm overflow-hidden">
+      <div className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
         {runs.map((r, i) => (
           <div key={r.id} className={`flex items-center gap-3 px-4 py-2.5 hover:bg-gray-50 group ${i > 0 ? 'border-t' : ''}`}>
             <button className="flex-1 min-w-0 text-left" onClick={() => navigate(`/runs/${r.id}`)}>
@@ -278,22 +278,22 @@ export default function SuiteDetail() {
   })
 
   return (
-    <div>
-      <button className="text-sm text-primary hover:underline mb-4 block" onClick={() => navigate('/suites')}>
+    <div className="mx-auto max-w-[1600px] space-y-6">
+      <button className="inline-flex items-center gap-2 rounded-lg px-2 py-1.5 text-sm font-medium text-blue-600 transition hover:bg-blue-50" onClick={() => navigate('/suites')}>
         ← {t('返回套件列表', 'Back to suite list')}
       </button>
 
-      <div className="flex items-start gap-8">
+      <div className="grid items-start gap-6 xl:grid-cols-[minmax(0,1fr)_340px]">
         {/* Left: test case list */}
-        <div className="flex-1 min-w-0">
-          <div className="flex justify-between items-center gap-3 mb-1">
+        <div className="min-w-0 space-y-5">
+          <div className="flex flex-wrap items-center justify-between gap-4 rounded-2xl border border-slate-200/80 bg-white p-5 shadow-[0_6px_22px_rgba(31,75,135,0.04)]">
             <div className="flex items-center gap-3">
-              <h1 className="text-2xl font-bold">{(suite?.name || '').replace(/\.xmind$/i, '')}</h1>
+              <h1 className="text-xl font-bold tracking-tight text-slate-900 sm:text-2xl">{(suite?.name || '').replace(/\.xmind$/i, '')}</h1>
               {suite?.source_format === 'recorded' && <Link to={`/execution-plans?suite=${suiteId}`} className="rounded-lg border border-primary/30 bg-primary-soft px-3 py-1.5 text-xs font-medium text-primary-deep hover:bg-primary/10">{t('执行计划调试', 'Plan studio')} ↗</Link>}
             </div>
             <AISuiteImport suiteId={suiteId!} />
           </div>
-          <div className="flex items-center gap-3 mb-3">
+          <div className="flex flex-wrap items-center gap-3 rounded-2xl border border-slate-200/80 bg-white px-5 py-3 shadow-[0_6px_22px_rgba(31,75,135,0.04)]">
             <p className="text-sm text-gray-500">{t('步骤树 · 拖动节点改挂 · 悬停行可编辑 · 可运行单节点或整树', 'Step tree · drag nodes to re-parent · hover a row to edit · run a single node or the whole tree')}</p>
             <SuiteProject suiteId={suiteId!} value={suite?.project_id || ''} legacyPackage={suite?.app_package || ''} />
           </div>
@@ -311,7 +311,7 @@ export default function SuiteDetail() {
                   {t('最近', 'last')} {trends.length} {t('次 · 最新', 'runs · latest')} {trends[trends.length - 1].pass_rate.toFixed(0)}%
                 </span>
               </div>
-              <div className="bg-white border rounded-lg p-3 shadow-sm">
+              <div className="rounded-2xl border border-slate-200 bg-white p-3 shadow-sm">
                 <TrendChart trends={trends} />
               </div>
             </div>
@@ -322,16 +322,16 @@ export default function SuiteDetail() {
         </div>
 
         {/* Right: run config */}
-        <div className="w-72 flex-shrink-0">
-          <div className="bg-white border rounded-lg p-5 shadow-sm">
-            <h2 className="font-semibold mb-4">{t('开始运行', 'Start run')}</h2>
+        <div className="min-w-0 xl:sticky xl:top-5">
+          <div className="rounded-2xl border border-slate-200/80 bg-white p-5 shadow-[0_8px_28px_rgba(31,75,135,0.06)] sm:p-6">
+            <div className="mb-5"><div className="mb-1 text-xs font-semibold uppercase tracking-[0.12em] text-blue-600">EXECUTION SETTINGS</div><h2 className="text-lg font-semibold text-slate-900">{t('开始运行', 'Start run')}</h2><p className="mt-1 text-xs text-slate-500">{t('配置设备与模型，启动整棵步骤树执行', 'Configure device and model to run the full step tree')}</p></div>
 
             <label className="block text-sm font-medium mb-1">{t('设备', 'Device')}</label>
             {onlineDevices.length === 0 ? (
               <p className="text-sm text-red-500 mb-3">{t('无在线设备，请先连接设备。', 'No online devices. Please connect a device first.')}</p>
             ) : (
               <select
-                className="w-full border rounded px-2 py-1.5 text-sm mb-3"
+                className="mb-3 w-full rounded-xl border border-slate-200 bg-slate-50/60 px-3 py-2.5 text-sm text-slate-700 outline-none transition focus:border-blue-400 focus:bg-white focus:ring-4 focus:ring-blue-500/10"
                 value={deviceId}
                 onChange={e => setDeviceId(e.target.value)}
               >
@@ -354,7 +354,7 @@ export default function SuiteDetail() {
 
             <label className="block text-sm font-medium mb-1">Model</label>
             <input
-              className="w-full border rounded px-2 py-1.5 text-sm mb-3 font-mono"
+              className="mb-3 w-full rounded-xl border border-slate-200 bg-slate-50/60 px-3 py-2.5 font-mono text-sm text-slate-700 outline-none transition focus:border-blue-400 focus:bg-white focus:ring-4 focus:ring-blue-500/10"
               value={model}
               onChange={e => setModel(e.target.value)}
             />
@@ -399,7 +399,7 @@ export default function SuiteDetail() {
 
             {suite?.source_format === 'recorded' && mode === 'replay' ? (
               <button
-                className="w-full bg-primary text-white py-2 rounded font-medium hover:bg-primary-deep disabled:opacity-50"
+                className="w-full rounded-xl bg-gradient-to-r from-blue-600 to-blue-500 py-3 text-sm font-semibold text-white shadow-lg shadow-blue-500/20 transition hover:-translate-y-0.5 disabled:cursor-not-allowed disabled:opacity-50"
                 disabled={!deviceId || replayRunMut.isPending}
                 onClick={() => replayRunMut.mutate()}
               >
