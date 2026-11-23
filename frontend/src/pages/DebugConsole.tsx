@@ -58,7 +58,7 @@ export default function DebugConsole() {
   return <div className="space-y-8">
     <header className="flex flex-wrap items-center justify-between gap-5">
       <div>
-        <div className="mb-2 inline-flex items-center gap-2 rounded-full border border-blue-100 bg-blue-50/80 px-3 py-1.5 text-[11px] font-bold tracking-[0.16em] text-blue-600">⌘ AGENT INTERACTIVE DEBUGGING</div>
+        <div className="mb-2 inline-flex items-center gap-2 rounded-full border border-blue-100 bg-blue-50/80 px-3 py-1.5 text-[11px] font-bold tracking-[0.08em] text-blue-600"><svg aria-hidden="true" viewBox="0 0 24 24" className="h-3.5 w-3.5" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><rect x="6" y="2.5" width="12" height="19" rx="2.2"/><path d="M10 18.5h4"/></svg>AI 终端 · 交互调试</div>
         <h1 className="text-3xl font-bold tracking-tight text-[#172744]">调试控制台</h1>
         <p className="mt-2 max-w-3xl text-sm leading-6 text-slate-500">实时观察设备画面与 Agent 执行过程。调试会话独立于正式测试记录，并与正式任务共用设备独占锁。</p>
       </div>
