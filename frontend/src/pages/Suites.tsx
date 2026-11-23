@@ -127,9 +127,9 @@ export default function Suites() {
 
   return (
     <div className="mx-auto max-w-[1500px] space-y-6">
-      <div className="relative overflow-hidden rounded-3xl bg-gradient-to-br from-[#175CD3] via-[#2878E8] to-[#38A6D9] px-7 py-8 text-white shadow-[0_18px_45px_rgba(37,99,235,0.18)] sm:px-9"><div className="pointer-events-none absolute -right-12 -top-20 h-64 w-64 rounded-full border-[36px] border-white/10"/><div className="relative"><div className="mb-3 inline-flex rounded-full border border-white/20 bg-white/10 px-3 py-1 text-xs font-semibold text-blue-50">AI 终端 · 用例管理</div><h1 className="text-2xl font-bold tracking-tight sm:text-3xl">用例套件</h1><p className="mt-3 max-w-2xl text-sm leading-6 text-blue-50/90">集中管理测试套件，支持手动创建、智能导入、标签分类与用例维护。</p></div></div>
+      <div className="relative overflow-hidden rounded-2xl bg-gradient-to-br from-[#175CD3] via-[#2878E8] to-[#38A6D9] px-5 py-6 text-white shadow-[0_18px_45px_rgba(37,99,235,0.18)] sm:px-6"><div className="pointer-events-none absolute -right-12 -top-20 h-64 w-64 rounded-full border-[36px] border-white/10"/><div className="relative"><div className="mb-3 inline-flex rounded-full border border-white/20 bg-white/10 px-3 py-1 text-xs font-semibold text-blue-50">AI 终端 · 用例管理</div><h1 className="text-xl font-bold tracking-tight sm:text-2xl">用例套件</h1><p className="mt-3 max-w-2xl text-sm leading-6 text-blue-50/90">集中管理测试套件，支持手动创建、智能导入、标签分类与用例维护。</p></div></div>
       <div className="flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-slate-200/80 bg-white p-4 shadow-[0_6px_22px_rgba(31,75,135,0.04)]">
-        <h1 className="text-2xl font-bold">用例套件</h1>
+        <h1 className="text-xl font-bold">用例套件</h1>
         <div className="flex gap-2 flex-wrap">
           <button className="rounded-xl bg-gradient-to-r from-blue-600 to-blue-500 px-4 py-2.5 text-sm font-semibold text-white shadow-sm shadow-blue-500/20 transition hover:-translate-y-0.5" onClick={() => { setCreating(true); setCreateError('') }}>+ 手动创建用例套件</button>
           <AISuiteImport />
