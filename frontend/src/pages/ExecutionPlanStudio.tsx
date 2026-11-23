@@ -44,7 +44,7 @@ export default function ExecutionPlanStudio() {
             <span>/</span>
             <span>{t('执行计划调试', 'Execution plan studio')}</span>
           </div>
-          <h1 className="text-xl font-bold tracking-tight text-white sm:text-2xl">{t('执行计划调试工作台', 'Execution Plan Studio')}</h1>
+          <h1 className="text-xl font-bold tracking-tight text-white sm:text-xl">{t('执行计划调试工作台', 'Execution Plan Studio')}</h1>
           <p className="mt-2 max-w-3xl text-sm leading-6 text-blue-50/90">
             {t('集中管理录制用例与 AI 探索生成的执行计划，检查每一步的执行器、定位条件和验证规则。保存会创建新版本，不覆盖历史计划。', 'Manage recorded and AI-exploration plans, inspect executors, locators and verification rules. Saving creates a new version without overwriting history.')}
           </p>
