@@ -83,7 +83,7 @@ export default function RecordingSettings() {
 
       <div>
         <label htmlFor="recording-storage-dir" className="mb-1 block text-sm font-medium text-ink">
-          {t('视频保存目录', 'Recording storage directory')}
+          {t('视频保存目录', 'Video storage directory')}
         </label>
         <input
           id="recording-storage-dir"
@@ -130,8 +130,8 @@ export default function RecordingSettings() {
       {storageLoading && <p className="text-sm text-ink-mute">Loading…</p>}
       {storage && <>
         <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-          <UsageCard title={t('视频文件数', 'Recording files')} value={String(storage.recording_count)} />
-          <UsageCard title={t('视频占用空间', 'Recording size')} value={formatBytes(storage.recording_bytes)} />
+          <UsageCard title={t('视频文件数', 'Video files')} value={String(storage.recording_count)} />
+          <UsageCard title={t('视频占用空间', 'Video size')} value={formatBytes(storage.recording_bytes)} />
           <UsageCard title={t('磁盘剩余空间', 'Disk free space')} value={formatBytes(storage.disk_free_bytes)} detail={t('总容量', 'Total') + ': ' + formatBytes(storage.disk_total_bytes)} />
         </div>
         <div>
