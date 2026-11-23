@@ -151,7 +151,7 @@ export default function Devices() {
   return (
     <div className="space-y-6">
       <header className="flex flex-wrap items-center justify-between gap-5">
-        <div className="flex items-center gap-4">
+        <div className="flex items-center gap-3">
           <span className="grid h-11 w-11 place-items-center rounded-[14px] bg-gradient-to-br from-cyan-400 via-blue-500 to-indigo-600 text-2xl text-white shadow-md shadow-blue-200/60">▯</span>
           <div>
             <div className="text-[11px] font-bold uppercase tracking-[0.2em] text-blue-500">DEVICE FLEET MANAGEMENT</div>
@@ -164,15 +164,15 @@ export default function Devices() {
           {t('设备状态每 5 秒自动刷新', 'Device status refreshes every 5 seconds')}
         </div>
       </header>
-      <section className="grid gap-3 sm:grid-cols-2 2xl:grid-cols-4">
+      <section className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-4">
         {[
           { label: t('接入设备', 'Registered devices'), value: devices.length, note: t('平台已登记终端', 'Devices registered'), tone: 'text-[#1B2B4A]', icon: '▯', iconTone: 'from-sky-400 to-blue-600', glow: 'from-sky-50' },
           { label: t('在线设备', 'Online devices'), value: onlineCount, note: t('当前可连接与调试', 'Available for testing'), tone: 'text-emerald-600', icon: '✓', iconTone: 'from-emerald-400 to-teal-500', glow: 'from-emerald-50' },
           { label: t('Android 设备', 'Android devices'), value: androidCount, note: t('ADB / Portal 接入', 'ADB / Portal'), tone: 'text-blue-600', icon: 'A', iconTone: 'from-blue-400 to-indigo-600', glow: 'from-blue-50' },
           { label: t('USB 桥接设备', 'USB bridge devices'), value: usbCount, note: t('本机或桥接连接', 'Local or bridge transport'), tone: 'text-violet-600', icon: '⌁', iconTone: 'from-violet-400 to-purple-600', glow: 'from-violet-50' },
-        ].map(item => <div key={item.label} className={`relative overflow-hidden rounded-[18px] border border-[#E8EFFB] bg-gradient-to-br ${item.glow} via-white to-white p-4 shadow-[0_4px_14px_rgba(56,102,174,0.06)]`}>
+        ].map(item => <div key={item.label} className={`relative overflow-hidden rounded-[18px] border border-[#E8EFFB] bg-gradient-to-br ${item.glow} via-white to-white p-3.5 shadow-[0_4px_14px_rgba(56,102,174,0.06)]`}>
           <div className="flex items-center gap-4">
-            <span className={`grid h-11 w-11 shrink-0 place-items-center rounded-[14px] bg-gradient-to-br ${item.iconTone} text-xl font-bold text-white shadow-md shadow-blue-100/70`}>{item.icon}</span>
+            <span className={`grid h-9 w-9 shrink-0 place-items-center rounded-xl bg-gradient-to-br ${item.iconTone} text-lg font-bold text-white shadow-md shadow-blue-100/70`}>{item.icon}</span>
             <div className="min-w-0">
               <div className="text-xs font-medium text-slate-500">{item.label}</div>
               <div className={`mt-1 text-2xl font-bold tabular-nums tracking-tight ${item.tone}`}>{item.value}</div>
