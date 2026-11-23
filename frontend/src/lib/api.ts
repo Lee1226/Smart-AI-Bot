@@ -878,9 +878,10 @@ export const fetchAudioCorpus = (q = '') =>
   api.get<AudioCorpusItem[]>('/audio-corpus', { params: q ? { q } : {} }).then(r => r.data)
 export const fetchAudioOutputDevices = () =>
   api.get<{ devices: AudioOutputDevice[] }>('/audio-corpus/output-devices').then(r => r.data.devices)
-export const uploadAudioCorpus = async (file: File, metadata: { transcript?: string; expected_result?: string; category?: string; language?: string } = {}) => {
+export const uploadAudioCorpus = async (file: File, metadata: { name?: string; transcript?: string; expected_result?: string; category?: string; language?: string } = {}) => {
   const form = new FormData()
   form.append('file', file)
+  form.append('name', metadata.name || '')
   form.append('transcript', metadata.transcript || '')
   form.append('expected_result', metadata.expected_result || '')
   form.append('category', metadata.category || 'general')
