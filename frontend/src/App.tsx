@@ -28,6 +28,7 @@ import ExecutionPlanStudio from './pages/ExecutionPlanStudio'
 import AppManagement from './pages/AppManagement'
 import ExplorationCenter from './pages/ExplorationCenter'
 import SkillLibrary from './pages/SkillLibrary'
+import OpenPlatform from './pages/OpenPlatform'
 
 type NavigationItem = { to: string; label: { zh: string; en: string }; icon: string; iconStyle: string; paths: string[]; children?: NavigationItem[] }
 const NAV_GROUPS: { label: { zh: string; en: string }; items: NavigationItem[] }[] = [
@@ -46,6 +47,12 @@ const NAV_GROUPS: { label: { zh: string; en: string }; items: NavigationItem[] }
   { label: { zh: 'AI 探索', en: 'AI exploration' }, items: [
     { to: '/exploration', label: { zh: 'AI 探索中心', en: 'Exploration center' }, icon: '✧', iconStyle: 'from-cyan-400 to-violet-600', paths: ['/exploration'] },
     { to: '/skills', label: { zh: '技能库', en: 'Skill library' }, icon: '◇', iconStyle: 'from-violet-400 to-fuchsia-600', paths: ['/skills'] },
+  ] },
+  { label: { zh: '开放能力', en: 'Open platform' }, items: [
+    { to: '/open-platform', label: { zh: '开放平台', en: 'Open platform' }, icon: '⇧', iconStyle: 'from-blue-500 to-cyan-600', paths: ['/open-platform'], children: [
+      { to: '/open-platform', label: { zh: 'API 概览', en: 'API overview' }, icon: '⌂', iconStyle: 'from-blue-500 to-cyan-600', paths: ['/open-platform'] },
+      { to: '/open-platform/keys', label: { zh: 'API 密钥', en: 'API keys' }, icon: '⚿', iconStyle: 'from-indigo-500 to-blue-600', paths: ['/open-platform/keys'] },
+    ] },
   ] },
   { label: { zh: '管理', en: 'Manage' }, items: [
     { to: '/settings', label: { zh: '系统设置', en: 'System settings' }, icon: '⚙', iconStyle: 'from-slate-400 to-slate-600', paths: ['/settings', '/account'] },
@@ -73,7 +80,6 @@ const PAGE_TABS = {
   settings: [
     { to: '/settings', zh: '平台设置', en: 'Settings' },
     { to: '/settings/recording', zh: '录制与存储', en: 'Recording & storage' },
-    { to: '/account', zh: '账号与权限', en: 'Account & access' },
   ],
 }
 
@@ -202,8 +208,10 @@ function AppLayout() {
   const activeItem = NAV_GROUPS.flatMap(group => group.items.flatMap(item => [item, ...(item.children ?? [])])).find(item => item.paths.some(path => matchesPath(pathname, path)))
   const pageLabel = activeItem ? t(activeItem.label.zh, activeItem.label.en) : t('工作台', 'Workbench')
   const [resultsExpanded, setResultsExpanded] = useState(['/runs', '/recordings'].some(path => matchesPath(pathname, path)))
+  const [openPlatformExpanded, setOpenPlatformExpanded] = useState(['/open-platform'].some(path => matchesPath(pathname, path)))
   useEffect(() => {
     if (['/runs', '/recordings'].some(path => matchesPath(pathname, path))) setResultsExpanded(true)
+    if (matchesPath(pathname, '/open-platform')) setOpenPlatformExpanded(true)
   }, [pathname])
 
   return (
@@ -245,18 +253,21 @@ function AppLayout() {
               {NAV_GROUPS.map(group => <div key={group.label.en} className="space-y-2">
                 {group.items.map(({ to, label, icon, iconStyle, paths, children }) => {
                   const active = paths.some(path => matchesPath(pathname, path))
-                  if (children) return <div key={to} className="space-y-1">
+                  if (children) {
+                    const expanded = to === '/open-platform' ? openPlatformExpanded : resultsExpanded
+                    const setExpanded = to === '/open-platform' ? setOpenPlatformExpanded : setResultsExpanded
+                    return <div key={to} className="space-y-1">
                     <button
                       type="button"
-                      aria-expanded={resultsExpanded}
+                      aria-expanded={expanded}
                       aria-label={t(label.zh, label.en)}
                       title={sidebarCollapsed ? t(label.zh, label.en) : undefined}
                       onClick={() => {
                         if (sidebarCollapsed) {
                           setSidebarCollapsed(false)
-                          setResultsExpanded(true)
+                          setExpanded(true)
                         } else {
-                          setResultsExpanded(value => !value)
+                          setExpanded(value => !value)
                         }
                       }}
                       className={`group relative flex min-h-[42px] 2xl:min-h-[44px] w-full items-center rounded-lg transition-colors duration-200 ease-out motion-reduce:transition-none ${sidebarCollapsed ? 'justify-center px-1.5' : 'gap-2.5 px-2.5'} ${active ? 'bg-[#F2F6FC] text-[#356FAF]' : 'text-slate-700 hover:bg-slate-50 hover:text-blue-700'}`}
@@ -264,10 +275,10 @@ function AppLayout() {
                       <span aria-hidden="true" className={`flex h-7 w-7 2xl:h-8 2xl:w-8 shrink-0 items-center justify-center rounded-lg bg-gradient-to-br text-base font-semibold leading-none text-white shadow-sm shadow-blue-100/60 ${iconStyle}`}>{icon}</span>
                       {!sidebarCollapsed && <>
                         <span className="min-w-0 flex-1 truncate text-left text-[13px] font-medium 2xl:text-sm">{t(label.zh, label.en)}</span>
-                        <span aria-hidden="true" className={`text-xs text-slate-400 transition-transform duration-200 ease-out motion-reduce:transition-none ${resultsExpanded ? 'rotate-180' : ''}`}>⌄</span>
+                        <span aria-hidden="true" className={`text-xs text-slate-400 transition-transform duration-200 ease-out motion-reduce:transition-none ${expanded ? 'rotate-180' : ''}`}>⌄</span>
                       </>}
                     </button>
-                    {!sidebarCollapsed && <div className={`grid transition-[grid-template-rows,opacity] duration-200 ease-out motion-reduce:transition-none ${resultsExpanded ? 'grid-rows-[1fr] opacity-100' : 'grid-rows-[0fr] opacity-0'}`}>
+                    {!sidebarCollapsed && <div className={`grid transition-[grid-template-rows,opacity] duration-200 ease-out motion-reduce:transition-none ${expanded ? 'grid-rows-[1fr] opacity-100' : 'grid-rows-[0fr] opacity-0'}`}>
                       <div className="min-h-0 overflow-hidden">
                         <div className="ml-7 space-y-1 pt-1">
                           {children.map(child => {
@@ -281,6 +292,7 @@ function AppLayout() {
                       </div>
                     </div>}
                   </div>
+                  }
                   return <Link
                     key={to}
                     to={to}
@@ -324,7 +336,9 @@ function AppLayout() {
               <Route path="/recordings" element={<Recordings />} />
               <Route path="/runs/compare" element={<RunCompare />} />
               <Route path="/runs/:runId" element={<RunDetail />} />
-              <Route path="/account" element={<PageTabs section="settings"><Account /></PageTabs>} />
+              <Route path="/open-platform" element={<OpenPlatform />} />
+              <Route path="/open-platform/keys" element={<Account />} />
+              <Route path="/account" element={<Navigate to="/open-platform/keys" replace />} />
               <Route path="/settings" element={<PageTabs section="settings"><Settings /></PageTabs>} />
               <Route path="/settings/recording" element={<PageTabs section="settings"><RecordingSettings /></PageTabs>} />
             </Routes>
