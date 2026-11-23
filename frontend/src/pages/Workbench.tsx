@@ -9,7 +9,7 @@ function StatusPill({ status }: { status: string }) {
   const passed = ['passed', 'success', 'completed', 'done'].includes(status)
   const cls = running ? 'bg-sky-50 text-sky-700' : failed ? 'bg-rose-50 text-rose-700' : passed ? 'bg-emerald-50 text-emerald-700' : 'bg-slate-100 text-slate-600'
   const label = running ? '执行中' : failed ? '失败' : passed ? '已完成' : status || '未知'
-  return <span className={`inline-flex rounded-full px-3 py-1 text-xs font-semibold ${cls}`}>{label}</span>
+  return <span className={`inline-flex rounded-full px-2.5 py-0.5 text-[11px] font-semibold ${cls}`}>{label}</span>
 }
 
 function timeText(value?: string | null) {
@@ -26,7 +26,7 @@ function deviceKind(device: Device) {
 
 function TrendLine({ tone = 'blue' }: { tone?: 'blue' | 'purple' | 'orange' }) {
   const color = tone === 'purple' ? '#A78BFA' : tone === 'orange' ? '#FDBA74' : '#60A5FA'
-  return <svg viewBox="0 0 150 54" preserveAspectRatio="none" className="h-12 w-32 overflow-visible" aria-hidden="true">
+  return <svg viewBox="0 0 150 54" preserveAspectRatio="none" className="h-9 w-24 overflow-visible" aria-hidden="true">
     <path d="M2 46 C20 40 22 29 38 34 S60 20 74 24 S99 10 112 15 S132 2 148 5" fill="none" stroke={color} strokeWidth="2.5" strokeLinecap="round" />
   </svg>
 }
@@ -38,19 +38,19 @@ function MetricCard({ label, value, detail, icon, tone, trend }: { label: string
     orange: { icon: 'from-orange-400 to-amber-500', glow: 'from-orange-50', text: 'text-orange-600' },
   }
   const style = tones[tone]
-  return <div className={`relative min-h-[132px] overflow-hidden rounded-2xl border border-[#E8EFFB] bg-gradient-to-br ${style.glow} via-white to-white p-5 shadow-[0_5px_18px_rgba(56,102,174,0.07)]`}>
-    <div className="relative z-10 flex items-center gap-4">
-      <span className={`grid h-[52px] w-[52px] shrink-0 place-items-center rounded-2xl bg-gradient-to-br ${style.icon} text-[24px] text-white shadow-lg shadow-blue-100/70`}>{icon}</span>
+  return <div className={`relative min-h-[112px] overflow-hidden rounded-xl border border-[#E8EFFB] bg-gradient-to-br ${style.glow} via-white to-white p-4 shadow-[0_5px_18px_rgba(56,102,174,0.07)]`}>
+    <div className="relative z-10 flex items-center gap-3">
+      <span className={`grid h-11 w-11 shrink-0 place-items-center rounded-xl bg-gradient-to-br ${style.icon} text-xl text-white shadow-lg shadow-blue-100/70`}>{icon}</span>
       <div className="min-w-0">
-        <div className="text-[32px] font-bold leading-none tracking-tight text-[#172744] tabular-nums">{value}</div>
-        <div className="mt-2 text-[15px] font-medium text-slate-500">{label}</div>
+        <div className="text-[26px] font-bold leading-none tracking-tight text-[#172744] tabular-nums">{value}</div>
+        <div className="mt-1.5 text-[13px] font-medium text-slate-500">{label}</div>
       </div>
     </div>
-    <div className="absolute bottom-4 left-5 flex items-center gap-2 text-xs font-medium text-emerald-500">
+    <div className="absolute bottom-3 left-4 flex items-center gap-1.5 text-[11px] font-medium text-emerald-500">
       <span className="text-base">↑</span>{trend}
     </div>
-    <div className="absolute bottom-2 right-3 opacity-75"><TrendLine tone={tone} /></div>
-    <div className="absolute bottom-4 left-[92px] text-[11px] text-slate-400">{detail}</div>
+    <div className="absolute bottom-1 right-2 opacity-60"><TrendLine tone={tone} /></div>
+    <div className="absolute bottom-3 left-[76px] text-[10px] text-slate-400">{detail}</div>
   </div>
 }
 
@@ -60,13 +60,13 @@ function QuickCard({ to, icon, title, subtitle, tone }: { to: string; icon: stri
     purple: 'from-violet-100 to-purple-50 text-violet-600',
     teal: 'from-teal-100 to-cyan-50 text-teal-600',
   }
-  return <Link to={to} className="group flex min-h-[112px] items-center gap-4 rounded-2xl border border-white/80 bg-white/80 p-5 shadow-[0_7px_24px_rgba(58,104,176,0.06)] transition-all hover:-translate-y-1 hover:border-blue-100 hover:shadow-[0_12px_30px_rgba(58,104,176,0.12)]">
-    <span className={`grid h-[60px] w-[60px] shrink-0 place-items-center rounded-2xl bg-gradient-to-br text-[30px] ${tones[tone]}`}>{icon}</span>
+  return <Link to={to} className="group flex min-h-[96px] items-center gap-3 rounded-xl border border-white/80 bg-white/80 p-4 shadow-[0_7px_24px_rgba(58,104,176,0.06)] transition-all hover:-translate-y-1 hover:border-blue-100 hover:shadow-[0_12px_30px_rgba(58,104,176,0.12)]">
+    <span className={`grid h-12 w-12 shrink-0 place-items-center rounded-xl bg-gradient-to-br text-2xl ${tones[tone]}`}>{icon}</span>
     <span className="min-w-0 flex-1">
-      <span className="block text-lg font-semibold text-[#1B2B4A]">{title}</span>
-      <span className="mt-2 block text-sm text-slate-400">{subtitle}</span>
+      <span className="block text-base font-semibold text-[#1B2B4A]">{title}</span>
+      <span className="mt-1 block text-xs text-slate-400">{subtitle}</span>
     </span>
-    <span className="text-2xl text-slate-300 transition-transform group-hover:translate-x-1 group-hover:text-blue-500">›</span>
+    <span className="text-xl text-slate-300 transition-transform group-hover:translate-x-1 group-hover:text-blue-500">›</span>
   </Link>
 }
 
@@ -88,14 +88,14 @@ export default function Workbench() {
   const failedRecent = runs.filter(run => ['failed', 'error', 'errored'].includes(run.status)).length
   const loading = devicesQuery.isLoading || runsQuery.isLoading
 
-  return <div className="space-y-8">
-    <section className="relative isolate flex min-h-[300px] items-center overflow-hidden rounded-2xl bg-gradient-to-br from-[#D7F1FF] via-[#C7E1FF] to-[#C9C8FF] px-7 py-8 shadow-[0_10px_26px_rgba(73,133,213,0.11)] sm:px-9 xl:min-h-[340px] xl:px-10">
+  return <div className="space-y-6">
+    <section className="relative isolate flex min-h-[250px] items-center overflow-hidden rounded-xl bg-gradient-to-br from-[#D7F1FF] via-[#C7E1FF] to-[#C9C8FF] px-6 py-6 shadow-[0_8px_20px_rgba(73,133,213,0.09)] sm:px-8 xl:min-h-[280px] xl:px-9">
       <div className="absolute inset-0 -z-10 bg-[radial-gradient(circle_at_12%_16%,rgba(255,255,255,0.75),transparent_38%),linear-gradient(135deg,transparent_48%,rgba(255,255,255,0.18)_48.2%,transparent_68%)]" />
       <div className="relative z-10 max-w-[58%]">
-        <div className="mb-4 inline-flex items-center gap-2 rounded-full border border-white/60 bg-white/40 px-3 py-1.5 text-[11px] font-semibold tracking-[0.16em] text-blue-700 backdrop-blur">AI TERMINAL TESTING PLATFORM</div>
-        <h1 className="text-3xl font-bold leading-[1.3] tracking-tight text-[#10213E] sm:text-3xl xl:text-[36px]">欢迎使用<br className="hidden sm:block" />翼矩AI终端测试系统</h1>
-        <p className="mt-4 text-base font-medium text-slate-600 sm:text-lg">让终端测试更智能、更高效</p>
-        <Link to="/quick" className="mt-7 inline-flex items-center gap-2 rounded-full bg-gradient-to-r from-blue-600 to-blue-500 px-6 py-3 text-sm font-semibold text-white shadow-lg shadow-blue-400/30 transition hover:-translate-y-0.5 hover:shadow-xl">
+        <div className="mb-3 inline-flex items-center gap-1.5 rounded-full border border-white/60 bg-white/40 px-2.5 py-1 text-[10px] font-semibold tracking-[0.16em] text-blue-700 backdrop-blur">AI TERMINAL TESTING PLATFORM</div>
+        <h1 className="text-2xl font-bold leading-[1.25] tracking-tight text-[#10213E] sm:text-2xl xl:text-[30px]">欢迎使用<br className="hidden sm:block" />翼矩AI终端测试系统</h1>
+        <p className="mt-3 text-sm font-medium text-slate-600 sm:text-base">让终端测试更智能、更高效</p>
+        <Link to="/quick" className="mt-5 inline-flex items-center gap-2 rounded-full bg-gradient-to-r from-blue-600 to-blue-500 px-5 py-2.5 text-xs font-semibold text-white shadow-lg shadow-blue-400/30 transition hover:-translate-y-0.5 hover:shadow-xl">
           <span className="text-base">▶</span>开始工作
         </Link>
       </div>
@@ -106,39 +106,39 @@ export default function Workbench() {
     {loading && <div className="rounded-2xl border border-blue-100 bg-white/80 px-5 py-4 text-sm text-slate-500">正在读取平台数据…</div>}
     {(devicesQuery.isError || runsQuery.isError || suitesQuery.isError) && <div className="rounded-2xl border border-amber-200 bg-amber-50 px-5 py-4 text-sm text-amber-800">部分工作台数据暂时无法读取，请检查后端连接或刷新页面。</div>}
 
-    <section className="grid gap-4 lg:grid-cols-3">
+    <section className="grid gap-3 lg:grid-cols-3">
       <MetricCard label="已连接设备" value={online.length} detail={`在线 ${online.length} / 总计 ${devices.length}`} icon="▯" tone="blue" trend={`+${Math.max(0, online.length)}`} />
       <MetricCard label="测试成功率" value={caseTotal ? `${passRate}%` : '—'} detail={`累计 ${caseTotal} 个用例`} icon="✓" tone="purple" trend={`+${passTotal}`} />
       <MetricCard label="录像文件" value={recordingTotal.toLocaleString()} detail="已保存的测试录像" icon="▶" tone="orange" trend={`+${recordingTotal}`} />
     </section>
 
-    <section className="space-y-4">
-      <div className="flex items-center gap-4"><span className="h-8 w-1 rounded-full bg-gradient-to-b from-blue-500 to-indigo-500" /><h2 className="text-xl font-bold tracking-tight text-[#1A2A48]">快速开始</h2></div>
-      <div className="grid gap-4 xl:grid-cols-3">
+    <section className="space-y-3">
+      <div className="flex items-center gap-4"><span className="h-6 w-1 rounded-full bg-gradient-to-b from-blue-500 to-indigo-500" /><h2 className="text-lg font-bold tracking-tight text-[#1A2A48]">快速开始</h2></div>
+      <div className="grid gap-3 xl:grid-cols-3">
         <QuickCard to="/quick" icon="🚀" title="创建测试任务" subtitle="快速创建并执行测试任务" tone="blue" />
         <QuickCard to="/suites" icon="⬡" title="管理用例" subtitle="管理测试用例库" tone="purple" />
         <QuickCard to="/runs" icon="▥" title="查看报告" subtitle="查看测试结果报告" tone="teal" />
       </div>
     </section>
 
-    <section className="grid gap-5 xl:grid-cols-[1.12fr_0.88fr]">
-      <div className="overflow-hidden rounded-[22px] border border-[#E8EFFB] bg-white shadow-[0_5px_20px_rgba(56,102,174,0.06)]">
-        <div className="flex items-center justify-between border-b border-slate-100 px-6 py-5">
-          <div><h2 className="text-lg font-bold text-[#1B2B4A]">设备接入概况</h2><p className="mt-1 text-xs text-slate-400">设备状态每 5 秒自动刷新</p></div>
-          <Link to="/devices" className="text-sm font-semibold text-blue-600 hover:text-blue-700">设备管理 →</Link>
+    <section className="grid gap-4 xl:grid-cols-[1.12fr_0.88fr]">
+      <div className="overflow-hidden rounded-xl border border-[#E8EFFB] bg-white shadow-[0_4px_16px_rgba(56,102,174,0.05)]">
+        <div className="flex items-center justify-between border-b border-slate-100 px-5 py-4">
+          <div><h2 className="text-base font-bold text-[#1B2B4A]">设备接入概况</h2><p className="mt-1 text-xs text-slate-400">设备状态每 5 秒自动刷新</p></div>
+          <Link to="/devices" className="text-xs font-semibold text-blue-600 hover:text-blue-700">设备管理 →</Link>
         </div>
-        <div className="grid grid-cols-3 gap-3 p-5">
+        <div className="grid grid-cols-3 gap-2.5 p-4">
           {[
             { label: 'Android', count: devices.filter(d => deviceKind(d) === 'Android').length, color: 'bg-emerald-400' },
             { label: 'HarmonyOS', count: devices.filter(d => deviceKind(d) === 'HarmonyOS').length, color: 'bg-sky-400' },
             { label: 'iOS', count: devices.filter(d => deviceKind(d) === 'iOS').length, color: 'bg-violet-400' },
-          ].map(item => <div key={item.label} className="rounded-2xl bg-slate-50/90 p-4">
+          ].map(item => <div key={item.label} className="rounded-xl bg-slate-50/90 p-3">
             <div className="flex items-center gap-2 text-sm text-slate-500"><span className={`h-2.5 w-2.5 rounded-full ${item.color}`} />{item.label}</div>
-            <div className="mt-3 text-3xl font-bold text-[#1B2B4A]">{item.count}<span className="ml-1 text-xs font-medium text-slate-400">台</span></div>
+            <div className="mt-2 text-2xl font-bold text-[#1B2B4A]">{item.count}<span className="ml-1 text-xs font-medium text-slate-400">台</span></div>
           </div>)}
         </div>
-        <div className="space-y-2 px-5 pb-5">
-          {devices.slice(0, 5).map(device => <div key={device.id} className="flex items-center gap-3 rounded-xl border border-slate-100 px-4 py-3">
+        <div className="space-y-1.5 px-4 pb-4">
+          {devices.slice(0, 5).map(device => <div key={device.id} className="flex items-center gap-3 rounded-lg border border-slate-100 px-3 py-2.5">
             <span className={`h-2.5 w-2.5 shrink-0 rounded-full ${device.status === 'online' ? 'bg-emerald-400' : 'bg-slate-300'}`} />
             <div className="min-w-0 flex-1"><div className="truncate text-sm font-semibold text-slate-700">{device.name}</div><div className="mt-1 text-xs text-slate-400">{deviceKind(device)} · {device.connection_type}</div></div>
             <span className={`text-xs font-medium ${device.status === 'online' ? 'text-emerald-600' : 'text-slate-400'}`}>{device.status === 'online' ? '在线' : '离线'}</span>
@@ -151,14 +151,14 @@ export default function Workbench() {
       <div className="overflow-hidden rounded-[22px] border border-[#E8EFFB] bg-white shadow-[0_5px_20px_rgba(56,102,174,0.06)]">
         <div className="flex items-center justify-between border-b border-slate-100 px-6 py-5"><div><h2 className="text-lg font-bold text-[#1B2B4A]">最近测试任务</h2><p className="mt-1 text-xs text-slate-400">最近 6 条运行记录 · {runningRuns.length} 个任务正在执行</p></div><Link to="/runs" className="text-sm font-semibold text-blue-600">全部任务 →</Link></div>
         <div className="divide-y divide-slate-100">
-          {recentRuns.map((run: Run) => <Link key={run.id} to={`/runs/${run.id}`} className="flex items-center gap-3 px-5 py-4 transition hover:bg-blue-50/50">
-            <span className="grid h-10 w-10 shrink-0 place-items-center rounded-xl bg-gradient-to-br from-blue-100 to-indigo-100 text-lg text-blue-600">✓</span>
+          {recentRuns.map((run: Run) => <Link key={run.id} to={`/runs/${run.id}`} className="flex items-center gap-3 px-4 py-3 transition hover:bg-blue-50/50">
+            <span className="grid h-8 w-8 shrink-0 place-items-center rounded-lg bg-gradient-to-br from-blue-100 to-indigo-100 text-base text-blue-600">✓</span>
             <span className="min-w-0 flex-1"><span className="block truncate text-sm font-semibold text-slate-700">{run.suite_name || '快速任务'}</span><span className="mt-1 block text-xs text-slate-400">{timeText(run.created_at)}</span></span>
             <StatusPill status={run.status} />
           </Link>)}
-          {!recentRuns.length && <div className="p-10 text-center text-sm text-slate-400">暂无测试记录，创建一个任务后将在这里显示。</div>}
+          {!recentRuns.length && <div className="p-7 text-center text-xs text-slate-400">暂无测试记录，创建一个任务后将在这里显示。</div>}
         </div>
-        <div className="border-t border-slate-100 px-6 py-4 text-xs text-slate-400">用例套件 {suites.length} 个 · 失败任务 {failedRecent} 个 · 累计通过 {passTotal} 个用例</div>
+        <div className="border-t border-slate-100 px-5 py-3 text-[11px] text-slate-400">用例套件 {suites.length} 个 · 失败任务 {failedRecent} 个 · 累计通过 {passTotal} 个用例</div>
       </div>
     </section>
   </div>
