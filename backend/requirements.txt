@@ -13,3 +13,6 @@ bcrypt==4.2.1
 PyJWT==2.10.1
 cryptography==46.0.3
 av>=17.0.0,<19.0.0
+sounddevice==0.5.3
+soundfile==0.13.1
+numpy>=1.26.0
