@@ -78,7 +78,10 @@ const PAGE_TABS = {
 }
 
 function matchesPath(pathname: string, path: string) {
-  return path === '/' ? pathname === '/' : pathname === path || pathname.startsWith(path + '/')
+  if (path === '/') return pathname === '/'
+  // /runs is the task list/detail route; /runs/compare is a separate navigation item.
+  if (path === '/runs' && pathname.startsWith('/runs/compare')) return false
+  return pathname === path || pathname.startsWith(path + '/')
 }
 
 function PageTabs({ section, children }: { section: keyof typeof PAGE_TABS; children: React.ReactNode }) {
