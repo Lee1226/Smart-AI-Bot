@@ -55,9 +55,9 @@ export default function Account() {
 
   return (
     <div className="mx-auto max-w-4xl space-y-6">
-      <header className="rounded-3xl bg-gradient-to-br from-[#175CD3] via-[#2878E8] to-[#38A6D9] p-7 text-white shadow-[0_16px_40px_rgba(37,99,235,0.18)] sm:p-8">
+      <header className="rounded-2xl bg-gradient-to-br from-[#175CD3] via-[#2878E8] to-[#38A6D9] p-5 text-white shadow-[0_16px_40px_rgba(37,99,235,0.18)] sm:p-6">
         <div className="text-xs font-semibold tracking-[0.18em] text-blue-100">AI 终端 · 账号安全</div>
-        <h1 className="mt-2 text-2xl font-bold">{t('账号 / API Key', 'Account / API Keys')}</h1>
+        <h1 className="mt-2 text-xl font-bold">{t('账号 / API Key', 'Account / API Keys')}</h1>
         <p className="mt-2 text-sm text-blue-100">管理账号信息、API 凭证及自动化调用权限。</p>
       </header>
 
