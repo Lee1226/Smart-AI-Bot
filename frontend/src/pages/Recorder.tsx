@@ -745,7 +745,7 @@ export default function Recorder() {
         <div className="pointer-events-none absolute -right-12 -top-20 h-64 w-64 rounded-full border-[36px] border-white/10" />
         <div className="relative">
           <div className="mb-3 inline-flex rounded-full border border-white/20 bg-white/10 px-3 py-1 text-xs font-semibold text-blue-50">{t('AI 终端 · 用例管理', 'AI Terminal · Case Management')}</div>
-          <h1 className="text-xl font-bold tracking-tight sm:text-2xl">{t('录制测试用例', 'Record test case')}</h1>
+          <h1 className="text-xl font-bold tracking-tight sm:text-xl">{t('录制测试用例', 'Record test case')}</h1>
           <p className="mt-2 max-w-2xl text-sm leading-6 text-blue-50/90">{t('通过网页操作或手机端触摸采集，将真实操作过程沉淀为可复用的自动化测试用例。', 'Capture real interactions through browser control or device-side touch, then save them as reusable automated test cases.')}</p>
         </div>
       </header>
