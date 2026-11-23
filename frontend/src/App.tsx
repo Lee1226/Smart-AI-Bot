@@ -198,10 +198,10 @@ function AppLayout() {
 
   return (
     <div className="min-h-screen bg-canvas-soft text-ink">
-      <header className="relative z-20 flex h-[132px] shrink-0 items-center border-b border-hairline bg-white/95 px-6 shadow-[0_2px_18px_rgba(39,87,150,0.04)] backdrop-blur-xl lg:px-8 2xl:h-[170px] 2xl:px-[42px]">
-        <div className="flex min-w-0 items-center gap-5">
-          <img src="/brand-icon.svg" alt="" className="h-[94px] w-[94px] shrink-0 rounded-[24px] shadow-lg shadow-blue-200/50 2xl:h-[126px] 2xl:w-[130px] 2xl:rounded-[30px]" />
-          <span className="whitespace-nowrap text-2xl font-bold tracking-tight text-slate-900 sm:text-3xl 2xl:text-[46px]">翼矩AI终端测试系统</span>
+      <header className="relative z-20 flex h-[88px] shrink-0 items-center border-b border-hairline bg-white/95 px-6 shadow-[0_2px_18px_rgba(39,87,150,0.04)] backdrop-blur-xl lg:px-8 2xl:h-[96px] 2xl:px-[42px]">
+        <div className="flex min-w-0 items-center gap-4">
+          <img src="/brand-icon.svg" alt="" className="h-16 w-16 shrink-0 rounded-2xl shadow-md shadow-blue-200/50 2xl:h-[72px] 2xl:w-[72px] 2xl:rounded-[20px]" />
+          <span className="whitespace-nowrap text-[22px] font-bold tracking-tight text-slate-900 sm:text-[22px] 2xl:text-[26px]">翼矩AI终端测试系统</span>
         </div>
         <div className="mx-6 hidden h-14 w-px bg-slate-200 md:block" />
         <button
@@ -218,7 +218,7 @@ function AppLayout() {
           <span className="text-xl text-slate-500" aria-hidden="true">⌂</span>
           <span className="truncate text-base font-medium text-slate-600 sm:text-lg">{pageLabel}</span>
         </div>
-        <div className="ml-auto flex shrink-0 items-center gap-5 sm:gap-8">
+        <div className="ml-auto flex shrink-0 items-center gap-4 sm:gap-8">
           <div className="hidden h-14 w-px bg-slate-200 sm:block" />
           <div className="relative grid h-11 w-11 place-items-center text-[28px] text-slate-700" aria-label={t('通知', 'Notifications')}>
             <svg aria-hidden="true" viewBox="0 0 24 24" className="h-8 w-8" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><path d="M18 8a6 6 0 0 0-12 0c0 7-3 7-3 9h18c0-2-3-2-3-9"/><path d="M10 21h4"/></svg>
@@ -228,8 +228,8 @@ function AppLayout() {
         </div>
       </header>
 
-      <div className="flex min-h-[calc(100vh-132px)] 2xl:min-h-[calc(100vh-170px)]">
-        <aside className={`${sidebarCollapsed ? 'w-[80px]' : 'w-[250px] 2xl:w-[280px]'} sticky top-0 flex h-[calc(100vh-132px)] 2xl:h-[calc(100vh-170px)] shrink-0 flex-col border-r border-hairline bg-white/75 transition-[width] duration-200`}>
+      <div className="flex min-h-[calc(100vh-88px)] 2xl:min-h-[calc(100vh-96px)]">
+        <aside className={`${sidebarCollapsed ? 'w-[80px]' : 'w-[250px] 2xl:w-[280px]'} sticky top-0 flex h-[calc(100vh-88px)] 2xl:h-[calc(100vh-96px)] shrink-0 flex-col border-r border-hairline bg-white/75 transition-[width] duration-200`}>
           <nav aria-label={t('主导航', 'Main navigation')} className={`flex-1 overflow-y-auto ${sidebarCollapsed ? 'px-3' : 'px-3 xl:px-4'} py-5`}>
             <div className="space-y-2">
               {NAV_GROUPS.map(group => <div key={group.label.en} className="space-y-2">
