@@ -135,7 +135,7 @@ function SkillCard({ skill }: { skill: Skill }) {
   const prompt = teaching.source_prompt || skill.description
   const steps = skill.steps || []
 
-  return <article className="overflow-hidden rounded-2xl border border-hairline bg-white shadow-sm">
+  return <article className="overflow-hidden rounded-2xl border border-slate-200/80 bg-white shadow-[0_8px_28px_rgba(31,75,135,0.05)]">
     <div className="p-5">
       <div className="flex flex-wrap items-start justify-between gap-3">
         <button className="min-w-0 flex-1 text-left" onClick={() => setExpanded(value => !value)} aria-expanded={expanded}>
@@ -158,7 +158,7 @@ function SkillCard({ skill }: { skill: Skill }) {
         <span>技能 v{skill.version}</span>
       </div>
       <div className="mt-4 flex flex-wrap gap-2">
-        <button onClick={() => setExpanded(value => !value)} className="rounded-lg border border-hairline px-3 py-2 text-xs font-medium text-ink-mute">
+        <button onClick={() => setExpanded(value => !value)} className="rounded-xl border border-slate-200 px-3 py-2 text-xs font-medium text-ink-mute">
           {expanded ? '收起技能详情' : '查看 AI 学习内容'}
         </button>
         {skill.status !== 'approved' && <button disabled={review.isPending} onClick={() => review.mutate('approved')} className="rounded-lg bg-primary px-3 py-2 text-xs font-medium text-white disabled:opacity-50">确认技能内容</button>}
@@ -296,12 +296,12 @@ export default function SkillLibrary() {
   )
 
   return <div className="mx-auto max-w-7xl space-y-6">
-    <header>
-      <h1 className="text-2xl font-bold text-ink">AI 技能库</h1>
-      <p className="mt-2 max-w-3xl text-sm leading-6 text-ink-mute">把一次成功探索沉淀为可重复使用的 AI 执行教学：保留原始任务提示词，提取页面观察、操作决策、成功步骤与异常经验。未经复现验证的技能不会被当作可执行能力。</p>
+    <header className="rounded-3xl bg-gradient-to-br from-[#175CD3] via-[#2878E8] to-[#38A6D9] p-7 text-white shadow-[0_16px_40px_rgba(37,99,235,0.18)] sm:p-8">
+      <div className="text-xs font-semibold tracking-[0.18em] text-blue-100">AI 终端 · 技能资产管理</div><h1 className="mt-2 text-2xl font-bold text-white">AI 技能库</h1>
+      <p className="mt-2 max-w-3xl text-sm leading-6 text-blue-100">把一次成功探索沉淀为可重复使用的 AI 执行教学：保留原始任务提示词，提取页面观察、操作决策、成功步骤与异常经验。未经复现验证的技能不会被当作可执行能力。</p>
     </header>
 
-    <section className="rounded-2xl border border-hairline bg-white p-5 shadow-sm">
+    <section className="rounded-2xl border border-slate-200/80 bg-white p-5 shadow-[0_8px_28px_rgba(31,75,135,0.05)]">
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div><h2 className="text-base font-semibold text-ink">从已完成探索中学习</h2><p className="mt-1 text-xs leading-5 text-ink-mute">选择一条探索记录，系统将整合用户提示词、完整事件时间轴和证据，生成待确认的技能教学稿。</p></div>
         <span className="rounded-full bg-blue-50 px-3 py-1 text-xs text-blue-700">探索 → 提炼 → 确认 → 复现验证</span>
@@ -311,7 +311,7 @@ export default function SkillLibrary() {
           <option value="">请选择已完成的探索记录</option>
           {sessions.map(session => <option key={session.id} value={session.id}>{session.title || session.goal} · {session.platform} · {new Date(session.created_at).toLocaleString()}</option>)}
         </select>
-        <button disabled={!sessionId || create.isPending} onClick={() => create.mutate()} className="rounded-lg bg-primary px-5 py-2.5 text-sm font-medium text-white disabled:opacity-50">{create.isPending ? '正在提炼…' : '提炼 AI 执行技能'}</button>
+        <button disabled={!sessionId || create.isPending} onClick={() => create.mutate()} className="rounded-xl bg-gradient-to-r from-[#2169D5] to-[#328FE5] px-5 py-2.5 text-sm font-semibold text-white shadow-sm disabled:opacity-50">{create.isPending ? '正在提炼…' : '提炼 AI 执行技能'}</button>
       </div>
       {sessionsQuery.isLoading && <p className="mt-2 text-xs text-ink-faint">正在读取探索记录…</p>}
       {sessionsQuery.isError && <p className="mt-2 text-xs text-red-600">读取探索记录失败，请检查后端服务。</p>}
