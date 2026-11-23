@@ -189,7 +189,7 @@ export default function Devices() {
             <h2 className="font-semibold">{t('Android · 本机 ADB USB 直连', 'Android · Local ADB USB')}</h2>
             <p className="text-sm text-gray-500 mt-1">{t('手机通过 USB 连接到运行 SAB 后端的 Windows 电脑，由后端直接调用本机 ADB。无需浏览器 WebUSB、Portal APK 或手动启动桥接脚本。', 'Connect the phone to the Windows host running the SAB backend. The backend uses its local ADB directly — no browser WebUSB, Portal APK or manual bridge script.')}</p>
           </div>
-          <button className="bg-primary text-white rounded px-4 py-2 text-sm shrink-0 disabled:opacity-50" disabled={adbLoading} onClick={() => void refreshLocalAdb()}>
+          <button className="shrink-0 rounded-xl bg-gradient-to-r from-blue-600 to-blue-500 px-5 py-2.5 text-sm font-semibold text-white shadow-md shadow-blue-200/60 transition hover:-translate-y-0.5 disabled:opacity-50" disabled={adbLoading} onClick={() => void refreshLocalAdb()}>
             {adbLoading ? t('扫描中…', 'Scanning…') : t('刷新 USB 设备', 'Refresh USB devices')}
           </button>
         </div>
@@ -206,7 +206,7 @@ export default function Devices() {
                 </div>
                 {attached
                   ? <span className="text-xs text-ok">{t('已接入', 'Connected')}</span>
-                  : <button className="text-xs px-3 py-1.5 bg-primary text-white rounded disabled:opacity-50" disabled={attachAdbMut.isPending} onClick={() => attachAdbMut.mutate(phone.serial)}>{t('连接设备', 'Connect')}</button>}
+                  : <button className="rounded-lg bg-gradient-to-r from-blue-600 to-blue-500 px-4 py-2 text-xs font-semibold text-white shadow-sm disabled:opacity-50" disabled={attachAdbMut.isPending} onClick={() => attachAdbMut.mutate(phone.serial)}>{t('连接设备', 'Connect')}</button>}
               </div>
             })}
           </div>
@@ -225,20 +225,20 @@ export default function Devices() {
         <h1 className="text-2xl font-bold">{t('远程模式 · App 配对', 'Remote mode · App pairing')}</h1>
         <div className="flex gap-2">
           <button
-            className="border border-primary text-primary px-4 py-1.5 rounded text-sm hover:bg-primary-soft"
+            className="rounded-xl border border-blue-200 bg-white px-4 py-2 text-sm font-semibold text-blue-600 transition hover:bg-blue-50"
             onClick={() => setShowDownload(true)}
           >
             📱 {t('安装 App', 'Install App')}
           </button>
           <input
-            className="border rounded px-3 py-1.5 text-sm w-48"
+            className="w-48 rounded-xl border border-[#E5ECF7] px-3 py-2 text-sm outline-none transition focus:border-blue-300 focus:ring-2 focus:ring-blue-100"
             placeholder="Device name"
             value={newName}
             onChange={e => setNewName(e.target.value)}
             onKeyDown={e => e.key === 'Enter' && createMut.mutate()}
           />
           <button
-            className="bg-primary text-white px-4 py-1.5 rounded text-sm hover:bg-primary-deep disabled:opacity-50"
+            className="rounded-xl bg-gradient-to-r from-blue-600 to-blue-500 px-4 py-2 text-sm font-semibold text-white shadow-md shadow-blue-200/50 hover:shadow-lg disabled:opacity-50"
             onClick={() => createMut.mutate()}
             disabled={createMut.isPending}
           >
@@ -310,8 +310,8 @@ export default function Devices() {
                 <div
                   key={d.id}
                   onClick={() => setSelectedId(d.id)}
-                  className={`bg-white border rounded-lg p-4 flex items-center gap-4 shadow-sm cursor-pointer transition-colors ${
-                    d.id === selectedId ? 'ring-2 ring-primary border-primary' : 'hover:border-hairline-strong'
+                  className={`flex cursor-pointer items-center gap-4 rounded-[20px] border border-[#E8EFFB] bg-white p-4 shadow-[0_4px_16px_rgba(56,102,174,0.05)] transition-all ${
+                    d.id === selectedId ? 'ring-2 ring-blue-500 border-blue-300 shadow-[0_8px_22px_rgba(52,102,174,0.12)]' : 'hover:border-blue-200 hover:shadow-md'
                   }`}
                 >
                   <span
