@@ -112,33 +112,34 @@ function UserMenu() {
     qc.clear()
     setOpen(false)
   }
+  const initials = (me.name || me.email).trim().slice(0, 2).toUpperCase()
 
   return (
     <div className="relative">
       <button
         onClick={() => setOpen(!open)}
-        className="w-full flex items-center gap-2 px-3 py-1.5 text-sm text-left hover:bg-canvas-cool rounded"
+        aria-expanded={open}
+        aria-label={t('用户菜单', 'User menu')}
+        className="flex items-center gap-3 rounded-full px-1.5 py-1.5 transition-colors hover:bg-slate-50"
       >
-        <span className="w-5 h-5 rounded-full bg-primary-soft text-primary-deep text-xs flex items-center justify-center font-bold">
-          {(me.name || me.email)[0].toUpperCase()}
+        <span className="grid h-12 w-12 place-items-center rounded-full bg-gradient-to-br from-blue-500 to-indigo-600 text-lg font-semibold text-white shadow-sm">
+          {initials}
         </span>
-        <span className="truncate flex-1">{me.name || me.email}</span>
-        <span className="text-gray-400 text-xs">{open ? '▴' : '▾'}</span>
+        <span className="hidden max-w-[140px] truncate text-sm font-medium text-slate-700 xl:block">{me.name || me.email}</span>
+        <span className="pr-1 text-lg text-slate-500">{open ? '⌃' : '⌄'}</span>
       </button>
       {open && (
         <>
-          <div className="fixed inset-0 z-10" onClick={() => setOpen(false)} />
-          <div className="absolute bottom-full left-0 mb-1 w-48 bg-white border rounded-lg shadow-lg z-20 py-1 text-sm">
-            <div className="px-3 py-2 border-b text-xs text-gray-400">
-              {me.account_name} · {me.role}
+          <button aria-label={t('关闭用户菜单', 'Close user menu')} className="fixed inset-0 z-30 cursor-default" onClick={() => setOpen(false)} />
+          <div className="absolute right-0 top-full z-40 mt-3 w-56 rounded-2xl border border-slate-100 bg-white py-2 text-sm shadow-xl shadow-slate-200/70">
+            <div className="border-b border-slate-100 px-4 py-3">
+              <div className="font-semibold text-slate-800">{me.account_name}</div>
+              <div className="mt-1 text-xs text-slate-400">{me.email} · {me.role}</div>
             </div>
-            <a href="/settings" className="block px-3 py-1.5 hover:bg-canvas-cool">
+            <Link to="/settings" onClick={() => setOpen(false)} className="block px-4 py-3 text-slate-600 hover:bg-blue-50 hover:text-blue-700">
               {t('设置', 'Settings')}
-            </a>
-            <button
-              onClick={handleLogout}
-              className="w-full text-left px-3 py-1.5 hover:bg-canvas-cool text-red-500"
-            >
+            </Link>
+            <button onClick={handleLogout} className="w-full px-4 py-3 text-left text-rose-600 hover:bg-rose-50">
               {t('退出登录', 'Logout')}
             </button>
           </div>
@@ -179,6 +180,7 @@ function RequireAuth({ children }: { children: React.ReactNode }) {
 
 function AppLayout() {
   const { pathname } = useLocation()
+  const [sidebarCollapsed, setSidebarCollapsed] = useState(false)
   useEffect(() => {
     const close = () => disconnectUsb()
     const changedAccount = (event: StorageEvent) => { if (event.key === 'sab_token') close() }
@@ -191,67 +193,98 @@ function AppLayout() {
     }
   }, [])
   const t = useT()
+  const activeItem = NAV_GROUPS.flatMap(group => group.items).find(item => item.paths.some(path => matchesPath(pathname, path)))
+  const pageLabel = activeItem ? t(activeItem.label.zh, activeItem.label.en) : t('工作台', 'Workbench')
+
   return (
-    <div className="min-h-screen flex bg-canvas-soft text-ink">
-      {/* Left sidebar */}
-      <aside className="w-52 shrink-0 border-r border-hairline bg-canvas flex flex-col sticky top-0 h-screen">
-        <div className="h-14 flex items-center gap-2 px-4 border-b border-hairline">
-          <img src="/brand-icon.svg" alt="" className="w-8 h-8 shrink-0 rounded-[10px]" />
-          <span className="font-mono font-semibold text-base tracking-tight text-ink">AI 终端智能测试平台</span>
+    <div className="min-h-screen bg-canvas-soft text-ink">
+      <header className="relative z-20 flex h-[104px] shrink-0 items-center border-b border-hairline bg-white/95 px-6 shadow-[0_2px_18px_rgba(39,87,150,0.04)] backdrop-blur-xl lg:px-8">
+        <div className="flex min-w-0 items-center gap-5">
+          <img src="/brand-icon.svg" alt="" className="h-16 w-16 shrink-0 rounded-[18px] shadow-lg shadow-blue-200/50" />
+          <span className="whitespace-nowrap text-xl font-bold tracking-tight text-slate-900 sm:text-2xl xl:text-[28px]">AI 终端智能测试平台</span>
         </div>
-        <nav aria-label={t('主导航', 'Main navigation')} className="flex-1 p-2 space-y-6 overflow-y-auto">
-          {NAV_GROUPS.map(group => <div key={group.label.en}>
-            <div className="px-3 pt-3 pb-2 text-[11px] font-medium text-ink-faint tracking-wide">{t(group.label.zh, group.label.en)}</div>
-            <div className="space-y-1">{group.items.map(({ to, label, icon, paths }) => {
-              const active = paths.some(path => matchesPath(pathname, path))
-              const item = group.items.find(entry => entry.to === to)
-              return <Link key={to} to={to} aria-current={active ? "page" : undefined}
-                className={`flex min-h-[44px] items-center gap-2.5 px-2.5 py-1.5 rounded-lg text-[13px] font-medium leading-5 transition-colors ${active ? 'bg-primary-soft text-primary-deep' : 'text-ink-mute hover:bg-canvas-cool hover:text-ink'}`}>
-                <span aria-hidden="true" className={`flex h-[30px] w-[30px] shrink-0 items-center justify-center rounded-[9px] bg-gradient-to-br text-[16px] font-semibold leading-none text-white shadow-sm ${item?.iconStyle ?? 'from-slate-400 to-slate-600'}`}>{icon}</span>
-                <span className="min-w-0 truncate">{t(label.zh, label.en)}</span>
-              </Link>
-            })}</div>
-          </div>)}
-        </nav>
-        <div className="border-t border-hairline p-2">
+        <div className="mx-6 hidden h-14 w-px bg-slate-200 md:block" />
+        <button
+          type="button"
+          aria-label={t('折叠导航栏', 'Toggle navigation')}
+          aria-expanded={!sidebarCollapsed}
+          onClick={() => setSidebarCollapsed(value => !value)}
+          className="grid h-11 w-11 shrink-0 place-items-center rounded-xl text-2xl text-slate-600 transition-colors hover:bg-blue-50 hover:text-blue-600"
+        >
+          <span aria-hidden="true">☰</span>
+        </button>
+        <div className="mx-5 hidden h-10 w-px bg-slate-100 sm:block" />
+        <div className="flex min-w-0 items-center gap-3 text-slate-500">
+          <span className="text-xl text-slate-500" aria-hidden="true">⌂</span>
+          <span className="truncate text-base font-medium text-slate-600 sm:text-lg">{pageLabel}</span>
+        </div>
+        <div className="ml-auto flex shrink-0 items-center gap-5 sm:gap-8">
+          <div className="hidden h-14 w-px bg-slate-200 sm:block" />
+          <div className="relative grid h-11 w-11 place-items-center text-[28px] text-slate-700" aria-label={t('通知', 'Notifications')}>
+            <span aria-hidden="true">♧</span>
+            <span className="absolute right-1 top-1 h-2.5 w-2.5 rounded-full border-2 border-white bg-rose-400" />
+          </div>
           <UserMenu />
         </div>
-      </aside>
+      </header>
 
-      {/* Main content */}
-      <main className="flex-1 min-w-0 px-8 py-8">
-        <div className="max-w-[1700px] mx-auto">
-          <Routes>
-            <Route path="/" element={<Workbench />} />
-            <Route path="/devices" element={<Devices />} />
-            <Route path="/debug" element={<DebugConsole />} />
-            <Route path="/exploration" element={<ExplorationCenter />} />
-            <Route path="/exploration/new" element={<ExplorationCenter />} />
-            <Route path="/exploration/history" element={<ExplorationCenter />} />
-            <Route path="/exploration/knowledge" element={<ExplorationCenter />} />
-            <Route path="/exploration/plans" element={<ExplorationCenter />} />
-            <Route path="/skills" element={<SkillLibrary />} />
-            <Route path="/quick" element={<PageTabs section="execution"><QuickRun /></PageTabs>} />
-            <Route path="/recorder" element={<PageTabs section="cases"><Recorder /></PageTabs>} />
-            <Route path="/execution-plans" element={<PageTabs section="cases"><ExecutionPlanStudio /></PageTabs>} />
-            <Route path="/apps" element={<PageTabs section="cases"><AppManagement /></PageTabs>} />
-            <Route path="/suites" element={<PageTabs section="cases"><Suites /></PageTabs>} />
-            <Route path="/suites/:suiteId" element={<PageTabs section="cases"><SuiteDetail /></PageTabs>} />
-            <Route path="/library" element={<PageTabs section="cases"><Library /></PageTabs>} />
-            <Route path="/automation" element={<PageTabs section="cases"><AutomationCatalog /></PageTabs>} />
-            <Route path="/automation/:kind/:id" element={<PageTabs section="cases"><AutomationCatalog /></PageTabs>} />
-            <Route path="/knowledge" element={<PageTabs section="cases"><Knowledge /></PageTabs>} />
-            <Route path="/regressions" element={<PageTabs section="execution"><Regressions /></PageTabs>} />
-            <Route path="/runs" element={<PageTabs section="results"><Runs /></PageTabs>} />
-            <Route path="/recordings" element={<PageTabs section="results"><Recordings /></PageTabs>} />
-            <Route path="/runs/compare" element={<PageTabs section="results"><RunCompare /></PageTabs>} />
-            <Route path="/runs/:runId" element={<PageTabs section="results"><RunDetail /></PageTabs>} />
-            <Route path="/account" element={<PageTabs section="settings"><Account /></PageTabs>} />
-            <Route path="/settings" element={<PageTabs section="settings"><Settings /></PageTabs>} />
-            <Route path="/settings/recording" element={<PageTabs section="settings"><RecordingSettings /></PageTabs>} />
-          </Routes>
-        </div>
-      </main>
+      <div className="flex min-h-[calc(100vh-104px)]">
+        <aside className={`${sidebarCollapsed ? 'w-[88px]' : 'w-[250px] xl:w-[300px]'} sticky top-0 flex h-[calc(100vh-104px)] shrink-0 flex-col border-r border-hairline bg-white/75 transition-[width] duration-200`}>
+          <nav aria-label={t('主导航', 'Main navigation')} className={`flex-1 overflow-y-auto ${sidebarCollapsed ? 'px-3' : 'px-4 xl:px-6'} py-6`}>
+            <div className="space-y-2">
+              {NAV_GROUPS.map(group => <div key={group.label.en} className="space-y-2">
+                {group.items.map(({ to, label, icon, iconStyle, paths }) => {
+                  const active = paths.some(path => matchesPath(pathname, path))
+                  return <Link
+                    key={to}
+                    to={to}
+                    aria-current={active ? "page" : undefined}
+                    title={sidebarCollapsed ? t(label.zh, label.en) : undefined}
+                    className={`group relative flex min-h-[58px] items-center rounded-2xl transition-all duration-200 ${sidebarCollapsed ? 'justify-center px-2' : 'gap-4 px-3 xl:px-4'} ${active ? 'bg-[#E8F1FF] text-[#2674F5] shadow-[inset_4px_0_0_#3478F6]' : 'text-slate-700 hover:bg-slate-50 hover:text-blue-700'}`}
+                  >
+                    <span aria-hidden="true" className={`flex h-11 w-11 xl:h-[48px] xl:w-[48px] shrink-0 items-center justify-center rounded-[14px] bg-gradient-to-br text-[22px] font-semibold leading-none text-white shadow-md shadow-blue-100/60 ${iconStyle}`}>{icon}</span>
+                    {!sidebarCollapsed && <span className="min-w-0 truncate text-base font-medium xl:text-[19px]">{t(label.zh, label.en)}</span>}
+                  </Link>
+                })}
+              </div>)}
+            </div>
+          </nav>
+        </aside>
+
+        <main className="min-w-0 flex-1 px-5 py-6 sm:px-7 sm:py-8 xl:px-9 xl:py-9">
+          <div className="mx-auto max-w-[1700px]">
+            <Routes>
+              <Route path="/" element={<Workbench />} />
+              <Route path="/devices" element={<Devices />} />
+              <Route path="/debug" element={<DebugConsole />} />
+              <Route path="/exploration" element={<ExplorationCenter />} />
+              <Route path="/exploration/new" element={<ExplorationCenter />} />
+              <Route path="/exploration/history" element={<ExplorationCenter />} />
+              <Route path="/exploration/knowledge" element={<ExplorationCenter />} />
+              <Route path="/exploration/plans" element={<ExplorationCenter />} />
+              <Route path="/skills" element={<SkillLibrary />} />
+              <Route path="/quick" element={<PageTabs section="execution"><QuickRun /></PageTabs>} />
+              <Route path="/recorder" element={<PageTabs section="cases"><Recorder /></PageTabs>} />
+              <Route path="/execution-plans" element={<PageTabs section="cases"><ExecutionPlanStudio /></PageTabs>} />
+              <Route path="/apps" element={<PageTabs section="cases"><AppManagement /></PageTabs>} />
+              <Route path="/suites" element={<PageTabs section="cases"><Suites /></PageTabs>} />
+              <Route path="/suites/:suiteId" element={<PageTabs section="cases"><SuiteDetail /></PageTabs>} />
+              <Route path="/library" element={<PageTabs section="cases"><Library /></PageTabs>} />
+              <Route path="/automation" element={<PageTabs section="cases"><AutomationCatalog /></PageTabs>} />
+              <Route path="/automation/:kind/:id" element={<PageTabs section="cases"><AutomationCatalog /></PageTabs>} />
+              <Route path="/knowledge" element={<PageTabs section="cases"><Knowledge /></PageTabs>} />
+              <Route path="/regressions" element={<PageTabs section="execution"><Regressions /></PageTabs>} />
+              <Route path="/runs" element={<PageTabs section="results"><Runs /></PageTabs>} />
+              <Route path="/recordings" element={<PageTabs section="results"><Recordings /></PageTabs>} />
+              <Route path="/runs/compare" element={<PageTabs section="results"><RunCompare /></PageTabs>} />
+              <Route path="/runs/:runId" element={<PageTabs section="results"><RunDetail /></PageTabs>} />
+              <Route path="/account" element={<PageTabs section="settings"><Account /></PageTabs>} />
+              <Route path="/settings" element={<PageTabs section="settings"><Settings /></PageTabs>} />
+              <Route path="/settings/recording" element={<PageTabs section="settings"><RecordingSettings /></PageTabs>} />
+            </Routes>
+          </div>
+        </main>
+      </div>
     </div>
   )
 }
