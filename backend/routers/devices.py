@@ -302,8 +302,12 @@ async def list_device_apps(device_id: str, request: Request, db: AsyncSession = 
         raise HTTPException(status_code=502, detail=f"读取应用包名失败：{exc}") from exc
 
     now = datetime.utcnow()
-    current = {str(x.get("packageName", "")).strip() for x in (packages or []) if isinstance(x, dict)}
-    current.discard("")
+    package_metadata = {
+        str(x.get("packageName", "")).strip(): x
+        for x in (packages or [])
+        if isinstance(x, dict) and str(x.get("packageName", "")).strip()
+    }
+    current = set(package_metadata)
     legacy_rows = (await db.execute(select(DeviceApp).where(
         DeviceApp.account_id == account_id, DeviceApp.device_id == device_id
     ))).scalars().all()
@@ -318,14 +322,20 @@ async def list_device_apps(device_id: str, request: Request, db: AsyncSession = 
             AppCatalog.account_id == account_id, AppCatalog.package_name == package_name
         ))).scalar_one_or_none()
         if not catalog:
+            discovered_name = str(package_metadata.get(package_name, {}).get("appName", "")).strip()
             catalog = AppCatalog(account_id=account_id, package_name=package_name,
-                app_name=legacy.app_name if legacy else "", is_test_app=bool(legacy and legacy.is_test_app))
+                app_name=(legacy.app_name if legacy and legacy.app_name else discovered_name),
+                is_test_app=bool(legacy and legacy.is_test_app))
             db.add(catalog)
             await db.flush()
-        elif legacy:
-            if not catalog.app_name and legacy.app_name:
-                catalog.app_name = legacy.app_name
-            catalog.is_test_app = bool(catalog.is_test_app or legacy.is_test_app)
+        else:
+            discovered_name = str(package_metadata.get(package_name, {}).get("appName", "")).strip()
+            if not catalog.app_name and discovered_name:
+                catalog.app_name = discovered_name
+            if legacy:
+                if not catalog.app_name and legacy.app_name:
+                    catalog.app_name = legacy.app_name
+                catalog.is_test_app = bool(catalog.is_test_app or legacy.is_test_app)
         install = install_by_pkg.get(package_name)
         if install:
             install.installed, install.last_seen_at = True, now
