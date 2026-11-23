@@ -191,6 +191,8 @@ async def subscribe_local_adb_recorder(device_id: str, serial: str):
     # Overflow remains isolated to this recording and never blocks preview.
     video_queue = asyncio.Queue(maxsize=300)
     audio_queue = asyncio.Queue(maxsize=512)
+    video_queue._recorder_peak_size = 0
+    audio_queue._recorder_peak_size = 0
 
     while True:
         wait_for_stopping_hub = None
@@ -278,6 +280,9 @@ async def _run_local_adb_hub(device_id: str, serial: str, hub: dict) -> None:
             queue = recorder[kind]
             try:
                 queue.put_nowait(packet)
+                queue._recorder_peak_size = max(
+                    getattr(queue, "_recorder_peak_size", 0), queue.qsize()
+                )
             except asyncio.QueueFull:
                 recorder["failed"] = True
                 # Capture the real backlog before clearing queues to wake the
