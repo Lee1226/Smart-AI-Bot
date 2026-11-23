@@ -53,26 +53,26 @@ function RunCard({ run, deviceName }: { run: Run; deviceName: string }) {
   })
   const progress = progressOf(run)
   const title = run.suite_name || (run.suite_id ? `套件 ${run.suite_id.slice(0, 8)}` : '快速任务')
-  return <article className="group rounded-xl border border-hairline bg-white p-4 shadow-sm transition-shadow hover:shadow-md sm:p-5">
+  return <article className="group rounded-2xl border border-slate-200/80 bg-white p-5 shadow-[0_8px_28px_rgba(31,75,135,0.05)] transition-all hover:border-blue-200 hover:shadow-[0_12px_32px_rgba(37,99,235,0.08)] sm:p-6">
     <div className="flex flex-wrap items-start justify-between gap-3">
       <div className="min-w-0 flex-1">
         <div className="flex flex-wrap items-center gap-2"><StatusBadge status={run.status} /><span className="text-xs text-ink-mute">{formatTime(run.created_at)}</span></div>
-        <button onClick={() => navigate(`/runs/${run.id}`)} className="mt-2 block max-w-full truncate text-left text-base font-semibold text-ink hover:text-primary">{title}</button>
+        <button onClick={() => navigate(`/runs/${run.id}`)} className="mt-2 block max-w-full truncate text-left text-base font-semibold text-slate-800 transition hover:text-blue-700">{title}</button>
         <div className="mt-1 flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-ink-mute">
           <span>设备：{deviceName}</span><span>模型：{run.provider}/{run.model}</span>
           {run.test_account_name && <span>测试账号：{run.test_account_name}</span>}
         </div>
       </div>
       <div className="flex shrink-0 flex-wrap items-center gap-2">
-        <Link to={`/runs/${run.id}`} className="rounded-lg border border-hairline px-3 py-2 text-xs font-medium text-ink hover:bg-canvas-cool">查看详情</Link>
-        {active && <button disabled={cancel.isPending} onClick={() => { if (confirm('确定取消这次测试任务吗？')) cancel.mutate() }} className="rounded-lg border border-amber-200 px-3 py-2 text-xs font-medium text-amber-700 hover:bg-amber-50 disabled:opacity-40">{cancel.isPending ? '取消中…' : '取消任务'}</button>}
-        {TERMINAL.has(run.status) && <button disabled={rerun.isPending} onClick={() => rerun.mutate()} className="rounded-lg border border-primary/20 px-3 py-2 text-xs font-medium text-primary hover:bg-primary-soft disabled:opacity-40">{rerun.isPending ? '启动中…' : '重新运行'}</button>}
-        <button disabled={remove.isPending} title="删除整次运行记录及其用例结果" onClick={() => { if (confirm('删除整次运行记录？该次运行的所有用例结果和派生记忆都会一并删除。')) remove.mutate() }} className="rounded-lg border border-hairline px-2.5 py-2 text-xs text-ink-mute hover:border-rose-200 hover:bg-rose-50 hover:text-rose-700 disabled:opacity-40">{remove.isPending ? '…' : '删除'}</button>
+        <Link to={`/runs/${run.id}`} className="rounded-xl border border-slate-200 px-3.5 py-2 text-xs font-semibold text-slate-600 transition hover:border-blue-200 hover:bg-blue-50 hover:text-blue-700">查看详情</Link>
+        {active && <button disabled={cancel.isPending} onClick={() => { if (confirm('确定取消这次测试任务吗？')) cancel.mutate() }} className="rounded-xl border border-amber-200 bg-amber-50/70 px-3.5 py-2 text-xs font-semibold text-amber-700 transition hover:bg-amber-100 disabled:opacity-40">{cancel.isPending ? '取消中…' : '取消任务'}</button>}
+        {TERMINAL.has(run.status) && <button disabled={rerun.isPending} onClick={() => rerun.mutate()} className="rounded-xl border border-blue-200 bg-blue-50 px-3.5 py-2 text-xs font-semibold text-blue-700 transition hover:bg-blue-100 disabled:opacity-40">{rerun.isPending ? '启动中…' : '重新运行'}</button>}
+        <button disabled={remove.isPending} title="删除整次运行记录及其用例结果" onClick={() => { if (confirm('删除整次运行记录？该次运行的所有用例结果和派生记忆都会一并删除。')) remove.mutate() }} className="rounded-xl border border-slate-200 px-3 py-2 text-xs font-semibold text-slate-500 transition hover:border-rose-200 hover:bg-rose-50 hover:text-rose-700 disabled:opacity-40">{remove.isPending ? '…' : '删除'}</button>
       </div>
     </div>
     <div className="mt-4">
       <div className="mb-2 flex items-center justify-between gap-3 text-xs"><span className="text-ink-mute">用例执行进度</span><span className="font-medium tabular-nums text-ink">{run.total ? `${progress}%` : '等待结果'} · {run.total || 0} 个用例</span></div>
-      <div className="h-1.5 overflow-hidden rounded-full bg-slate-100"><div className={`h-full rounded-full transition-all ${run.status === 'error' ? 'bg-rose-500' : 'bg-primary'}`} style={{ width: `${progress}%` }} /></div>
+      <div className="h-2 overflow-hidden rounded-full bg-slate-100"><div className={`h-full rounded-full transition-all ${run.status === 'error' ? 'bg-rose-500' : 'bg-primary'}`} style={{ width: `${progress}%` }} /></div>
       <div className="mt-3 flex flex-wrap gap-x-4 gap-y-1 text-xs tabular-nums">
         <span className="text-emerald-700">通过 {run.passed || 0}</span><span className="text-rose-700">失败 {run.failed || 0}</span><span className="text-amber-700">异常 {run.errored || 0}</span><span className="text-ink-mute">跳过 {run.skipped || 0}</span>
         {run.total_tokens > 0 && <span className="ml-auto text-ink-mute">{(run.total_tokens / 1000).toFixed(1)}k tokens</span>}
@@ -82,8 +82,8 @@ function RunCard({ run, deviceName }: { run: Run; deviceName: string }) {
 }
 
 function Metric({ label, value, note, tone = 'neutral' }: { label: string; value: number; note: string; tone?: 'neutral' | 'blue' | 'green' | 'amber' | 'red' }) {
-  const valueTone = { neutral: 'text-ink', blue: 'text-sky-700', green: 'text-emerald-700', amber: 'text-amber-700', red: 'text-rose-700' }
-  return <div className="rounded-xl border border-hairline bg-white p-4 shadow-sm"><div className="text-xs text-ink-mute">{label}</div><div className={`mt-2 text-2xl font-semibold tabular-nums ${valueTone[tone]}`}>{value}</div><div className="mt-1 text-[11px] text-ink-mute">{note}</div></div>
+  const valueTone = { neutral: 'text-slate-800', blue: 'text-blue-700', green: 'text-emerald-700', amber: 'text-amber-700', red: 'text-rose-700' }
+  return <div className="rounded-2xl border border-slate-200/80 bg-white p-5 shadow-[0_8px_28px_rgba(31,75,135,0.05)]"><div className="text-xs font-medium text-slate-500">{label}</div><div className={`mt-2 text-3xl font-bold tracking-tight tabular-nums ${valueTone[tone]}`}>{value}</div><div className="mt-1 text-[11px] text-ink-mute">{note}</div></div>
 }
 
 export default function Runs() {
@@ -120,41 +120,41 @@ export default function Runs() {
     if (page > totalPages) setPage(totalPages)
   }, [page, totalPages])
 
-  return <div className="space-y-6">
-    <header className="flex flex-wrap items-end justify-between gap-4">
-      <div><div className="text-xs font-semibold uppercase tracking-[0.18em] text-primary">TEST EXECUTION CENTER</div><h1 className="mt-2 text-2xl font-semibold tracking-tight text-ink">测试任务</h1><p className="mt-1 text-sm text-ink-mute">统一管理单设备任务、多设备回归任务及执行记录。</p></div>
-      <div className="flex flex-wrap gap-2"><Link to="/quick" className="rounded-lg bg-primary px-4 py-2.5 text-sm font-semibold text-white shadow-sm hover:bg-primary-deep">＋ 创建快速任务</Link><Link to="/regressions" className="rounded-lg border border-hairline bg-white px-4 py-2.5 text-sm font-medium text-ink hover:bg-canvas-cool">创建多设备回归</Link></div>
+  return <div className="mx-auto max-w-[1600px] space-y-6">
+    <header className="relative overflow-hidden rounded-3xl bg-gradient-to-br from-[#175CD3] via-[#2878E8] to-[#38A6D9] px-7 py-7 text-white shadow-[0_18px_45px_rgba(37,99,235,0.16)] sm:px-9">
+      <div className="pointer-events-none absolute -right-12 -top-20 h-64 w-64 rounded-full border-[36px] border-white/10" /><div className="relative"><div className="mb-3 inline-flex rounded-full border border-white/20 bg-white/10 px-3 py-1 text-xs font-semibold text-blue-50">AI 终端 · 任务管理</div><h1 className="text-2xl font-bold tracking-tight text-white sm:text-3xl">测试任务</h1><p className="mt-2 text-sm leading-6 text-blue-50/90">统一管理单设备任务、多设备回归任务及执行记录。</p></div>
+      <div className="flex flex-wrap gap-2"><Link to="/quick" className="rounded-xl bg-white px-4 py-2.5 text-sm font-semibold text-blue-700 shadow-sm transition hover:bg-blue-50">＋ 创建快速任务</Link><Link to="/regressions" className="rounded-xl border border-white/25 bg-white/10 px-4 py-2.5 text-sm font-semibold text-white backdrop-blur transition hover:bg-white/20">创建多设备回归</Link></div>
     </header>
 
-    <section className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+    <section className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
       <Metric label="任务总数" value={totalRuns} note="全部运行记录" />
       <Metric label="当前页执行中" value={activeCount} note="本页排队、准备或运行中" tone="blue" />
       <Metric label="当前页异常" value={failedCount} note="本页错误或服务中断" tone={failedCount ? 'red' : 'neutral'} />
       <Metric label="当前页用例通过率" value={totalCases ? passRate : 0} note={totalCases ? `基于本页 ${totalCases} 个已结束用例` : '本页暂无已结束用例'} tone="green" />
     </section>
 
-    <section className="rounded-xl border border-hairline bg-white p-4 shadow-sm sm:p-5">
-      <div className="flex flex-wrap items-center justify-between gap-3"><div><h2 className="font-semibold text-ink">任务运行列表</h2><p className="mt-1 text-xs text-ink-mute">执行中的任务每 3 秒自动刷新</p></div><button onClick={() => void refetch()} className="rounded-lg border border-hairline px-3 py-2 text-xs font-medium text-ink-mute hover:bg-canvas-cool">↻ 刷新</button></div>
+    <section className="rounded-2xl border border-slate-200/80 bg-white p-5 shadow-[0_8px_28px_rgba(31,75,135,0.05)] sm:p-6">
+      <div className="flex flex-wrap items-center justify-between gap-3"><div><h2 className="text-base font-semibold text-slate-800">任务运行列表</h2><p className="mt-1 text-xs text-ink-mute">执行中的任务每 3 秒自动刷新</p></div><button onClick={() => void refetch()} className="rounded-xl border border-slate-200 px-3.5 py-2 text-xs font-semibold text-slate-600 transition hover:border-blue-200 hover:bg-blue-50 hover:text-blue-700">↻ 刷新</button></div>
       <div className="mt-4 flex flex-col gap-3 lg:flex-row">
-        <div className="flex flex-1 flex-wrap gap-1 rounded-lg bg-canvas-soft p-1">
-          {([{ id: 'all', label: '全部任务' }, { id: 'active', label: '执行中' }, { id: 'done', label: '已完成' }, { id: 'problem', label: '异常中断' }] as { id: Filter; label: string }[]).map(item => <button key={item.id} onClick={() => { setFilter(item.id); setPage(1) }} className={`rounded-md px-3 py-2 text-xs font-medium transition-colors ${filter === item.id ? 'bg-white text-primary shadow-sm' : 'text-ink-mute hover:text-ink'}`}>{item.label}</button>)}
+        <div className="flex flex-1 flex-wrap gap-1 rounded-xl border border-slate-200 bg-slate-50 p-1">
+          {([{ id: 'all', label: '全部任务' }, { id: 'active', label: '执行中' }, { id: 'done', label: '已完成' }, { id: 'problem', label: '异常中断' }] as { id: Filter; label: string }[]).map(item => <button key={item.id} onClick={() => { setFilter(item.id); setPage(1) }} className={`rounded-lg px-3.5 py-2 text-xs font-semibold transition-colors ${filter === item.id ? 'bg-blue-600 text-white shadow-sm' : 'text-slate-500 hover:bg-white hover:text-blue-700'}`}>{item.label}</button>)}
         </div>
-        <input value={keyword} onChange={e => { setKeyword(e.target.value); setPage(1) }} placeholder="搜索任务名称、模型或运行 ID" className="min-w-0 flex-1 rounded-lg border border-hairline px-3 py-2 text-sm outline-none focus:border-primary lg:max-w-xs" />
-        <select value={deviceFilter} onChange={e => { setDeviceFilter(e.target.value); setPage(1) }} className="rounded-lg border border-hairline bg-white px-3 py-2 text-sm text-ink"><option value="all">全部设备</option>{devices.map(device => <option key={device.id} value={device.id}>{device.name}</option>)}</select>
+        <input value={keyword} onChange={e => { setKeyword(e.target.value); setPage(1) }} placeholder="搜索任务名称、模型或运行 ID" className="min-w-0 flex-1 rounded-xl border border-slate-200 bg-slate-50/60 px-3.5 py-2.5 text-sm text-slate-700 outline-none transition placeholder:text-slate-400 focus:border-blue-400 focus:bg-white focus:ring-4 focus:ring-blue-500/10 lg:max-w-xs" />
+        <select value={deviceFilter} onChange={e => { setDeviceFilter(e.target.value); setPage(1) }} className="rounded-xl border border-slate-200 bg-slate-50/60 px-3.5 py-2.5 text-sm text-slate-700 outline-none focus:border-blue-400 focus:ring-4 focus:ring-blue-500/10"><option value="all">全部设备</option>{devices.map(device => <option key={device.id} value={device.id}>{device.name}</option>)}</select>
       </div>
     </section>
 
-    {isLoading && <div className="rounded-xl border border-hairline bg-white p-10 text-center text-sm text-ink-mute">正在加载任务记录…</div>}
-    {isError && <div role="alert" className="rounded-xl border border-rose-200 bg-rose-50 p-4 text-sm text-rose-700">任务记录读取失败，请检查后端连接后重试。</div>}
-    {!isLoading && !isError && filtered.length === 0 && <div className="rounded-xl border border-dashed border-hairline bg-white p-12 text-center"><div className="text-3xl text-ink-faint">▤</div><h3 className="mt-3 text-sm font-semibold text-ink">{runs.length ? '没有符合筛选条件的任务' : '还没有测试任务'}</h3><p className="mt-1 text-xs text-ink-mute">{runs.length ? '试试调整状态、设备或搜索条件。' : '创建快速任务，或选择多设备回归计划开始测试。'}</p>{!runs.length && <div className="mt-4 flex justify-center gap-2"><Link to="/quick" className="rounded-lg bg-primary px-4 py-2 text-xs font-medium text-white">创建快速任务</Link><Link to="/regressions" className="rounded-lg border border-hairline px-4 py-2 text-xs font-medium">多设备回归</Link></div>}</div>}
+    {isLoading && <div className="rounded-2xl border border-slate-200 bg-white p-12 text-center text-sm text-slate-500">正在加载任务记录…</div>}
+    {isError && <div role="alert" className="rounded-2xl border border-rose-200 bg-rose-50/80 p-5 text-sm text-rose-700">任务记录读取失败，请检查后端连接后重试。</div>}
+    {!isLoading && !isError && filtered.length === 0 && <div className="rounded-2xl border border-dashed border-slate-300 bg-white px-6 py-14 text-center shadow-[0_8px_28px_rgba(31,75,135,0.03)]"><div className="text-3xl text-ink-faint">▤</div><h3 className="mt-3 text-sm font-semibold text-ink">{runs.length ? '没有符合筛选条件的任务' : '还没有测试任务'}</h3><p className="mt-1 text-xs text-ink-mute">{runs.length ? '试试调整状态、设备或搜索条件。' : '创建快速任务，或选择多设备回归计划开始测试。'}</p>{!runs.length && <div className="mt-4 flex justify-center gap-2"><Link to="/quick" className="rounded-xl bg-blue-600 px-4 py-2.5 text-xs font-semibold text-white shadow-sm hover:bg-blue-700">创建快速任务</Link><Link to="/regressions" className="rounded-xl border border-slate-200 px-4 py-2.5 text-xs font-semibold text-slate-600 hover:bg-slate-50">多设备回归</Link></div>}</div>}
     <section className="space-y-3">{filtered.map(run => <RunCard key={run.id} run={run} deviceName={deviceNames.get(run.device_id) || run.device_id.slice(0, 12)} />)}</section>
     <div className="flex flex-wrap items-center justify-between gap-3 text-xs text-ink-mute">
       <span>当前页显示 {filtered.length} 条 / 共 {totalRuns} 条任务记录</span>
       <div className="flex items-center gap-2">
         <label className="flex items-center gap-2">每页显示
-          <select value={pageSize} onChange={e => { setPageSize(Number(e.target.value)); setPage(1) }} className="rounded border border-hairline bg-white px-2 py-1 text-ink"><option value={10}>10 条</option><option value={20}>20 条</option><option value={50}>50 条</option><option value={100}>100 条</option></select>
+          <select value={pageSize} onChange={e => { setPageSize(Number(e.target.value)); setPage(1) }} className="rounded-lg border border-slate-200 bg-white px-3 py-2 text-slate-600"><option value={10}>10 条</option><option value={20}>20 条</option><option value={50}>50 条</option><option value={100}>100 条</option></select>
         </label>
-        <button disabled={page <= 1} onClick={() => setPage(p => p - 1)} className="rounded border border-hairline px-2 py-1 disabled:opacity-40">上一页</button>
+        <button disabled={page <= 1} onClick={() => setPage(p => p - 1)} className="rounded-lg border border-slate-200 bg-white px-3 py-2 font-medium text-slate-600 transition hover:border-blue-200 hover:bg-blue-50 disabled:opacity-40">上一页</button>
         <span>第 {page} / {totalPages} 页</span>
         <button disabled={page >= totalPages} onClick={() => setPage(p => p + 1)} className="rounded border border-hairline px-2 py-1 disabled:opacity-40">下一页</button>
       </div>
