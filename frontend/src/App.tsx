@@ -256,22 +256,26 @@ function AppLayout() {
                           setResultsExpanded(value => !value)
                         }
                       }}
-                      className={`group relative flex min-h-[42px] 2xl:min-h-[44px] w-full items-center rounded-lg transition-all duration-200 ${sidebarCollapsed ? 'justify-center px-1.5' : 'gap-2.5 px-2.5'} ${active ? 'bg-[#E8F1FF] text-[#2674F5] shadow-[inset_3px_0_0_#3478F6]' : 'text-slate-700 hover:bg-slate-50 hover:text-blue-700'}`}
+                      className={`group relative flex min-h-[42px] 2xl:min-h-[44px] w-full items-center rounded-lg transition-colors duration-200 ease-out motion-reduce:transition-none ${sidebarCollapsed ? 'justify-center px-1.5' : 'gap-2.5 px-2.5'} ${active ? 'bg-[#F2F6FC] text-[#356FAF]' : 'text-slate-700 hover:bg-slate-50 hover:text-blue-700'}`}
                     >
                       <span aria-hidden="true" className={`flex h-7 w-7 2xl:h-8 2xl:w-8 shrink-0 items-center justify-center rounded-lg bg-gradient-to-br text-base font-semibold leading-none text-white shadow-sm shadow-blue-100/60 ${iconStyle}`}>{icon}</span>
                       {!sidebarCollapsed && <>
                         <span className="min-w-0 flex-1 truncate text-left text-[13px] font-medium 2xl:text-sm">{t(label.zh, label.en)}</span>
-                        <span aria-hidden="true" className={`text-xs text-slate-400 transition-transform ${resultsExpanded ? 'rotate-180' : ''}`}>⌄</span>
+                        <span aria-hidden="true" className={`text-xs text-slate-400 transition-transform duration-200 ease-out motion-reduce:transition-none ${resultsExpanded ? 'rotate-180' : ''}`}>⌄</span>
                       </>}
                     </button>
-                    {!sidebarCollapsed && resultsExpanded && <div className="ml-5 space-y-1 border-l border-slate-200 pl-3">
-                      {children.map(child => {
-                        const childActive = child.paths.some(path => matchesPath(pathname, path))
-                        return <Link key={child.to} to={child.to} aria-current={childActive ? "page" : undefined}
-                          className={`flex min-h-[36px] items-center rounded-md px-2.5 text-[12px] transition-colors 2xl:text-[13px] ${childActive ? 'bg-blue-50 font-semibold text-blue-700' : 'text-slate-600 hover:bg-slate-50 hover:text-blue-700'}`}>
-                          <span className="min-w-0 truncate">{t(child.label.zh, child.label.en)}</span>
-                        </Link>
-                      })}
+                    {!sidebarCollapsed && <div className={`grid transition-[grid-template-rows,opacity] duration-200 ease-out motion-reduce:transition-none ${resultsExpanded ? 'grid-rows-[1fr] opacity-100' : 'grid-rows-[0fr] opacity-0'}`}>
+                      <div className="min-h-0 overflow-hidden">
+                        <div className="ml-7 space-y-1 pt-1">
+                          {children.map(child => {
+                            const childActive = child.paths.some(path => matchesPath(pathname, path))
+                            return <Link key={child.to} to={child.to} aria-current={childActive ? "page" : undefined}
+                              className={`relative flex min-h-[36px] items-center rounded-md px-3 text-[12px] transition-[background-color,color] duration-150 ease-out 2xl:text-[13px] ${childActive ? 'bg-[#EAF2FF] font-semibold text-[#2469D8] before:absolute before:bottom-2 before:left-0 before:top-2 before:w-[3px] before:rounded-full before:bg-[#3478F6]' : 'text-slate-600 hover:bg-slate-50 hover:text-blue-700'}`}>
+                              <span className="min-w-0 truncate">{t(child.label.zh, child.label.en)}</span>
+                            </Link>
+                          })}
+                        </div>
+                      </div>
                     </div>}
                   </div>
                   return <Link
