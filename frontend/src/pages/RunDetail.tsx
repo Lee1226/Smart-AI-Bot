@@ -201,15 +201,15 @@ export default function RunDetail() {
         }`}>
           <div className="flex flex-wrap items-center justify-between gap-2">
             <div className="font-medium">
-              {run.recording_status === 'saved' ? '✓ 视频录像已生成'
-                : run.recording_status === 'pending' ? '视频录像处理中'
-                : run.recording_status === 'disabled' ? '视频录像未开启'
-                : run.recording_status === 'unsupported_device' ? '当前设备暂不支持视频录像'
-                : '本次任务未生成视频录像'}
+              {run.recording_status === 'saved' ? '✓ 视频已生成'
+                : run.recording_status === 'pending' ? '视频处理中'
+                : run.recording_status === 'disabled' ? '视频未开启'
+                : run.recording_status === 'unsupported_device' ? '当前设备暂不支持视频'
+                : '本次任务未生成视频'}
             </div>
             {run.has_recording && (
               <a href={`/api/runs/${run.id}/recording.mp4?token=${encodeURIComponent(getToken() || '')}`}
-                target="_blank" rel="noreferrer" className="font-medium underline">播放 / 下载录像</a>
+                target="_blank" rel="noreferrer" className="font-medium underline">播放 / 下载视频</a>
             )}
           </div>
           <p className="mt-1 text-xs opacity-80">{run.recording_message}</p>
