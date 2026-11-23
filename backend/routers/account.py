@@ -28,6 +28,15 @@ async def _require_role(request: Request, allowed: set):
         raise HTTPException(status_code=403, detail="需要管理员权限")
 
 
+def _parse_permissions(raw: str) -> List[str]:
+    import json
+    try:
+        values = json.loads(raw or "[]")
+        return [value for value in values if isinstance(value, str) and value in ALLOWED_API_KEY_PERMISSIONS]
+    except (TypeError, ValueError):
+        return []
+
+
 def _generate_api_key() -> tuple[str, str, str]:
     """Return (full_key, key_hash, key_prefix). Caller shows full_key once."""
     raw = "sk-" + secrets.token_urlsafe(32)
@@ -75,10 +84,15 @@ class ApiKeyOut(BaseModel):
     key_prefix: str
     created_at: str
     last_used_at: Optional[str] = None
+    permissions: List[str] = []
+
+
+ALLOWED_API_KEY_PERMISSIONS = {"devices:read", "suites:read", "runs:read"}
 
 
 class CreateApiKeyRequest(BaseModel):
     name: str = ""
+    permissions: List[str] = ["devices:read", "suites:read", "runs:read"]
 
 
 class CreateApiKeyResponse(BaseModel):
@@ -235,6 +249,7 @@ async def list_api_keys(request: Request):
                 id=k.id, name=k.name, key_prefix=k.key_prefix,
                 created_at=k.created_at.isoformat(),
                 last_used_at=k.last_used_at.isoformat() if k.last_used_at else None,
+                permissions=_parse_permissions(k.permissions),
             )
             for k in keys
         ]
@@ -243,6 +258,11 @@ async def list_api_keys(request: Request):
 @router.post("/api-keys", response_model=CreateApiKeyResponse, status_code=201)
 async def create_api_key(request: Request, req: CreateApiKeyRequest):
     await _require_role(request, {"owner", "admin"})
+    invalid = set(req.permissions) - ALLOWED_API_KEY_PERMISSIONS
+    if invalid:
+        raise HTTPException(status_code=422, detail=f"不支持的 API 权限：{', '.join(sorted(invalid))}")
+    if not req.permissions:
+        raise HTTPException(status_code=422, detail="至少选择一个 API 权限范围")
     full_key, key_hash, key_prefix = _generate_api_key()
     async with AsyncSessionLocal() as db:
         api_key = ApiKey(
@@ -250,7 +270,7 @@ async def create_api_key(request: Request, req: CreateApiKeyRequest):
             name=req.name or "API Key",
             key_hash=key_hash,
             key_prefix=key_prefix,
-            permissions="[]",
+            permissions=__import__('json').dumps(sorted(set(req.permissions))),
             created_by=request.state.user_id,
         )
         db.add(api_key)
@@ -261,6 +281,7 @@ async def create_api_key(request: Request, req: CreateApiKeyRequest):
                 id=api_key.id, name=api_key.name, key_prefix=api_key.key_prefix,
                 created_at=api_key.created_at.isoformat(),
                 last_used_at=None,
+                permissions=sorted(set(req.permissions)),
             ),
             full_key=full_key,
         )
