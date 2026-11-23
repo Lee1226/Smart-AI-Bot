@@ -89,7 +89,7 @@ function EvidenceImage({ sessionId, filename, label }: { sessionId: string; file
   return <div className="min-w-0">
     <div className="mb-1 text-[11px] text-ink-faint">{label}</div>
     {evidence.status === 'ready' && evidence.url ?
-      <a href={evidence.url} target="_blank" rel="noreferrer"><img src={evidence.url} alt={label} className="max-h-80 w-full rounded-lg border border-hairline object-contain bg-black/5" /></a> :
+      <a href={evidence.url} target="_blank" rel="noreferrer"><img src={evidence.url} alt={label} className="max-h-80 w-full rounded-xl border border-slate-200 object-contain bg-black/5" /></a> :
       evidence.status === 'loading' ?
         <div role="status" className="rounded-lg bg-canvas-soft p-3 text-xs text-ink-faint">正在读取截图…</div> :
         evidence.status === 'missing' ?
@@ -105,7 +105,7 @@ function Status({ value }: { value: string }) {
   return <span className={`inline-flex rounded-full px-2 py-1 text-xs ${statusClass[value] || 'bg-slate-100 text-slate-600'}`}>{statusLabel[value] || value}</span>
 }
 function PageTitle({ title, desc, action }: { title: string; desc: string; action?: React.ReactNode }) {
-  return <div className="mb-6 flex flex-wrap items-start justify-between gap-3"><div><h1 className="text-2xl font-bold text-ink">{title}</h1><p className="mt-1 text-sm text-ink-mute">{desc}</p></div>{action}</div>
+  return <div className="mb-6 flex flex-wrap items-start justify-between gap-3 rounded-3xl bg-gradient-to-br from-[#175CD3] via-[#2878E8] to-[#38A6D9] p-7 text-white shadow-[0_16px_40px_rgba(37,99,235,0.18)] sm:p-8"><div><div className="text-xs font-semibold tracking-[0.18em] text-blue-100">AI 终端 · 探索工作台</div><h1 className="mt-2 text-2xl font-bold text-white">{title}</h1><p className="mt-1 text-sm text-ink-mute">{desc}</p></div>{action}</div>
 }
 function Empty({ title, desc, action }: { title: string; desc: string; action?: React.ReactNode }) {
   return <div className="rounded-xl border border-dashed border-hairline bg-white px-5 py-12 text-center"><div className="text-sm font-semibold text-ink">{title}</div><p className="mt-1 text-xs text-ink-mute">{desc}</p>{action && <div className="mt-4">{action}</div>}</div>
@@ -204,8 +204,8 @@ function PlanReviewWorkspace() {
 
   return (
     <div className="space-y-5">
-      <section className="rounded-xl border border-hairline bg-white p-4">
-        <div className="flex flex-wrap items-center justify-between gap-3">
+      <section className="rounded-2xl border border-slate-200/80 bg-white shadow-[0_8px_28px_rgba(31,75,135,0.05)] p-4">
+        <div className="flex flex-wrap items-center justify-between gap-3 rounded-3xl bg-gradient-to-br from-[#175CD3] via-[#2878E8] to-[#38A6D9] p-7 text-white shadow-[0_16px_40px_rgba(37,99,235,0.18)] sm:p-8">
           <div><h2 className="text-sm font-semibold">待整理的探索计划</h2><p className="mt-1 text-xs text-ink-mute">只展示 AI 探索生成的计划草稿，选择后可检查、编辑和验证。</p></div>
           <span className="rounded-full bg-primary-soft px-3 py-1 text-xs text-primary-deep">{suites.length} 个探索套件</span>
         </div>
@@ -213,7 +213,7 @@ function PlanReviewWorkspace() {
           suites.length === 0 ? <Empty title="还没有待整理的计划" desc="请先在探索历史中完成一次探索，并点击“生成执行计划草稿”。" action={<Link to="/exploration/history" className="inline-flex rounded-lg border border-hairline px-3 py-2 text-sm">查看探索历史</Link>} /> :
           <div className="mt-4 grid gap-3 md:grid-cols-2">
             <label className="text-xs font-medium text-ink-secondary">探索计划套件
-              <select className="mt-1.5 w-full rounded-lg border border-hairline bg-white px-3 py-2.5 text-sm" value={selectedSuite?.id || ''} onChange={e => { setSearchParams({ suite: e.target.value }); setActiveRunId('') }}>
+              <select className="mt-1.5 w-full rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-sm" value={selectedSuite?.id || ''} onChange={e => { setSearchParams({ suite: e.target.value }); setActiveRunId('') }}>
                 {suites.map(suite => <option key={suite.id} value={suite.id}>{suite.name} · {suite.case_count} 个用例</option>)}
               </select>
             </label>
@@ -365,8 +365,8 @@ export default function ExplorationCenter() {
 
   return <div className="space-y-6">
     <div className="flex flex-wrap items-center justify-between gap-3">
-      <div><div className="text-xs text-ink-faint">AI WORKSPACE / EXPLORATION</div><h1 className="mt-1 text-xl font-bold text-ink">AI 探索中心</h1><p className="mt-1 text-xs text-ink-mute">从自然语言目标出发，沉淀可复用的操作经验与确定性执行计划</p></div>
-      <Link to="/exploration/new" className="rounded-lg bg-primary px-4 py-2.5 text-sm font-medium text-white hover:opacity-90">＋ 新建探索</Link>
+      <div><div className="text-xs font-semibold tracking-[0.18em] text-blue-100">AI 终端 · 探索工作台</div><h1 className="mt-2 text-2xl font-bold text-white">AI 探索中心</h1><p className="mt-1 text-xs text-ink-mute">从自然语言目标出发，沉淀可复用的操作经验与确定性执行计划</p></div>
+      <Link to="/exploration/new" className="rounded-xl bg-white px-4 py-2.5 text-sm font-semibold text-blue-700 shadow-sm transition hover:bg-blue-50">＋ 新建探索</Link>
     </div>
     <div className="flex flex-wrap gap-1 border-b border-hairline">
       {navItems.map(item => <Link key={item.to} to={item.to} className={`border-b-2 px-3 py-2.5 text-sm ${current === item.to ? 'border-primary font-semibold text-primary-deep' : 'border-transparent text-ink-mute hover:text-ink'}`}><span className="mr-1.5">{item.icon}</span>{t(item.zh, item.en)}</Link>)}
