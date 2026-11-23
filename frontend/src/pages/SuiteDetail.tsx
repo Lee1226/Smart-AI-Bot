@@ -288,7 +288,7 @@ export default function SuiteDetail() {
         <div className="min-w-0 space-y-5">
           <div className="flex flex-wrap items-center justify-between gap-4 rounded-2xl border border-slate-200/80 bg-white p-5 shadow-[0_6px_22px_rgba(31,75,135,0.04)]">
             <div className="flex items-center gap-3">
-              <h1 className="text-xl font-bold tracking-tight text-slate-900 sm:text-2xl">{(suite?.name || '').replace(/\.xmind$/i, '')}</h1>
+              <h1 className="text-xl font-bold tracking-tight text-slate-900 sm:text-xl">{(suite?.name || '').replace(/\.xmind$/i, '')}</h1>
               {suite?.source_format === 'recorded' && <Link to={`/execution-plans?suite=${suiteId}`} className="rounded-lg border border-primary/30 bg-primary-soft px-3 py-1.5 text-xs font-medium text-primary-deep hover:bg-primary/10">{t('执行计划调试', 'Plan studio')} ↗</Link>}
             </div>
             <AISuiteImport suiteId={suiteId!} />
