@@ -1,0 +1,46 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128" fill="none">
+  <defs>
+    <linearGradient id="bg" x1="8" y1="10" x2="119" y2="119" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#22E6E5"/>
+      <stop offset=".48" stop-color="#1675FF"/>
+      <stop offset="1" stop-color="#C43BEE"/>
+    </linearGradient>
+    <linearGradient id="screen" x1="42" y1="35" x2="88" y2="95" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#DDFBFF"/>
+      <stop offset=".48" stop-color="#8BDFFF"/>
+      <stop offset="1" stop-color="#D9B8FF"/>
+    </linearGradient>
+    <linearGradient id="circuit" x1="12" y1="50" x2="116" y2="82" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#E9FFFF"/>
+      <stop offset="1" stop-color="#F8E9FF"/>
+    </linearGradient>
+    <filter id="glow" x="0" y="0" width="128" height="128" filterUnits="userSpaceOnUse">
+      <feGaussianBlur stdDeviation="2.2"/>
+    </filter>
+  </defs>
+  <rect x="3" y="3" width="122" height="122" rx="30" fill="url(#bg)"/>
+  <path d="M13 77C27 35 53 14 91 12c14-1 25 3 31 8v82c-19 16-49 19-77 9C24 103 12 92 13 77Z" fill="#fff" fill-opacity=".08"/>
+  <g stroke="url(#circuit)" stroke-width="5" stroke-linecap="round" stroke-linejoin="round">
+    <path d="M13 43h18l10 10h12"/>
+    <path d="M13 85h18l10-10h12"/>
+    <path d="M115 43H97L87 53H75"/>
+    <path d="M115 85H97L87 75H75"/>
+  </g>
+  <g fill="#fff" fill-opacity=".22" filter="url(#glow)">
+    <circle cx="13" cy="43" r="8"/><circle cx="13" cy="85" r="8"/>
+    <circle cx="115" cy="43" r="8"/><circle cx="115" cy="85" r="8"/>
+  </g>
+  <g fill="none" stroke="#fff" stroke-width="4" stroke-linecap="round">
+    <circle cx="13" cy="43" r="5.5"/><circle cx="13" cy="85" r="5.5"/>
+    <circle cx="115" cy="43" r="5.5"/><circle cx="115" cy="85" r="5.5"/>
+  </g>
+  <rect x="42" y="18" width="44" height="92" rx="12" fill="#fff" fill-opacity=".16" stroke="#fff" stroke-width="4"/>
+  <rect x="47" y="28" width="34" height="71" rx="7" fill="url(#screen)" fill-opacity=".22"/>
+  <path d="M59 24h10" stroke="#fff" stroke-width="2.8" stroke-linecap="round"/>
+  <path d="M60 103h8" stroke="#fff" stroke-width="2.8" stroke-linecap="round"/>
+  <g stroke="#fff" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round">
+    <path d="M57 49h14v18H57z" fill="#fff" fill-opacity=".16"/>
+    <path d="M64 45v4M64 67v4M53 58h4M71 58h4"/>
+    <circle cx="64" cy="58" r="3.2" fill="#fff" fill-opacity=".8"/>
+  </g>
+</svg>
