@@ -55,7 +55,7 @@ const NAV_GROUPS: { label: { zh: string; en: string }; items: NavigationItem[] }
     ] },
   ] },
   { label: { zh: '管理', en: 'Manage' }, items: [
-    { to: '/settings', label: { zh: '系统设置', en: 'System settings' }, icon: '⚙', iconStyle: 'from-slate-400 to-slate-600', paths: ['/settings', '/account'] },
+    { to: '/settings', label: { zh: '系统设置', en: 'System settings' }, icon: '⚙', iconStyle: 'from-slate-400 to-slate-600', paths: ['/settings'] },
   ] },
 ]
 const PAGE_TABS = {
