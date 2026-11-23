@@ -880,7 +880,6 @@ export const fetchAudioOutputDevices = () =>
 export const uploadAudioCorpus = async (file: File) => {
   const form = new FormData()
   form.append('file', file)
-  form.append('name', file.name.replace(/\\.[^.]+$/, ''))
   return api.post<AudioCorpusItem>('/audio-corpus', form).then(r => r.data)
 }
 export const deleteAudioCorpus = (id: string) => api.delete(`/audio-corpus/${id}`)
