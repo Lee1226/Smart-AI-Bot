@@ -155,7 +155,7 @@ export default function Devices() {
           <span className="grid h-9 w-9 place-items-center rounded-xl bg-gradient-to-br from-cyan-400 via-blue-500 to-indigo-600 text-xl text-white shadow-md shadow-blue-200/60">▯</span>
           <div>
             <div className="text-[10px] font-bold uppercase tracking-[0.18em] text-blue-500">DEVICE FLEET MANAGEMENT</div>
-            <h1 className="mt-1 text-[22px] font-bold tracking-tight text-[#172744]">{t('设备管理', 'Device management')}</h1>
+            <h1 className="mt-1 text-xl font-bold tracking-tight text-[#172744]">{t('设备管理', 'Device management')}</h1>
             <p className="mt-1 text-sm text-slate-500">{t('统一接入、监控和管理 Android、HarmonyOS 与 iOS 测试终端。', 'Connect, monitor and manage Android, HarmonyOS and iOS test devices.')}</p>
           </div>
         </div>
