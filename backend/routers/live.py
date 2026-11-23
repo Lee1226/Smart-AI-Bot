@@ -280,6 +280,11 @@ async def _run_local_adb_hub(device_id: str, serial: str, hub: dict) -> None:
                 queue.put_nowait(packet)
             except asyncio.QueueFull:
                 recorder["failed"] = True
+                # Capture the real backlog before clearing queues to wake the
+                # recorder with an explicit failure marker.
+                overflow_video_size = recorder["video"].qsize()
+                overflow_audio_size = recorder["audio"].qsize()
+                overflow_queue_size = queue.qsize()
                 for target in (recorder["video"], recorder["audio"]):
                     while not target.empty():
                         try:
