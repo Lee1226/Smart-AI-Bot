@@ -24,10 +24,10 @@ export default function DeviceWall({ devices, selectedId, onSelect }: {
   const shown = showOffline ? devices : online
   const selected = devices.find(d => d.id === selectedId) || null
 
-  return <section className="rounded-[24px] border border-[#E8EFFB] bg-white p-6 shadow-[0_6px_24px_rgba(56,102,174,0.06)]" aria-label={t('设备屏幕墙', 'Device screen wall')}>
-    <div className="flex flex-wrap items-center justify-between gap-3 mb-6">
+  return <section className="rounded-[18px] border border-[#E8EFFB] bg-white p-4 shadow-[0_5px_18px_rgba(56,102,174,0.06)]" aria-label={t('设备屏幕墙', 'Device screen wall')}>
+    <div className="flex flex-wrap items-center justify-between gap-3 mb-4">
       <div>
-        <h2 className="text-xl font-bold text-[#1B2B4A]">{t('实时设备监控', 'Live device monitoring')}</h2>
+        <h2 className="text-lg font-bold text-[#1B2B4A]">{t('实时设备监控', 'Live device monitoring')}</h2>
         <p className="mt-1 text-sm text-slate-500">{t('在线', 'Online')} {online.length} / {devices.length} · {t('小屏默认截图流，点击设备切换右侧预览', 'Thumbnails show screenshots. Select a device for the large preview.')}</p>
       </div>
       <div className="flex flex-wrap items-center gap-4 text-sm">
@@ -45,11 +45,11 @@ export default function DeviceWall({ devices, selectedId, onSelect }: {
         </label>
       </div>
     </div>
-    <div className="grid items-start gap-6 2xl:grid-cols-[minmax(0,1fr)_390px]">
-      <div className={`grid gap-4 ${gridClasses[layout]}`}>
+    <div className="grid items-start gap-4 xl:grid-cols-[minmax(0,1fr)_340px] 2xl:gap-5">
+      <div className={`grid gap-3 ${gridClasses[layout]}`}>
         {shown.map(d => <button key={d.id} type="button" aria-label={`${t('预览设备', 'Preview device')} ${d.name}`} aria-pressed={d.id === selectedId}
-          onClick={() => onSelect(d.id)} className={`min-w-0 rounded-[20px] border border-[#E8EFFB] bg-white p-3 text-left shadow-[0_4px_14px_rgba(56,102,174,0.05)] transition-all ${d.id === selectedId ? 'ring-2 ring-blue-500 border-blue-300 shadow-[0_8px_22px_rgba(52,120,246,0.12)]' : 'hover:-translate-y-0.5 hover:border-blue-200 hover:shadow-md'}`}>
-          <div className="relative bg-terminal rounded-lg overflow-hidden mx-auto" style={{ aspectRatio: '9 / 19.5', maxWidth: 160 }}>
+          onClick={() => onSelect(d.id)} className={`min-w-0 rounded-[16px] border border-[#E8EFFB] bg-white p-2.5 text-left shadow-[0_4px_14px_rgba(56,102,174,0.05)] transition-all ${d.id === selectedId ? 'ring-2 ring-blue-500 border-blue-300 shadow-[0_8px_22px_rgba(52,120,246,0.12)]' : 'hover:-translate-y-0.5 hover:border-blue-200 hover:shadow-md'}`}>
+          <div className="relative bg-terminal rounded-lg overflow-hidden mx-auto" style={{ aspectRatio: '9 / 19.5', maxWidth: 144 }}>
             {d.status === 'online' ? <>
               <ScreenshotView deviceId={d.id} source="screenshot" />
             </> : <span className="absolute inset-0 flex items-center justify-center text-xs text-terminal-mute">{t('设备离线', 'Offline')}</span>}
