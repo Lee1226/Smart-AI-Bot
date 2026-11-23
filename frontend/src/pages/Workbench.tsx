@@ -38,19 +38,19 @@ function MetricCard({ label, value, detail, icon, tone, trend }: { label: string
     orange: { icon: 'from-orange-400 to-amber-500', glow: 'from-orange-50', text: 'text-orange-600' },
   }
   const style = tones[tone]
-  return <div className={`relative min-h-[146px] overflow-hidden rounded-[22px] border border-[#E8EFFB] bg-gradient-to-br ${style.glow} via-white to-white p-6 shadow-[0_5px_18px_rgba(56,102,174,0.07)]`}>
-    <div className="relative z-10 flex items-center gap-5">
-      <span className={`grid h-[62px] w-[62px] shrink-0 place-items-center rounded-[18px] bg-gradient-to-br ${style.icon} text-[30px] text-white shadow-lg shadow-blue-100/70`}>{icon}</span>
+  return <div className={`relative min-h-[132px] overflow-hidden rounded-2xl border border-[#E8EFFB] bg-gradient-to-br ${style.glow} via-white to-white p-5 shadow-[0_5px_18px_rgba(56,102,174,0.07)]`}>
+    <div className="relative z-10 flex items-center gap-4">
+      <span className={`grid h-[52px] w-[52px] shrink-0 place-items-center rounded-2xl bg-gradient-to-br ${style.icon} text-[24px] text-white shadow-lg shadow-blue-100/70`}>{icon}</span>
       <div className="min-w-0">
-        <div className="text-[38px] font-bold leading-none tracking-tight text-[#172744] tabular-nums">{value}</div>
-        <div className="mt-2 text-[17px] font-medium text-slate-500">{label}</div>
+        <div className="text-[32px] font-bold leading-none tracking-tight text-[#172744] tabular-nums">{value}</div>
+        <div className="mt-2 text-[15px] font-medium text-slate-500">{label}</div>
       </div>
     </div>
-    <div className="absolute bottom-5 left-6 flex items-center gap-2 text-sm font-medium text-emerald-500">
+    <div className="absolute bottom-4 left-5 flex items-center gap-2 text-xs font-medium text-emerald-500">
       <span className="text-base">↑</span>{trend}
     </div>
-    <div className="absolute bottom-3 right-4 opacity-90"><TrendLine tone={tone} /></div>
-    <div className="absolute bottom-5 left-[108px] text-xs text-slate-400">{detail}</div>
+    <div className="absolute bottom-2 right-3 opacity-75"><TrendLine tone={tone} /></div>
+    <div className="absolute bottom-4 left-[92px] text-[11px] text-slate-400">{detail}</div>
   </div>
 }
 
@@ -60,13 +60,13 @@ function QuickCard({ to, icon, title, subtitle, tone }: { to: string; icon: stri
     purple: 'from-violet-100 to-purple-50 text-violet-600',
     teal: 'from-teal-100 to-cyan-50 text-teal-600',
   }
-  return <Link to={to} className="group flex min-h-[128px] items-center gap-5 rounded-[22px] border border-white/80 bg-white/80 p-6 shadow-[0_7px_24px_rgba(58,104,176,0.06)] transition-all hover:-translate-y-1 hover:border-blue-100 hover:shadow-[0_12px_30px_rgba(58,104,176,0.12)]">
-    <span className={`grid h-[76px] w-[76px] shrink-0 place-items-center rounded-[22px] bg-gradient-to-br text-[38px] ${tones[tone]}`}>{icon}</span>
+  return <Link to={to} className="group flex min-h-[112px] items-center gap-4 rounded-2xl border border-white/80 bg-white/80 p-5 shadow-[0_7px_24px_rgba(58,104,176,0.06)] transition-all hover:-translate-y-1 hover:border-blue-100 hover:shadow-[0_12px_30px_rgba(58,104,176,0.12)]">
+    <span className={`grid h-[60px] w-[60px] shrink-0 place-items-center rounded-2xl bg-gradient-to-br text-[30px] ${tones[tone]}`}>{icon}</span>
     <span className="min-w-0 flex-1">
-      <span className="block text-xl font-semibold text-[#1B2B4A]">{title}</span>
+      <span className="block text-lg font-semibold text-[#1B2B4A]">{title}</span>
       <span className="mt-2 block text-sm text-slate-400">{subtitle}</span>
     </span>
-    <span className="text-3xl text-slate-300 transition-transform group-hover:translate-x-1 group-hover:text-blue-500">›</span>
+    <span className="text-2xl text-slate-300 transition-transform group-hover:translate-x-1 group-hover:text-blue-500">›</span>
   </Link>
 }
 
@@ -88,15 +88,15 @@ export default function Workbench() {
   const failedRecent = runs.filter(run => ['failed', 'error', 'errored'].includes(run.status)).length
   const loading = devicesQuery.isLoading || runsQuery.isLoading
 
-  return <div className="space-y-9">
-    <section className="relative isolate flex min-h-[360px] items-center overflow-hidden rounded-[26px] bg-gradient-to-br from-[#D7F1FF] via-[#C7E1FF] to-[#C9C8FF] px-8 py-10 shadow-[0_12px_32px_rgba(73,133,213,0.13)] sm:px-11 xl:min-h-[420px] xl:px-12">
+  return <div className="space-y-8">
+    <section className="relative isolate flex min-h-[300px] items-center overflow-hidden rounded-2xl bg-gradient-to-br from-[#D7F1FF] via-[#C7E1FF] to-[#C9C8FF] px-7 py-8 shadow-[0_10px_26px_rgba(73,133,213,0.11)] sm:px-9 xl:min-h-[340px] xl:px-10">
       <div className="absolute inset-0 -z-10 bg-[radial-gradient(circle_at_12%_16%,rgba(255,255,255,0.75),transparent_38%),linear-gradient(135deg,transparent_48%,rgba(255,255,255,0.18)_48.2%,transparent_68%)]" />
       <div className="relative z-10 max-w-[58%]">
-        <div className="mb-5 inline-flex items-center gap-2 rounded-full border border-white/60 bg-white/40 px-4 py-2 text-xs font-semibold tracking-[0.16em] text-blue-700 backdrop-blur">AI TERMINAL TESTING PLATFORM</div>
-        <h1 className="text-3xl font-bold leading-[1.35] tracking-tight text-[#10213E] sm:text-4xl xl:text-[42px]">欢迎使用<br className="hidden sm:block" />翼矩AI终端测试系统</h1>
-        <p className="mt-6 text-lg font-medium text-slate-600 sm:text-xl">让终端测试更智能、更高效</p>
-        <Link to="/quick" className="mt-9 inline-flex items-center gap-3 rounded-full bg-gradient-to-r from-blue-600 to-blue-500 px-7 py-4 text-base font-semibold text-white shadow-lg shadow-blue-400/30 transition hover:-translate-y-0.5 hover:shadow-xl">
-          <span className="text-lg">▶</span>开始工作
+        <div className="mb-4 inline-flex items-center gap-2 rounded-full border border-white/60 bg-white/40 px-3 py-1.5 text-[11px] font-semibold tracking-[0.16em] text-blue-700 backdrop-blur">AI TERMINAL TESTING PLATFORM</div>
+        <h1 className="text-3xl font-bold leading-[1.3] tracking-tight text-[#10213E] sm:text-3xl xl:text-[36px]">欢迎使用<br className="hidden sm:block" />翼矩AI终端测试系统</h1>
+        <p className="mt-4 text-base font-medium text-slate-600 sm:text-lg">让终端测试更智能、更高效</p>
+        <Link to="/quick" className="mt-7 inline-flex items-center gap-2 rounded-full bg-gradient-to-r from-blue-600 to-blue-500 px-6 py-3 text-sm font-semibold text-white shadow-lg shadow-blue-400/30 transition hover:-translate-y-0.5 hover:shadow-xl">
+          <span className="text-base">▶</span>开始工作
         </Link>
       </div>
       <img src="/workbench-hero.svg" alt="" className="pointer-events-none absolute -right-2 bottom-0 top-0 h-full w-[56%] object-contain object-center" />
@@ -112,8 +112,8 @@ export default function Workbench() {
       <MetricCard label="录像文件" value={recordingTotal.toLocaleString()} detail="已保存的测试录像" icon="▶" tone="orange" trend={`+${recordingTotal}`} />
     </section>
 
-    <section className="space-y-5">
-      <div className="flex items-center gap-4"><span className="h-9 w-[6px] rounded-full bg-gradient-to-b from-blue-500 to-indigo-500" /><h2 className="text-[27px] font-bold tracking-tight text-[#1A2A48]">快速开始</h2></div>
+    <section className="space-y-4">
+      <div className="flex items-center gap-4"><span className="h-8 w-1 rounded-full bg-gradient-to-b from-blue-500 to-indigo-500" /><h2 className="text-xl font-bold tracking-tight text-[#1A2A48]">快速开始</h2></div>
       <div className="grid gap-4 xl:grid-cols-3">
         <QuickCard to="/quick" icon="🚀" title="创建测试任务" subtitle="快速创建并执行测试任务" tone="blue" />
         <QuickCard to="/suites" icon="⬡" title="管理用例" subtitle="管理测试用例库" tone="purple" />
