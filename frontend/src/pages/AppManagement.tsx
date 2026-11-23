@@ -51,9 +51,9 @@ export default function AppManagement() {
   const toggleTestApp = (app: DeviceApp) => saveMutation.mutate({ app, app_name: app.app_name, is_test_app: !app.is_test_app })
 
   return <div className="mx-auto max-w-[1600px] space-y-6">
-    <header className="relative overflow-hidden rounded-3xl bg-gradient-to-br from-[#175CD3] via-[#2878E8] to-[#38A6D9] px-7 py-7 text-white shadow-[0_18px_45px_rgba(37,99,235,0.16)] sm:px-9">
+    <header className="relative overflow-hidden rounded-2xl bg-gradient-to-br from-[#175CD3] via-[#2878E8] to-[#38A6D9] px-5 py-5 text-white shadow-[0_18px_45px_rgba(37,99,235,0.16)] sm:px-6">
       <div className="pointer-events-none absolute -right-12 -top-20 h-64 w-64 rounded-full border-[36px] border-white/10" /><div className="relative"><div className="mb-3 inline-flex rounded-full border border-white/20 bg-white/10 px-3 py-1 text-xs font-semibold text-blue-50">AI 终端 · 应用管理</div>
-        <h1 className="text-2xl font-bold tracking-tight text-white sm:text-3xl">设备应用库</h1>
+        <h1 className="text-xl font-bold tracking-tight text-white sm:text-2xl">设备应用库</h1>
         <p className="mt-2 max-w-2xl text-sm leading-6 text-blue-50/90">发现设备上的可启动应用，确认应用身份并标记为测试应用，供执行步骤统一调用。</p></div>
       <button onClick={() => void refetch()} disabled={!activeId || isFetching} className="relative rounded-xl border border-white/25 bg-white/10 px-4 py-2.5 text-sm font-semibold text-white backdrop-blur transition hover:bg-white/20 disabled:opacity-50">{isFetching ? '正在刷新…' : '↻ 刷新应用'}</button>
     </header>
