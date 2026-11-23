@@ -29,6 +29,7 @@ import AppManagement from './pages/AppManagement'
 import ExplorationCenter from './pages/ExplorationCenter'
 import SkillLibrary from './pages/SkillLibrary'
 import OpenPlatform from './pages/OpenPlatform'
+import OpenApiDocs from './pages/OpenApiDocs'
 
 type NavigationItem = { to: string; label: { zh: string; en: string }; icon: string; iconStyle: string; paths: string[]; children?: NavigationItem[] }
 const NAV_GROUPS: { label: { zh: string; en: string }; items: NavigationItem[] }[] = [
@@ -52,6 +53,7 @@ const NAV_GROUPS: { label: { zh: string; en: string }; items: NavigationItem[] }
     { to: '/open-platform', label: { zh: '开放平台', en: 'Open platform' }, icon: '⇧', iconStyle: 'from-blue-500 to-cyan-600', paths: ['/open-platform'], children: [
       { to: '/open-platform', label: { zh: 'API 概览', en: 'API overview' }, icon: '⌂', iconStyle: 'from-blue-500 to-cyan-600', paths: ['/open-platform'] },
       { to: '/open-platform/keys', label: { zh: 'API 密钥', en: 'API keys' }, icon: '⚿', iconStyle: 'from-indigo-500 to-blue-600', paths: ['/open-platform/keys'] },
+      { to: '/open-platform/docs', label: { zh: '接口文档', en: 'API docs' }, icon: '▤', iconStyle: 'from-cyan-500 to-blue-600', paths: ['/open-platform/docs'] },
     ] },
   ] },
   { label: { zh: '管理', en: 'Manage' }, items: [
@@ -338,6 +340,7 @@ function AppLayout() {
               <Route path="/runs/:runId" element={<RunDetail />} />
               <Route path="/open-platform" element={<OpenPlatform />} />
               <Route path="/open-platform/keys" element={<Account />} />
+              <Route path="/open-platform/docs" element={<OpenApiDocs />} />
               <Route path="/account" element={<Navigate to="/open-platform/keys" replace />} />
               <Route path="/settings" element={<PageTabs section="settings"><Settings /></PageTabs>} />
               <Route path="/settings/recording" element={<PageTabs section="settings"><RecordingSettings /></PageTabs>} />
