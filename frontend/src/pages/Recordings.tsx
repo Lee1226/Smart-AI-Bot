@@ -72,18 +72,18 @@ export default function Recordings() {
   }, [page, totalPages])
 
   return <div className="space-y-6">
-    <header className="relative overflow-hidden rounded-3xl bg-gradient-to-br from-[#175CD3] via-[#2878E8] to-[#38A6D9] p-7 text-white shadow-[0_16px_40px_rgba(37,99,235,0.20)] sm:p-8">
+    <header className="relative overflow-hidden rounded-2xl bg-gradient-to-br from-[#175CD3] via-[#2878E8] to-[#38A6D9] p-5 text-white shadow-[0_16px_40px_rgba(37,99,235,0.20)] sm:p-6">
       <div>
         <div className="text-xs font-semibold tracking-[0.18em] text-blue-100">AI 终端 · 录像资产管理</div>
-        <h1 className="mt-2 text-3xl font-bold tracking-tight text-white">录像文件</h1>
+        <h1 className="mt-2 text-2xl font-bold tracking-tight text-white">录像文件</h1>
         <p className="mt-2 text-sm text-blue-100">集中查看、预览和下载测试任务生成的屏幕录像，管理录像文件与存储空间。</p>
       </div>
       <button onClick={() => void refetch()} className="rounded-xl border border-white/30 bg-white/15 px-4 py-2.5 text-sm font-medium text-white backdrop-blur transition-colors hover:bg-white/25">↻ 刷新列表</button>
     </header>
 
     <section className="grid gap-4 sm:grid-cols-3">
-      <div className="rounded-2xl border border-slate-200/80 bg-white p-5 shadow-[0_8px_28px_rgba(31,75,135,0.05)]"><div className="text-xs text-ink-mute">录像数量</div><div className="mt-2 text-2xl font-semibold tabular-nums text-ink">{data?.total ?? 0}</div></div>
-      <div className="rounded-xl border border-hairline bg-white p-4"><div className="text-xs text-ink-mute">占用空间</div><div className="mt-2 text-2xl font-semibold tabular-nums text-ink">{formatBytes(data?.total_bytes ?? 0)}</div></div>
+      <div className="rounded-2xl border border-slate-200/80 bg-white p-5 shadow-[0_8px_28px_rgba(31,75,135,0.05)]"><div className="text-xs text-ink-mute">录像数量</div><div className="mt-2 text-xl font-semibold tabular-nums text-ink">{data?.total ?? 0}</div></div>
+      <div className="rounded-xl border border-hairline bg-white p-4"><div className="text-xs text-ink-mute">占用空间</div><div className="mt-2 text-xl font-semibold tabular-nums text-ink">{formatBytes(data?.total_bytes ?? 0)}</div></div>
       <div className="rounded-xl border border-hairline bg-white p-4"><div className="text-xs text-ink-mute">存储目录</div><div className="mt-2 break-all text-xs font-mono text-ink">{data?.storage_dir ?? '加载中…'}</div></div>
     </section>
 
