@@ -63,7 +63,7 @@ export default function Workbench() {
   return <div className="space-y-7">
     <header className="flex flex-wrap items-end justify-between gap-4">
       <div>
-        <div className="text-xs font-semibold tracking-[0.18em] text-primary uppercase">SMART DEVICE TESTING PLATFORM</div>
+        <div className="text-xs font-semibold tracking-[0.18em] text-primary uppercase">AI TERMINAL TESTING PLATFORM</div>
         <h1 className="mt-2 text-3xl font-semibold tracking-tight text-ink">测试工作台</h1>
         <p className="mt-2 text-sm text-ink-mute">统一查看设备接入、Agent 调试与自动化测试运行状态。</p>
       </div>
