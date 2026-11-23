@@ -359,7 +359,7 @@ async def run_execution_plan(
             intent = step.get("intent") if isinstance(step.get("intent"), dict) else {}
             if intent.get("status") != "confirmed" or not str(intent.get("description") or "").strip() or not str(intent.get("expected_result") or "").strip():
                 raise HTTPException(status_code=422, detail=f"步骤 {index + 1} 的操作意图尚未确认")
-        if executor == "system" and action not in SYSTEM_ACTIONS:
+        if executor == "system" and action not in SYSTEM_ACTIONS and action != "audio_play":
             raise HTTPException(status_code=422, detail=f"步骤 {index + 1} 不支持系统动作：{action}")
         args = step.get("args") if isinstance(step.get("args"), dict) else {}
         if action == "start_app" and not str(args.get("package_name") or args.get("package") or "").strip():
