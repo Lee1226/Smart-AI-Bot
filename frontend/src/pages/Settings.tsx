@@ -147,17 +147,6 @@ export default function Settings() {
   const [clearSecrets, setClearSecrets] = useState<string[]>([])
   const [showOthers, setShowOthers] = useState(false)
   const [showAdvanced, setShowAdvanced] = useState(false)
-  const [cliCopied, setCliCopied] = useState(false)
-
-  // CLI download — address follows the current deployment origin (dynamic, not hard-coded)
-  const cliDownloadUrl = `${window.location.origin}/api/app/cli/download`
-  const installCommand = `curl -fsSL ${cliDownloadUrl} -o /usr/local/bin/sab && chmod +x /usr/local/bin/sab`
-  const copyInstallCmd = async () => {
-    try {
-      await navigator.clipboard.writeText(installCommand)
-      setCliCopied(true); setTimeout(() => setCliCopied(false), 2000)
-    } catch { /* clipboard may be blocked on http */ }
-  }
 
   useEffect(() => { if (remote) setForm(remote) }, [remote])
 
@@ -248,32 +237,6 @@ export default function Settings() {
             <option value="en">English</option>
           </select>
           <p className="text-xs text-gray-400 mt-1">{t('AI 的思考 / 理由 / 校验结论 / 计划 与测试报告都用这个语言。', "The AI's thinking / reasoning / verification conclusions / plans and the test report all use this language.")}</p>
-        </div>
-
-        {/* ── CLI download (sab) ── */}
-        <div className="border-t pt-3">
-          <h3 className="text-sm font-medium">{t('CLI 下载', 'CLI Download')}</h3>
-          <p className="text-xs text-gray-400 mt-1 mb-3">
-            {t('下载 sab 命令行工具，从脚本 / CI / AI 触发自动化测试。下载地址与安装命令跟随当前部署环境自动生成。', 'Download the sab CLI to trigger automated tests from scripts / CI / AI. The URL follows the current deployment.')}
-          </p>
-          <div className="flex items-center gap-2 mb-2">
-            <a
-              href={cliDownloadUrl}
-              download="sab"
-              className="px-3 py-1.5 bg-primary text-white text-sm rounded hover:bg-primary-deep"
-            >
-              {t('下载 sab', 'Download sab')}
-            </a>
-            <button
-              onClick={copyInstallCmd}
-              className="px-3 py-1.5 border border-gray-300 text-sm rounded hover:bg-gray-50"
-            >
-              {cliCopied ? t('✓ 已复制', '✓ Copied') : t('复制安装命令', 'Copy install command')}
-            </button>
-          </div>
-          <code className="block bg-gray-50 border rounded px-3 py-2 text-xs font-mono text-gray-700 break-all">
-            {installCommand}
-          </code>
         </div>
 
         {/* ── Agent Model + selected provider's credentials ── */}
