@@ -81,7 +81,7 @@ export default function Knowledge() {
 
   return (
     <div className="mx-auto max-w-[1600px] space-y-6">
-      <header className="relative overflow-hidden rounded-3xl bg-gradient-to-br from-[#175CD3] via-[#2878E8] to-[#38A6D9] px-7 py-7 text-white shadow-[0_18px_45px_rgba(37,99,235,0.16)] sm:px-9"><div className="pointer-events-none absolute -right-12 -top-20 h-64 w-64 rounded-full border-[36px] border-white/10" /><div className="relative"><div className="mb-3 inline-flex rounded-full border border-white/20 bg-white/10 px-3 py-1 text-xs font-semibold text-blue-50">AI 终端 · 知识沉淀</div><h1 className="text-2xl font-bold tracking-tight text-white sm:text-3xl">{t('知识库', 'Knowledge')}</h1>
+      <header className="relative overflow-hidden rounded-2xl bg-gradient-to-br from-[#175CD3] via-[#2878E8] to-[#38A6D9] px-5 py-5 text-white shadow-[0_18px_45px_rgba(37,99,235,0.16)] sm:px-6"><div className="pointer-events-none absolute -right-12 -top-20 h-64 w-64 rounded-full border-[36px] border-white/10" /><div className="relative"><div className="mb-3 inline-flex rounded-full border border-white/20 bg-white/10 px-3 py-1 text-xs font-semibold text-blue-50">AI 终端 · 知识沉淀</div><h1 className="text-xl font-bold tracking-tight text-white sm:text-2xl">{t('知识库', 'Knowledge')}</h1>
       <p className="mt-2 max-w-3xl text-sm leading-6 text-blue-50/90">
         {t(
           '用大白话说一条关于被测 App 的知识（黑话、功能、入口、坑点都行），AI 会整理后记录下来，方便日后查询。',
