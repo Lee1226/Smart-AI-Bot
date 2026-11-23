@@ -11,7 +11,7 @@ from typing import Any, Dict, List, Tuple
 
 SUPPORTED_ACTIONS = {
     "tap", "tap_element", "scroll", "swipe", "input_text",
-    "global_action", "press_key", "start_app",
+    "global_action", "press_key", "start_app", "audio_play",
 }
 
 # These actions use the device/system bridge, not on-screen element locators.
