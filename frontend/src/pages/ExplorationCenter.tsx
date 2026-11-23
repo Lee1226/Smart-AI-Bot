@@ -105,7 +105,7 @@ function Status({ value }: { value: string }) {
   return <span className={`inline-flex rounded-full px-2 py-1 text-xs ${statusClass[value] || 'bg-slate-100 text-slate-600'}`}>{statusLabel[value] || value}</span>
 }
 function PageTitle({ title, desc, action }: { title: string; desc: string; action?: React.ReactNode }) {
-  return <div className="mb-6 flex flex-wrap items-start justify-between gap-3 rounded-3xl bg-gradient-to-br from-[#175CD3] via-[#2878E8] to-[#38A6D9] p-7 text-white shadow-[0_16px_40px_rgba(37,99,235,0.18)] sm:p-8"><div><div className="text-xs font-semibold tracking-[0.18em] text-blue-100">AI 终端 · 探索工作台</div><h1 className="mt-2 text-2xl font-bold text-white">{title}</h1><p className="mt-2 text-sm leading-6 text-blue-100">{desc}</p></div>{action}</div>
+  return <div className="mb-6 flex flex-wrap items-start justify-between gap-3 rounded-2xl bg-gradient-to-br from-[#175CD3] via-[#2878E8] to-[#38A6D9] p-5 text-white shadow-[0_16px_40px_rgba(37,99,235,0.18)] sm:p-6"><div><div className="text-xs font-semibold tracking-[0.18em] text-blue-100">AI 终端 · 探索工作台</div><h1 className="mt-2 text-xl font-bold text-white">{title}</h1><p className="mt-2 text-sm leading-6 text-blue-100">{desc}</p></div>{action}</div>
 }
 function Empty({ title, desc, action }: { title: string; desc: string; action?: React.ReactNode }) {
   return <div className="rounded-xl border border-dashed border-hairline bg-white px-5 py-12 text-center"><div className="text-sm font-semibold text-ink">{title}</div><p className="mt-1 text-xs text-ink-mute">{desc}</p>{action && <div className="mt-4">{action}</div>}</div>
@@ -205,7 +205,7 @@ function PlanReviewWorkspace() {
   return (
     <div className="space-y-5">
       <section className="rounded-2xl border border-slate-200/80 bg-white shadow-[0_8px_28px_rgba(31,75,135,0.05)] p-4">
-        <div className="flex flex-wrap items-center justify-between gap-3 rounded-3xl bg-gradient-to-br from-[#175CD3] via-[#2878E8] to-[#38A6D9] p-7 text-white shadow-[0_16px_40px_rgba(37,99,235,0.18)] sm:p-8">
+        <div className="flex flex-wrap items-center justify-between gap-3 rounded-2xl bg-gradient-to-br from-[#175CD3] via-[#2878E8] to-[#38A6D9] p-5 text-white shadow-[0_16px_40px_rgba(37,99,235,0.18)] sm:p-6">
           <div><h2 className="text-sm font-semibold">待整理的探索计划</h2><p className="mt-2 text-xs leading-5 text-blue-100">只展示 AI 探索生成的计划草稿，选择后可检查、编辑和验证。</p></div>
           <span className="rounded-full bg-primary-soft px-3 py-1 text-xs text-primary-deep">{suites.length} 个探索套件</span>
         </div>
@@ -364,8 +364,8 @@ export default function ExplorationCenter() {
   const onlineDevices = useMemo(() => devices.filter((device: Device) => device.status === 'online'), [devices])
 
   return <div className="space-y-6">
-    <div className="flex flex-wrap items-center justify-between gap-4 rounded-3xl bg-gradient-to-br from-[#175CD3] via-[#2878E8] to-[#38A6D9] p-7 text-white shadow-[0_16px_40px_rgba(37,99,235,0.18)] sm:p-8">
-      <div><div className="text-xs font-semibold tracking-[0.18em] text-blue-100">AI 终端 · 探索工作台</div><h1 className="mt-2 text-2xl font-bold text-white">AI 探索中心</h1><p className="mt-2 text-sm leading-6 text-blue-100">从自然语言目标出发，沉淀可复用的操作经验与确定性执行计划</p></div>
+    <div className="flex flex-wrap items-center justify-between gap-4 rounded-2xl bg-gradient-to-br from-[#175CD3] via-[#2878E8] to-[#38A6D9] p-5 text-white shadow-[0_16px_40px_rgba(37,99,235,0.18)] sm:p-6">
+      <div><div className="text-xs font-semibold tracking-[0.18em] text-blue-100">AI 终端 · 探索工作台</div><h1 className="mt-2 text-xl font-bold text-white">AI 探索中心</h1><p className="mt-2 text-sm leading-6 text-blue-100">从自然语言目标出发，沉淀可复用的操作经验与确定性执行计划</p></div>
       <Link to="/exploration/new" className="rounded-xl bg-white px-4 py-2.5 text-sm font-semibold text-blue-700 shadow-sm transition hover:bg-blue-50">＋ 新建探索</Link>
     </div>
     <div className="flex flex-wrap gap-1 border-b border-hairline">
