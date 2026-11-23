@@ -1,6 +1,7 @@
 """FastAPI middleware that resolves Authorization header into request.state."""
 
 import hashlib
+import json
 import logging
 import os
 import re
@@ -136,6 +137,11 @@ class AuthMiddleware(BaseHTTPMiddleware):
                         request.state.auth_type = "apikey"
                         request.state.api_key_created_by = api_key.created_by
                         request.state.api_key_name = api_key.name
+                        try:
+                            stored_permissions = json.loads(api_key.permissions or "[]")
+                            request.state.permissions = [p for p in stored_permissions if isinstance(p, str)] if isinstance(stored_permissions, list) else []
+                        except (TypeError, ValueError):
+                            request.state.permissions = []
                         creator = await db.get(User, api_key.created_by) if api_key.created_by else None
                         if creator and creator.account_id == api_key.account_id:
                             request.state.user_id = creator.id
@@ -163,6 +169,8 @@ class AuthMiddleware(BaseHTTPMiddleware):
         # All /api/* requests require auth (except public auth endpoints & public downloads)
         path = request.url.path
         if path.startswith("/api/") and not _is_public_api(path):
+            if getattr(request.state, "auth_type", "") == "apikey" and not path.startswith("/api/open/v1"):
+                return JSONResponse(status_code=403, content={"detail": "API keys can only access the Open API v1 endpoints"})
             if request.state.account_id is None:
                 return JSONResponse(
                     status_code=401,
