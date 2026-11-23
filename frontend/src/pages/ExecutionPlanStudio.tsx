@@ -37,14 +37,14 @@ export default function ExecutionPlanStudio() {
 
   return (
     <div className="mx-auto max-w-[1600px] space-y-6">
-      <header className="relative overflow-hidden rounded-3xl bg-gradient-to-br from-[#175CD3] via-[#2878E8] to-[#38A6D9] px-7 py-7 text-white shadow-[0_18px_45px_rgba(37,99,235,0.16)] sm:px-9">
+      <header className="relative overflow-hidden rounded-2xl bg-gradient-to-br from-[#175CD3] via-[#2878E8] to-[#38A6D9] px-5 py-5 text-white shadow-[0_18px_45px_rgba(37,99,235,0.16)] sm:px-6">
         <div>
           <div className="mb-3 flex items-center gap-2 text-xs text-blue-100/90">
             <Link to="/suites" className="hover:text-white">{t('用例中心', 'Cases')}</Link>
             <span>/</span>
             <span>{t('执行计划调试', 'Execution plan studio')}</span>
           </div>
-          <h1 className="text-2xl font-bold tracking-tight text-white sm:text-3xl">{t('执行计划调试工作台', 'Execution Plan Studio')}</h1>
+          <h1 className="text-xl font-bold tracking-tight text-white sm:text-2xl">{t('执行计划调试工作台', 'Execution Plan Studio')}</h1>
           <p className="mt-2 max-w-3xl text-sm leading-6 text-blue-50/90">
             {t('集中管理录制用例与 AI 探索生成的执行计划，检查每一步的执行器、定位条件和验证规则。保存会创建新版本，不覆盖历史计划。', 'Manage recorded and AI-exploration plans, inspect executors, locators and verification rules. Saving creates a new version without overwriting history.')}
           </p>
