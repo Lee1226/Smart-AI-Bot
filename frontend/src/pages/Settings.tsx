@@ -228,9 +228,9 @@ export default function Settings() {
 
   return (
     <div className="mx-auto max-w-5xl space-y-6">
-      <header className="rounded-3xl bg-gradient-to-br from-[#175CD3] via-[#2878E8] to-[#38A6D9] p-7 text-white shadow-[0_16px_40px_rgba(37,99,235,0.18)] sm:p-8">
+      <header className="rounded-2xl bg-gradient-to-br from-[#175CD3] via-[#2878E8] to-[#38A6D9] p-5 text-white shadow-[0_16px_40px_rgba(37,99,235,0.18)] sm:p-6">
         <div className="text-xs font-semibold tracking-[0.18em] text-blue-100">AI 终端 · 平台配置</div>
-        <h1 className="mt-2 text-2xl font-bold">平台设置</h1>
+        <h1 className="mt-2 text-xl font-bold">平台设置</h1>
         <p className="mt-2 text-sm text-blue-100">配置语言、Agent 模型、服务凭证、验证模型与通知方式。</p>
       </header>
 
