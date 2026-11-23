@@ -75,7 +75,7 @@ export default function QuickRun() {
             <span className="h-1.5 w-1.5 rounded-full bg-cyan-200" />
             {t('AI 终端 · 任务执行', 'AI Device · Task execution')}
           </div>
-          <h1 className="text-xl font-bold tracking-tight sm:text-2xl">{t('快速任务', 'Quick Task')}</h1>
+          <h1 className="text-xl font-bold tracking-tight sm:text-xl">{t('快速任务', 'Quick Task')}</h1>
           <p className="mt-3 max-w-xl text-sm leading-6 text-blue-50/90">{t('描述目标，选择设备与执行模型，让 Agent 在真实终端上完成操作并验证结果。', 'Describe the goal, choose a device and model, and let the agent execute and verify it on a real device.')}</p>
         </div>
       </div>
