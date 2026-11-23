@@ -306,7 +306,7 @@ async def execute_execution_plan_run(
                 raise ValueError(f"步骤 {index + 1} 动作类型不受支持：{action}")
             if executor not in {"deterministic", "ai", "hybrid", "system"}:
                 raise ValueError(f"步骤 {index + 1} 执行方式无效：{executor}")
-            if executor == "system" and action not in {"start_app", "global_action", "press_key"}:
+            if executor == "system" and action not in {"start_app", "global_action", "press_key", "audio_play"}:
                 raise ValueError(f"步骤 {index + 1} 不支持系统动作：{action}")
             if executor in {"ai", "hybrid"}:
                 intent = step.get("intent") if isinstance(step.get("intent"), dict) else {}
@@ -320,7 +320,66 @@ async def execute_execution_plan_run(
             step_tokens = 0
             step_verified = False
             try:
-                if executor == "ai":
+                if action == "audio_play":
+                    from db.audio_models import AudioCorpus
+                    from core.audio_player import play_audio_file
+                    turns = step.get("args", {}).get("turns", [])
+                    volume = int(step.get("args", {}).get("volume_percent", 80))
+                    output_device = step.get("args", {}).get("output_device_index")
+                    output_device = int(output_device) if output_device not in (None, "") else None
+                    if not isinstance(turns, list) or not turns or len(turns) > 20:
+                        raise ValueError("音频播放步骤必须配置 1..20 轮语料")
+                    round_summaries = []
+                    for round_index, turn in enumerate(turns):
+                        corpus_id = str(turn.get("corpus_id") or "").strip()
+                        async with AsyncSessionLocal() as audio_db:
+                            audio_item = (await audio_db.execute(select(AudioCorpus).where(
+                                AudioCorpus.id == corpus_id,
+                                AudioCorpus.account_id == account_id,
+                            ))).scalar_one_or_none()
+                            if audio_item is None:
+                                raise ValueError(f"第 {round_index + 1} 轮音频语料不存在或无权访问")
+                            audio_path = audio_item.storage_path
+                            audio_name = audio_item.name
+                            audio_transcript = audio_item.transcript or ""
+                            audio_expected = audio_item.expected_result or ""
+                        await emit(f"  音频第 {round_index + 1}/{len(turns)} 轮：开始播放 {audio_name}")
+                        playback = await play_audio_file(audio_path, output_device, volume)
+                        wait_ms = max(0, min(int(turn.get("wait_after_ms", 12000)), 120000))
+                        await emit(f"  音频播放完成，固定等待 {wait_ms} ms（不代表已检测到回答结束）")
+                        if wait_ms:
+                            await asyncio.sleep(wait_ms / 1000)
+                        round_shot = ""
+                        try:
+                            round_shot = base64.b64encode(await device.screenshot()).decode("ascii")
+                        except Exception as screenshot_error:
+                            await emit(f"  本轮截图采集失败：{screenshot_error}")
+                        round_result = (
+                            f"语料={audio_name}; 播放={playback['started_at']}~{playback['finished_at']}; "
+                            f"音频时长={playback['duration_seconds']}s; 固定等待={wait_ms}ms"
+                        )
+                        round_summaries.append({
+                            "round": round_index + 1, "corpus_id": corpus_id, "name": audio_name,
+                            "transcript": audio_transcript, "expected_result": audio_expected,
+                            "playback": playback, "wait_after_ms": wait_ms,
+                        })
+                        async with AsyncSessionLocal() as audio_db:
+                            audio_db.add(TestStepLog(
+                                result_id=result.id, step=index + 1,
+                                thought=audio_transcript or f"音频第 {round_index + 1} 轮",
+                                action=f"system:audio_play:round_{round_index + 1}",
+                                action_result=round_result, screenshot_b64=round_shot,
+                                account_id=account_id,
+                            ))
+                            await audio_db.commit()
+                        await emit(f"  ✓ 第 {round_index + 1} 轮完成；已保存本轮截图证据")
+                    step_result = f"音频播放完成，共 {len(round_summaries)} 轮；每轮按固定等待时间采集截图"
+                    step_verified = False
+                    action_history.append({
+                        "step": index + 1, "executor": executor, "action": action,
+                        "result": step_result, "audio_rounds": round_summaries,
+                    })
+                elif executor == "ai":
                     ai_result = await _execute_ai(
                         device, step, provider, model, api_key, api_base,
                         fallbacks, language, max_steps, emit, login_context, target_package,
