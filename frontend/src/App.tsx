@@ -198,10 +198,10 @@ function AppLayout() {
 
   return (
     <div className="min-h-screen bg-canvas-soft text-ink">
-      <header className="relative z-20 flex h-[104px] shrink-0 items-center border-b border-hairline bg-white/95 px-6 shadow-[0_2px_18px_rgba(39,87,150,0.04)] backdrop-blur-xl lg:px-8">
+      <header className="relative z-20 flex h-[132px] shrink-0 items-center border-b border-hairline bg-white/95 px-6 shadow-[0_2px_18px_rgba(39,87,150,0.04)] backdrop-blur-xl lg:px-8 2xl:h-[170px] 2xl:px-[42px]">
         <div className="flex min-w-0 items-center gap-5">
-          <img src="/brand-icon.svg" alt="" className="h-16 w-16 shrink-0 rounded-[18px] shadow-lg shadow-blue-200/50" />
-          <span className="whitespace-nowrap text-xl font-bold tracking-tight text-slate-900 sm:text-2xl xl:text-[28px]">AI 终端智能测试平台</span>
+          <img src="/brand-icon.svg" alt="" className="h-[94px] w-[94px] shrink-0 rounded-[24px] shadow-lg shadow-blue-200/50 2xl:h-[126px] 2xl:w-[130px] 2xl:rounded-[30px]" />
+          <span className="whitespace-nowrap text-2xl font-bold tracking-tight text-slate-900 sm:text-3xl 2xl:text-[46px]">AI 终端智能测试平台</span>
         </div>
         <div className="mx-6 hidden h-14 w-px bg-slate-200 md:block" />
         <button
@@ -221,15 +221,15 @@ function AppLayout() {
         <div className="ml-auto flex shrink-0 items-center gap-5 sm:gap-8">
           <div className="hidden h-14 w-px bg-slate-200 sm:block" />
           <div className="relative grid h-11 w-11 place-items-center text-[28px] text-slate-700" aria-label={t('通知', 'Notifications')}>
-            <span aria-hidden="true">♧</span>
+            <svg aria-hidden="true" viewBox="0 0 24 24" className="h-8 w-8" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><path d="M18 8a6 6 0 0 0-12 0c0 7-3 7-3 9h18c0-2-3-2-3-9"/><path d="M10 21h4"/></svg>
             <span className="absolute right-1 top-1 h-2.5 w-2.5 rounded-full border-2 border-white bg-rose-400" />
           </div>
           <UserMenu />
         </div>
       </header>
 
-      <div className="flex min-h-[calc(100vh-104px)]">
-        <aside className={`${sidebarCollapsed ? 'w-[88px]' : 'w-[250px] xl:w-[300px]'} sticky top-0 flex h-[calc(100vh-104px)] shrink-0 flex-col border-r border-hairline bg-white/75 transition-[width] duration-200`}>
+      <div className="flex min-h-[calc(100vh-132px)] 2xl:min-h-[calc(100vh-170px)]">
+        <aside className={`${sidebarCollapsed ? 'w-[88px]' : 'w-[270px] 2xl:w-[348px]'} sticky top-0 flex h-[calc(100vh-132px)] 2xl:h-[calc(100vh-170px)] shrink-0 flex-col border-r border-hairline bg-white/75 transition-[width] duration-200`}>
           <nav aria-label={t('主导航', 'Main navigation')} className={`flex-1 overflow-y-auto ${sidebarCollapsed ? 'px-3' : 'px-4 xl:px-6'} py-6`}>
             <div className="space-y-2">
               {NAV_GROUPS.map(group => <div key={group.label.en} className="space-y-2">
@@ -240,10 +240,10 @@ function AppLayout() {
                     to={to}
                     aria-current={active ? "page" : undefined}
                     title={sidebarCollapsed ? t(label.zh, label.en) : undefined}
-                    className={`group relative flex min-h-[58px] items-center rounded-2xl transition-all duration-200 ${sidebarCollapsed ? 'justify-center px-2' : 'gap-4 px-3 xl:px-4'} ${active ? 'bg-[#E8F1FF] text-[#2674F5] shadow-[inset_4px_0_0_#3478F6]' : 'text-slate-700 hover:bg-slate-50 hover:text-blue-700'}`}
+                    className={`group relative flex min-h-[58px] 2xl:min-h-[70px] items-center rounded-2xl transition-all duration-200 ${sidebarCollapsed ? 'justify-center px-2' : 'gap-4 px-3 xl:px-4'} ${active ? 'bg-[#E8F1FF] text-[#2674F5] shadow-[inset_4px_0_0_#3478F6]' : 'text-slate-700 hover:bg-slate-50 hover:text-blue-700'}`}
                   >
-                    <span aria-hidden="true" className={`flex h-11 w-11 xl:h-[48px] xl:w-[48px] shrink-0 items-center justify-center rounded-[14px] bg-gradient-to-br text-[22px] font-semibold leading-none text-white shadow-md shadow-blue-100/60 ${iconStyle}`}>{icon}</span>
-                    {!sidebarCollapsed && <span className="min-w-0 truncate text-base font-medium xl:text-[19px]">{t(label.zh, label.en)}</span>}
+                    <span aria-hidden="true" className={`flex h-11 w-11 2xl:h-[54px] 2xl:w-[54px] shrink-0 items-center justify-center rounded-[14px] bg-gradient-to-br text-[22px] font-semibold leading-none text-white shadow-md shadow-blue-100/60 ${iconStyle}`}>{icon}</span>
+                    {!sidebarCollapsed && <span className="min-w-0 truncate text-base font-medium 2xl:text-[27px]">{t(label.zh, label.en)}</span>}
                   </Link>
                 })}
               </div>)}
@@ -251,7 +251,7 @@ function AppLayout() {
           </nav>
         </aside>
 
-        <main className="min-w-0 flex-1 px-5 py-6 sm:px-7 sm:py-8 xl:px-9 xl:py-9">
+        <main className="min-w-0 flex-1 px-5 py-6 sm:px-7 sm:py-8 xl:px-9 xl:py-9 2xl:px-[38px]">
           <div className="mx-auto max-w-[1700px]">
             <Routes>
               <Route path="/" element={<Workbench />} />
