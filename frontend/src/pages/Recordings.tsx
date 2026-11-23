@@ -75,7 +75,7 @@ export default function Recordings() {
     <header className="relative overflow-hidden rounded-2xl bg-gradient-to-br from-[#175CD3] via-[#2878E8] to-[#38A6D9] p-5 text-white shadow-[0_16px_40px_rgba(37,99,235,0.20)] sm:p-6">
       <div>
         <div className="text-xs font-semibold tracking-[0.18em] text-blue-100">AI 终端 · 录像资产管理</div>
-        <h1 className="mt-2 text-2xl font-bold tracking-tight text-white">录像文件</h1>
+        <h1 className="mt-2 text-xl font-bold tracking-tight text-white">录像文件</h1>
         <p className="mt-2 text-sm text-blue-100">集中查看、预览和下载测试任务生成的屏幕录像，管理录像文件与存储空间。</p>
       </div>
       <button onClick={() => void refetch()} className="rounded-xl border border-white/30 bg-white/15 px-4 py-2.5 text-sm font-medium text-white backdrop-blur transition-colors hover:bg-white/25">↻ 刷新列表</button>
