@@ -43,14 +43,14 @@ export default function RunCompare() {
 
   return (
     <div className="mx-auto max-w-[1600px] space-y-6">
-      <header className="relative overflow-hidden rounded-3xl bg-gradient-to-br from-[#175CD3] via-[#2878E8] to-[#38A6D9] px-7 py-7 text-white shadow-[0_18px_45px_rgba(37,99,235,0.16)] sm:px-9">
+      <header className="relative overflow-hidden rounded-2xl bg-gradient-to-br from-[#175CD3] via-[#2878E8] to-[#38A6D9] px-5 py-5 text-white shadow-[0_18px_45px_rgba(37,99,235,0.16)] sm:px-6">
         <div className="pointer-events-none absolute -right-12 -top-20 h-64 w-64 rounded-full border-[36px] border-white/10" />
         <div className="relative">
           <button className="mb-4 inline-flex items-center rounded-xl border border-white/25 bg-white/10 px-3.5 py-2 text-xs font-semibold text-white transition hover:bg-white/20" onClick={() => navigate('/runs')}>
             ← 返回任务列表
           </button>
           <div className="mb-2 text-xs font-semibold text-blue-50">AI 终端 · 测试结果分析</div>
-          <h1 className="text-2xl font-bold tracking-tight text-white sm:text-3xl">结果对比</h1>
+          <h1 className="text-xl font-bold tracking-tight text-white sm:text-2xl">结果对比</h1>
           <p className="mt-2 max-w-2xl text-sm leading-6 text-blue-50/90">对比两次测试运行的用例结果，快速识别能力提升、回归与变化。</p>
         </div>
       </header>
@@ -96,13 +96,13 @@ export default function RunCompare() {
           {/* Summary */}
           <section className="grid gap-4 sm:grid-cols-3">
             <div className="rounded-2xl border border-emerald-200 bg-emerald-50/70 p-5 shadow-[0_6px_20px_rgba(16,185,129,0.05)]">
-              <div className="text-xs font-semibold text-emerald-700">改善用例</div><div className="mt-2 text-3xl font-bold tabular-nums text-emerald-700">{comparison.summary.improved}</div>
+              <div className="text-xs font-semibold text-emerald-700">改善用例</div><div className="mt-2 text-2xl font-bold tabular-nums text-emerald-700">{comparison.summary.improved}</div>
             </div>
             <div className="rounded-2xl border border-rose-200 bg-rose-50/70 p-5 shadow-[0_6px_20px_rgba(244,63,94,0.05)]">
-              <div className="text-xs font-semibold text-rose-700">回归用例</div><div className="mt-2 text-3xl font-bold tabular-nums text-rose-700">{comparison.summary.regressed}</div>
+              <div className="text-xs font-semibold text-rose-700">回归用例</div><div className="mt-2 text-2xl font-bold tabular-nums text-rose-700">{comparison.summary.regressed}</div>
             </div>
             <div className="rounded-2xl border border-slate-200 bg-slate-50/80 p-5 shadow-[0_6px_20px_rgba(31,75,135,0.03)]">
-              <div className="text-xs font-semibold text-slate-600">保持不变</div><div className="mt-2 text-3xl font-bold tabular-nums text-slate-700">{comparison.summary.unchanged}</div>
+              <div className="text-xs font-semibold text-slate-600">保持不变</div><div className="mt-2 text-2xl font-bold tabular-nums text-slate-700">{comparison.summary.unchanged}</div>
             </div>
           </section>
 
