@@ -58,7 +58,7 @@ type Teaching = {
   task_intent?: string
   decision_records?: Array<{ sequence?: number; action?: string; summary?: string }>
   observations?: Array<{ sequence?: number; description?: string; visible_text?: string; screenshot?: string }>
-  recovery_experiences?: Array<{ sequence?: number; action?: string; result?: string; handling?: string }>
+  recovery_experiences?: Array<{ source_event_id?: string; sequence?: number; action?: string; result?: string; handling?: string }>
   execution_guidance?: string[]
   knowledge_completeness?: Record<string, boolean>
   notice?: string
@@ -92,10 +92,6 @@ const statusText: Record<string, string> = {
   pending_review: '审核中',
   approved: '已审核 · 尚不可执行',
   disabled: '已停用',
-}
-
-function readString(value: unknown, fallback = ''): string {
-  return typeof value === 'string' ? value : fallback
 }
 
 function prettyAction(action: string): string {
