@@ -229,8 +229,8 @@ function AppLayout() {
       </header>
 
       <div className="flex min-h-[calc(100vh-132px)] 2xl:min-h-[calc(100vh-170px)]">
-        <aside className={`${sidebarCollapsed ? 'w-[88px]' : 'w-[270px] 2xl:w-[348px]'} sticky top-0 flex h-[calc(100vh-132px)] 2xl:h-[calc(100vh-170px)] shrink-0 flex-col border-r border-hairline bg-white/75 transition-[width] duration-200`}>
-          <nav aria-label={t('主导航', 'Main navigation')} className={`flex-1 overflow-y-auto ${sidebarCollapsed ? 'px-3' : 'px-4 xl:px-6'} py-6`}>
+        <aside className={`${sidebarCollapsed ? 'w-[80px]' : 'w-[250px] 2xl:w-[280px]'} sticky top-0 flex h-[calc(100vh-132px)] 2xl:h-[calc(100vh-170px)] shrink-0 flex-col border-r border-hairline bg-white/75 transition-[width] duration-200`}>
+          <nav aria-label={t('主导航', 'Main navigation')} className={`flex-1 overflow-y-auto ${sidebarCollapsed ? 'px-3' : 'px-3 xl:px-4'} py-5`}>
             <div className="space-y-2">
               {NAV_GROUPS.map(group => <div key={group.label.en} className="space-y-2">
                 {group.items.map(({ to, label, icon, iconStyle, paths }) => {
@@ -240,10 +240,10 @@ function AppLayout() {
                     to={to}
                     aria-current={active ? "page" : undefined}
                     title={sidebarCollapsed ? t(label.zh, label.en) : undefined}
-                    className={`group relative flex min-h-[58px] 2xl:min-h-[70px] items-center rounded-2xl transition-all duration-200 ${sidebarCollapsed ? 'justify-center px-2' : 'gap-4 px-3 xl:px-4'} ${active ? 'bg-[#E8F1FF] text-[#2674F5] shadow-[inset_4px_0_0_#3478F6]' : 'text-slate-700 hover:bg-slate-50 hover:text-blue-700'}`}
+                    className={`group relative flex min-h-[48px] 2xl:min-h-[52px] items-center rounded-xl transition-all duration-200 ${sidebarCollapsed ? 'justify-center px-2' : 'gap-3 px-3'} ${active ? 'bg-[#E8F1FF] text-[#2674F5] shadow-[inset_3px_0_0_#3478F6]' : 'text-slate-700 hover:bg-slate-50 hover:text-blue-700'}`}
                   >
-                    <span aria-hidden="true" className={`flex h-11 w-11 2xl:h-[54px] 2xl:w-[54px] shrink-0 items-center justify-center rounded-[14px] bg-gradient-to-br text-[22px] font-semibold leading-none text-white shadow-md shadow-blue-100/60 ${iconStyle}`}>{icon}</span>
-                    {!sidebarCollapsed && <span className="min-w-0 truncate text-base font-medium 2xl:text-[27px]">{t(label.zh, label.en)}</span>}
+                    <span aria-hidden="true" className={`flex h-9 w-9 2xl:h-10 2xl:w-10 shrink-0 items-center justify-center rounded-xl bg-gradient-to-br text-lg font-semibold leading-none text-white shadow-sm shadow-blue-100/60 ${iconStyle}`}>{icon}</span>
+                    {!sidebarCollapsed && <span className="min-w-0 truncate text-sm font-medium 2xl:text-[15px]">{t(label.zh, label.en)}</span>}
                   </Link>
                 })}
               </div>)}
