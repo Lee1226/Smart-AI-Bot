@@ -92,7 +92,7 @@ export default function RunCompare() {
       {isLoading && <div className="rounded-2xl border border-slate-200 bg-white px-5 py-10 text-center text-sm text-slate-500">正在加载对比结果…</div>}
 
       {comparison && (
-        <>
+        <div className="space-y-4">
           {/* Summary */}
           <section className="grid gap-4 sm:grid-cols-3">
             <div className="rounded-2xl border border-emerald-200 bg-emerald-50/70 p-5 shadow-[0_6px_20px_rgba(16,185,129,0.05)]">
@@ -168,7 +168,7 @@ export default function RunCompare() {
               </tbody>
             </table>
           </div>
-        </>
+        </div>
       )}
     </div>
   )
