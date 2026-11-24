@@ -636,8 +636,25 @@ export const fetchNodeContext = (nodeId: string) =>
 
 export const fetchSettings = () => api.get<Settings>('/settings').then(r => r.data)
 
+export interface LLMProvider {
+  id: string; provider_id: string; name: string; protocol_type: string; adapter_id: string
+  default_base_url: string; auth_type: string; enabled: boolean
+  legacy_api_key_field: string; legacy_base_url_field: string; model_presets: string[]
+}
+export interface LLMProviderInput {
+  provider_id: string; name: string; protocol_type: string; adapter_id: string
+  default_base_url?: string; auth_type: string; enabled: boolean
+  legacy_api_key_field?: string; legacy_base_url_field?: string; model_presets?: string[]
+}
+export const fetchLLMProviders = (includeDisabled = true) =>
+  api.get<LLMProvider[]>('/settings/llm-providers', { params: { include_disabled: includeDisabled } }).then(r => r.data)
+export const createLLMProvider = (data: LLMProviderInput) =>
+  api.post<LLMProvider>('/settings/llm-providers', data).then(r => r.data)
+export const updateLLMProvider = (id: string, data: LLMProviderInput) =>
+  api.put<LLMProvider>(`/settings/llm-providers/${id}`, data).then(r => r.data)
+export const deleteLLMProvider = (id: string) => api.delete(`/settings/llm-providers/${id}`)
 export interface LLMConnection {
-  id: string; name: string; provider: string; base_url: string
+  id: string; name: string; provider: string; provider_catalog_id?: string | null; base_url: string
   has_api_key: boolean; has_aws_credentials: boolean; aws_region_name: string; notes: string
   last_test_status: 'untested' | 'success' | 'failed'; last_test_message: string
   last_tested_at: string | null; model_count: number
