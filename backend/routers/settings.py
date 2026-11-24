@@ -248,10 +248,27 @@ def _provider_dict(row: LLMProvider) -> dict:
     }
 
 
+async def _ensure_provider_catalog(db: AsyncSession, account_id: str) -> None:
+    state = await db.get(LLMProviderCatalogState, account_id)
+    if state is not None:
+        return
+    from db.seed_llm_providers import DEFAULT_LLM_PROVIDERS
+    existing = set((await db.execute(select(LLMProvider.provider_id).where(LLMProvider.account_id == account_id))).scalars().all())
+    for item in DEFAULT_LLM_PROVIDERS:
+        if item["provider_id"] not in existing:
+            db.add(LLMProvider(account_id=account_id, **item))
+    db.add(LLMProviderCatalogState(account_id=account_id))
+    try:
+        await db.commit()
+    except IntegrityError:
+        await db.rollback()
+
 @router.get("/llm-providers")
 async def list_llm_providers(request: Request, include_disabled: bool = True, db: AsyncSession = Depends(get_db)):
     require_role(request, "owner", "admin")
-    query = select(LLMProvider).where(LLMProvider.account_id == require_account_id(request))
+    account_id = require_account_id(request)
+    await _ensure_provider_catalog(db, account_id)
+    query = select(LLMProvider).where(LLMProvider.account_id == account_id)
     if not include_disabled:
         query = query.where(LLMProvider.enabled.is_(True))
     rows = (await db.execute(query.order_by(LLMProvider.name.asc()))).scalars().all()
@@ -290,10 +307,9 @@ async def update_llm_provider(provider_id: str, payload: LLMProviderInput, reque
     row = await db.get(LLMProvider, provider_id)
     if row is None or row.account_id != account_id:
         raise HTTPException(status_code=404, detail="供应商不存在")
-    if payload.provider_id.strip().lower() != row.provider_id:
-        used = await db.scalar(select(func.count(LLMConnection.id)).where(LLMConnection.provider_catalog_id == row.id))
-        if used:
-            raise HTTPException(status_code=409, detail="该供应商已有连接，不能修改唯一标识")
+    used = await db.scalar(select(func.count(LLMConnection.id)).where(LLMConnection.provider_catalog_id == row.id))
+    if used and (payload.provider_id.strip().lower() != row.provider_id or payload.adapter_id != row.adapter_id):
+        raise HTTPException(status_code=409, detail="该供应商已有连接，不能修改唯一标识或协议适配器")
     supported_adapters = {"openai", "anthropic", "google", "dashscope", "ark", "zhipuai", "groq", "ollama", "bedrock", "openai-compatible"}
     if payload.adapter_id not in supported_adapters:
         raise HTTPException(status_code=422, detail="当前协议适配器尚未实现")
@@ -323,7 +339,7 @@ async def delete_llm_provider(provider_id: str, request: Request, db: AsyncSessi
     row = await db.get(LLMProvider, provider_id)
     if row is None or row.account_id != account_id:
         raise HTTPException(status_code=404, detail="供应商不存在")
-    count = await db.scalar(select(func.count(LLMConnection.id)).where(LLMConnection.provider_catalog_id == row.id))
+    count = await db.scalar(select(func.count(LLMConnection.id)).where((LLMConnection.provider_catalog_id == row.id) | ((LLMConnection.provider_catalog_id.is_(None)) & (LLMConnection.provider == row.adapter_id))))
     if count:
         raise HTTPException(status_code=409, detail="该供应商仍有关联连接，请先删除或迁移这些连接")
     await db.delete(row)
