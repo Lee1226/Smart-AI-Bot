@@ -407,14 +407,16 @@ async def import_existing_llm_settings(request: Request, db: AsyncSession = Depe
         ("zhipuai", "智谱 AI", "zhipu_api_key", "", ["glm-4v", "glm-4v-plus", "glm-4-plus", "glm-4-flash"]),
         ("dashscope", "阿里云百炼", "dashscope_api_key", "dashscope_base_url", ["qwen3.8-max", "qwen3.8-flash", "qwen3.7-plus", "qwen3.7-flash", "qwen3.5-plus", "qwen3.5-flash", "qwen-plus"]),
         ("groq", "Groq", "groq_api_key", "", ["llama-3.1-70b-versatile", "llama-3.1-8b-instant", "mixtral-8x7b-32768"]),
-        ("ark", "火山引擎 Ark", "ark_api_key", "ark_base_url", ["your-endpoint-id"]),
+        ("ark", "火山引擎 Ark", "ark_api_key", "ark_base_url", []),
     ]
     imported_connections = 0
     imported_models = 0
     skipped_providers = []
-    default_provider = (settings.get("default_provider") or "openai").lower()
+    provider_aliases = {"gemini": "google", "zhipu": "zhipuai"}
+    default_provider = provider_aliases.get((settings.get("default_provider") or "openai").lower(), (settings.get("default_provider") or "openai").lower())
     default_model = (settings.get("default_model") or "").strip()
-    verifier_provider = (settings.get("verifier_provider") or "").lower()
+    verifier_provider_raw = (settings.get("verifier_provider") or "").lower()
+    verifier_provider = provider_aliases.get(verifier_provider_raw, verifier_provider_raw)
     verifier_model = (settings.get("verifier_model") or "").strip()
     candidates = []
     for provider, label, key_field, base_field, presets in provider_specs:
