@@ -2,7 +2,7 @@ import { useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import {
   fetchAudioCorpus, fetchAudioOutputDevices, uploadAudioCorpus,
-  type AudioCorpusItem, type AudioPlaybackTurn,
+  type AudioPlaybackTurn,
 } from '../lib/api'
 
 const fieldClass = 'w-full min-w-0 rounded-xl border border-slate-200 bg-slate-50/60 px-3 py-2 text-sm text-slate-700 outline-none transition focus:border-blue-400 focus:bg-white focus:ring-4 focus:ring-blue-500/10'
