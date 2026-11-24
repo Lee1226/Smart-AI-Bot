@@ -376,7 +376,8 @@ class LLMConnection(Base):
     id: Mapped[str] = mapped_column(String, primary_key=True, default=_uuid)
     account_id: Mapped[str] = mapped_column(ForeignKey("accounts.id"), index=True)
     name: Mapped[str] = mapped_column(String)
-    provider: Mapped[str] = mapped_column(String, index=True)
+    provider: Mapped[str] = mapped_column(String, index=True)  # runtime protocol adapter ID
+    provider_catalog_id: Mapped[Optional[str]] = mapped_column(ForeignKey("llm_providers.id"), nullable=True, index=True)
     base_url: Mapped[str] = mapped_column(Text, default="")
     api_key_enc: Mapped[str] = mapped_column(Text, default="")
     aws_access_key_id_enc: Mapped[str] = mapped_column(Text, default="")
