@@ -118,11 +118,20 @@ async def init_db():
         account_ids = (await provider_session.execute(_select(Account.id))).scalars().all()
         for account_id in account_ids:
             state = await provider_session.get(LLMProviderCatalogState, account_id)
-            if state is not None:
-                continue
-            for item in DEFAULT_LLM_PROVIDERS:
-                provider_session.add(LLMProvider(account_id=account_id, **item))
-            provider_session.add(LLMProviderCatalogState(account_id=account_id))
+            if state is None:
+                existing_provider_ids = set((await provider_session.execute(_select(LLMProvider.provider_id).where(LLMProvider.account_id == account_id))).scalars().all())
+                for item in DEFAULT_LLM_PROVIDERS:
+                    if item["provider_id"] not in existing_provider_ids:
+                        provider_session.add(LLMProvider(account_id=account_id, **item))
+                provider_session.add(LLMProviderCatalogState(account_id=account_id))
+                await provider_session.flush()
+            catalog_rows = (await provider_session.execute(_select(LLMProvider).where(LLMProvider.account_id == account_id))).scalars().all()
+            connections = (await provider_session.execute(_select(models.LLMConnection).where(models.LLMConnection.account_id == account_id, models.LLMConnection.provider_catalog_id.is_(None)))).scalars().all()
+            for connection in connections:
+                match = next((item for item in catalog_rows if item.provider_id == connection.provider or item.adapter_id == connection.provider), None)
+                if match is not None:
+                    connection.provider_catalog_id = match.id
+                    connection.provider = match.adapter_id
         await provider_session.commit()
 
     from sqlalchemy import select as _select
