@@ -546,6 +546,7 @@ async def import_existing_llm_settings(request: Request, db: AsyncSession = Depe
     """Copy configured legacy account providers into the encrypted model repository."""
     require_role(request, "owner", "admin")
     account_id = require_account_id(request)
+    await _ensure_provider_catalog(db, account_id)
     settings = await load_settings(account_id)
     imported_connections = 0
     imported_models = 0
@@ -580,7 +581,7 @@ async def import_existing_llm_settings(request: Request, db: AsyncSession = Depe
         if row is None:
             row = (await db.execute(select(LLMConnection).where(
                 LLMConnection.account_id == account_id,
-                LLMConnection.provider == item["adapter"],
+                LLMConnection.provider == item["provider"],
                 LLMConnection.provider_catalog_id.is_(None),
                 LLMConnection.notes.contains(marker),
             ))).scalar_one_or_none()
