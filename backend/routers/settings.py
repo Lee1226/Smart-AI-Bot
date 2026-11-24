@@ -532,15 +532,6 @@ async def import_existing_llm_settings(request: Request, db: AsyncSession = Depe
     require_role(request, "owner", "admin")
     account_id = require_account_id(request)
     settings = await load_settings(account_id)
-    provider_specs = [
-        ("openai", "OpenAI", "openai_api_key", "", "https://api.openai.com/v1", ["gpt-4o", "gpt-4o-mini", "gpt-4-turbo", "gpt-3.5-turbo"]),
-        ("anthropic", "Anthropic", "anthropic_api_key", "anthropic_base_url", "", ["claude-opus-4-6", "claude-sonnet-4-6", "claude-haiku-4-5"]),
-        ("google", "Google Gemini", "gemini_api_key", "", "", ["gemini-1.5-pro", "gemini-1.5-flash", "gemini-2.0-flash"]),
-        ("zhipuai", "智谱 AI", "zhipu_api_key", "", "https://open.bigmodel.cn/api/paas/v4", ["glm-4v", "glm-4v-plus", "glm-4-plus", "glm-4-flash"]),
-        ("dashscope", "阿里云百炼", "dashscope_api_key", "dashscope_base_url", "https://dashscope.aliyuncs.com/compatible-mode/v1", ["qwen3.8-max", "qwen3.8-flash", "qwen3.7-plus", "qwen3.7-flash", "qwen3.5-plus", "qwen3.5-flash", "qwen-plus"]),
-        ("groq", "Groq", "groq_api_key", "", "https://api.groq.com/openai/v1", ["llama-3.1-70b-versatile", "llama-3.1-8b-instant", "mixtral-8x7b-32768"]),
-        ("ark", "火山引擎 Ark", "ark_api_key", "ark_base_url", "https://ark.cn-beijing.volces.com/api/v3", []),
-    ]
     imported_connections = 0
     imported_models = 0
     provider_aliases = {"gemini": "google", "zhipu": "zhipuai"}
@@ -549,39 +540,26 @@ async def import_existing_llm_settings(request: Request, db: AsyncSession = Depe
     verifier_provider_raw = (settings.get("verifier_provider") or "").lower()
     verifier_provider = provider_aliases.get(verifier_provider_raw, verifier_provider_raw)
     verifier_model = (settings.get("verifier_model") or "").strip()
+    provider_rows = (await db.execute(select(LLMProvider).where(LLMProvider.account_id == account_id).order_by(LLMProvider.name.asc()))).scalars().all()
     candidates = []
-    for provider, label, key_field, base_field, default_base_url, presets in provider_specs:
-        # Keep provider-native endpoints implicit where LiteLLM selects them;
-        # use explicit URLs for OpenAI-compatible providers.
+    for provider_row in provider_rows:
+        key_field = provider_row.legacy_api_key_field
+        base_field = provider_row.legacy_base_url_field
+        api_key = (settings.get(key_field) or "").strip() if key_field else ""
+        aws_access = (settings.get("aws_access_key_id") or "").strip() if provider_row.auth_type == "aws" else ""
+        aws_secret = (settings.get("aws_secret_access_key") or "").strip() if provider_row.auth_type == "aws" else ""
         configured_base_url = (settings.get(base_field) or "").strip() if base_field else ""
-        candidates.append({
-            "provider": provider, "label": label,
-            "base_url": configured_base_url or default_base_url,
-            "api_key": (settings.get(key_field) or "").strip(),
-            "aws_access": "", "aws_secret": "", "aws_region": "us-east-1", "models": presets,
-        })
-    candidates.append({
-        "provider": "ollama", "label": "Ollama", "base_url": (settings.get("ollama_base_url") or "http://localhost:11434").strip(),
-        "api_key": "", "aws_access": "", "aws_secret": "", "aws_region": "us-east-1",
-        "models": ["llama3", "llama3.1", "qwen2", "mistral"],
-    })
-    candidates.append({
-        "provider": "bedrock", "label": "AWS Bedrock", "base_url": "",
-        "api_key": "", "aws_access": (settings.get("aws_access_key_id") or "").strip(),
-        "aws_secret": (settings.get("aws_secret_access_key") or "").strip(),
-        "aws_region": (settings.get("aws_region_name") or "us-east-1").strip(),
-        "models": ["us.anthropic.claude-sonnet-4-6", "us.anthropic.claude-opus-4-8", "us.anthropic.claude-haiku-4-5-20251001-v1:0"],
-    })
-    candidates.append({
-        "provider": "openai-compatible", "label": "自定义 OpenAI Compatible", "base_url": "",
-        "api_key": "", "aws_access": "", "aws_secret": "", "aws_region": "us-east-1", "models": [],
-    })
+        default_base_url = provider_row.default_base_url
+        if provider_row.provider_id == "ollama":
+            default_base_url = (settings.get("ollama_base_url") or default_base_url).strip()
+        presets = json.loads(provider_row.model_presets_json or "[]")
+        candidates.append({"catalog": provider_row, "provider": provider_row.provider_id, "adapter": provider_row.adapter_id, "label": provider_row.name, "base_url": configured_base_url or default_base_url, "api_key": api_key, "aws_access": aws_access, "aws_secret": aws_secret, "aws_region": (settings.get("aws_region_name") or "us-east-1").strip(), "models": presets})
     marker = "[imported-from-platform-settings]"
     for item in candidates:
         provider = item["provider"]
         row = (await db.execute(select(LLMConnection).where(
             LLMConnection.account_id == account_id,
-            LLMConnection.provider == provider,
+            LLMConnection.provider_catalog_id == item["catalog"].id,
             LLMConnection.notes.contains(marker),
         ))).scalar_one_or_none()
         if row is None:
@@ -596,7 +574,7 @@ async def import_existing_llm_settings(request: Request, db: AsyncSession = Depe
                 suffix += 1
             row = LLMConnection(
                 account_id=account_id, name=connection_name,
-                provider=provider, base_url=item["base_url"],
+                provider=item["adapter"], provider_catalog_id=item["catalog"].id, base_url=item["base_url"],
                 api_key_enc=_encrypt_secret(item["api_key"]),
                 aws_access_key_id_enc=_encrypt_secret(item["aws_access"]),
                 aws_secret_access_key_enc=_encrypt_secret(item["aws_secret"]),
@@ -606,6 +584,9 @@ async def import_existing_llm_settings(request: Request, db: AsyncSession = Depe
             db.add(row)
             await db.flush()
             imported_connections += 1
+        if row.provider_catalog_id is None:
+            row.provider_catalog_id = item["catalog"].id
+            row.provider = item["adapter"]
         model_names = list(dict.fromkeys(item["models"] + [
             default_model if default_provider == provider else "",
             verifier_model if verifier_provider == provider else "",
@@ -631,7 +612,7 @@ async def import_existing_llm_settings(request: Request, db: AsyncSession = Depe
     return {
         "imported_connections": imported_connections, "imported_models": imported_models,
         "skipped_providers": [],
-        "message": "已创建全部内置供应商连接；未配置凭据的连接保留为空，补充凭据后即可测试。当前默认模型和 Verifier 模型已启用，其余预设模型默认停用。",
+        "message": "已按供应商数据库目录导入连接；未配置凭据的连接保留为空，补充凭据后即可测试。当前默认模型和 Verifier 模型已启用，其余预设模型默认停用。",
     }
 
 
