@@ -667,6 +667,7 @@ export const fetchLLMConnections = () => api.get<LLMConnection[]>('/settings/llm
 export interface ImportExistingLLMSettingsResult {
   imported_connections: number
   imported_models: number
+  repaired_base_urls: number
   skipped_providers: string[]
   message: string
 }
