@@ -443,6 +443,10 @@ async def update_llm_connection(connection_id: str, payload: LLMConnectionUpdate
         ))).scalar_one_or_none()
         if provider_row is None or (not provider_row.enabled and provider_row.id != row.provider_catalog_id):
             raise HTTPException(status_code=422, detail="请选择一个已启用的供应商")
+        if provider_row.id != row.provider_catalog_id:
+            row.api_key_enc = ""
+            row.aws_access_key_id_enc = ""
+            row.aws_secret_access_key_enc = ""
         values["provider"] = provider_row.adapter_id
         row.provider_catalog_id = provider_row.id
     if values.pop("clear_api_key", False): row.api_key_enc = ""
