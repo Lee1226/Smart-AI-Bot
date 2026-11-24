@@ -415,6 +415,7 @@ class LLMProvider(Base):
     provider_id: Mapped[str] = mapped_column(String, index=True)
     name: Mapped[str] = mapped_column(String)
     protocol_type: Mapped[str] = mapped_column(String, default="openai-compatible")
+    adapter_id: Mapped[str] = mapped_column(String, default="openai-compatible")
     default_base_url: Mapped[str] = mapped_column(Text, default="")
     auth_type: Mapped[str] = mapped_column(String, default="api_key")
     enabled: Mapped[bool] = mapped_column(Boolean, default=True)
