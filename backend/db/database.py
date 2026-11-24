@@ -44,6 +44,7 @@ async def init_db():
         await _ensure_columns("accounts", {
             "is_operator": "BOOLEAN DEFAULT 0",
         })
+        await _ensure_columns("llm_connections", {"provider_catalog_id": "VARCHAR"})
 
         await _ensure_columns("project_test_accounts", {"verification_code_enc": "TEXT DEFAULT ''"})
         await _ensure_columns("test_results", {
