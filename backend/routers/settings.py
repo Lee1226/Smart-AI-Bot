@@ -348,7 +348,10 @@ async def list_llm_models(connection_id: str, request: Request, db: AsyncSession
 async def create_llm_model(connection_id: str, payload: LLMModelInput, request: Request, db: AsyncSession = Depends(get_db)):
     require_role(request, "owner", "admin")
     account_id = require_account_id(request)
-    await _owned_connection(db, account_id, connection_id)
+    connection = await _owned_connection(db, account_id, connection_id)
+    connection.last_test_status = "untested"
+    connection.last_test_message = ""
+    connection.last_tested_at = None
     row = LLMModel(account_id=account_id, connection_id=connection_id, model_name=payload.model_name.strip(),
         description=payload.description.strip(), capabilities_json=json.dumps(payload.capabilities), enabled=payload.enabled)
     db.add(row)
@@ -365,6 +368,10 @@ async def update_llm_model(model_id: str, payload: LLMModelInput, request: Reque
     account_id = require_account_id(request)
     row = await db.get(LLMModel, model_id)
     if row is None or row.account_id != account_id: raise HTTPException(status_code=404, detail="Model not found")
+    connection = await _owned_connection(db, account_id, row.connection_id)
+    connection.last_test_status = "untested"
+    connection.last_test_message = ""
+    connection.last_tested_at = None
     row.model_name = payload.model_name.strip(); row.description = payload.description.strip()
     row.capabilities_json = json.dumps(payload.capabilities); row.enabled = payload.enabled
     row.updated_at = datetime.utcnow()
@@ -379,6 +386,10 @@ async def delete_llm_model(model_id: str, request: Request, db: AsyncSession = D
     require_role(request, "owner", "admin")
     row = await db.get(LLMModel, model_id)
     if row is None or row.account_id != require_account_id(request): raise HTTPException(status_code=404, detail="Model not found")
+    connection = await _owned_connection(db, row.account_id, row.connection_id)
+    connection.last_test_status = "untested"
+    connection.last_test_message = ""
+    connection.last_tested_at = None
     await db.delete(row); await db.commit()
     return {"ok": True}
 
