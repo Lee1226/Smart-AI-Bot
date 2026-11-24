@@ -618,6 +618,10 @@ async def import_existing_llm_settings(request: Request, db: AsyncSession = Depe
         if row.provider_catalog_id is None:
             row.provider_catalog_id = item["catalog"].id
             row.provider = item["adapter"]
+        # Repair previously imported connections without overwriting a URL
+        # that a user has already configured manually.
+        if not (row.base_url or "").strip() and item["base_url"]:
+            row.base_url = item["base_url"]
         model_names = list(dict.fromkeys(item["models"] + [
             default_model if default_provider == provider else "",
             verifier_model if verifier_provider == provider else "",
