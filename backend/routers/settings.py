@@ -411,7 +411,6 @@ async def import_existing_llm_settings(request: Request, db: AsyncSession = Depe
     ]
     imported_connections = 0
     imported_models = 0
-    skipped_providers = []
     provider_aliases = {"gemini": "google", "zhipu": "zhipuai"}
     default_provider = provider_aliases.get((settings.get("default_provider") or "openai").lower(), (settings.get("default_provider") or "openai").lower())
     default_model = (settings.get("default_model") or "").strip()
@@ -420,32 +419,30 @@ async def import_existing_llm_settings(request: Request, db: AsyncSession = Depe
     verifier_model = (settings.get("verifier_model") or "").strip()
     candidates = []
     for provider, label, key_field, base_field, presets in provider_specs:
-        api_key = (settings.get(key_field) or "").strip()
-        if not api_key:
-            skipped_providers.append(provider)
-            continue
+        # Create a provider profile even when the legacy settings contain no key.
+        # Empty credentials remain empty and the connection cannot pass a live test
+        # until the user fills them in from the repository UI.
         candidates.append({
             "provider": provider, "label": label, "base_url": (settings.get(base_field) or "").strip(),
-            "api_key": api_key, "aws_access": "", "aws_secret": "", "aws_region": "us-east-1", "models": presets,
+            "api_key": (settings.get(key_field) or "").strip(),
+            "aws_access": "", "aws_secret": "", "aws_region": "us-east-1", "models": presets,
         })
-    ollama_url = (settings.get("ollama_base_url") or "").strip()
-    if ollama_url:
-        candidates.append({
-            "provider": "ollama", "label": "Ollama", "base_url": ollama_url,
-            "api_key": "", "aws_access": "", "aws_secret": "", "aws_region": "us-east-1",
-            "models": ["llama3", "llama3.1", "qwen2", "mistral"],
-        })
-    aws_access = (settings.get("aws_access_key_id") or "").strip()
-    aws_secret = (settings.get("aws_secret_access_key") or "").strip()
-    if aws_access and aws_secret:
-        candidates.append({
-            "provider": "bedrock", "label": "AWS Bedrock", "base_url": "",
-            "api_key": "", "aws_access": aws_access, "aws_secret": aws_secret,
-            "aws_region": (settings.get("aws_region_name") or "us-east-1").strip(),
-            "models": ["us.anthropic.claude-sonnet-4-6", "us.anthropic.claude-opus-4-8", "us.anthropic.claude-haiku-4-5-20251001-v1:0"],
-        })
-    elif aws_access or aws_secret:
-        skipped_providers.append("bedrock (AWS credentials incomplete)")
+    candidates.append({
+        "provider": "ollama", "label": "Ollama", "base_url": (settings.get("ollama_base_url") or "").strip(),
+        "api_key": "", "aws_access": "", "aws_secret": "", "aws_region": "us-east-1",
+        "models": ["llama3", "llama3.1", "qwen2", "mistral"],
+    })
+    candidates.append({
+        "provider": "bedrock", "label": "AWS Bedrock", "base_url": "",
+        "api_key": "", "aws_access": (settings.get("aws_access_key_id") or "").strip(),
+        "aws_secret": (settings.get("aws_secret_access_key") or "").strip(),
+        "aws_region": (settings.get("aws_region_name") or "us-east-1").strip(),
+        "models": ["us.anthropic.claude-sonnet-4-6", "us.anthropic.claude-opus-4-8", "us.anthropic.claude-haiku-4-5-20251001-v1:0"],
+    })
+    candidates.append({
+        "provider": "openai-compatible", "label": "自定义 OpenAI Compatible", "base_url": "",
+        "api_key": "", "aws_access": "", "aws_secret": "", "aws_region": "us-east-1", "models": [],
+    })
     marker = "[imported-from-platform-settings]"
     for item in candidates:
         provider = item["provider"]
@@ -500,8 +497,8 @@ async def import_existing_llm_settings(request: Request, db: AsyncSession = Depe
     await db.commit()
     return {
         "imported_connections": imported_connections, "imported_models": imported_models,
-        "skipped_providers": skipped_providers,
-        "message": "已导入现有平台模型配置；当前默认模型和 Verifier 模型已启用，其余预设模型默认停用。",
+        "skipped_providers": [],
+        "message": "已创建全部内置供应商连接；未配置凭据的连接保留为空，补充凭据后即可测试。当前默认模型和 Verifier 模型已启用，其余预设模型默认停用。",
     }
 
 
