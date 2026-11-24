@@ -8,7 +8,7 @@ import {
 
 const PROVIDERS = [
   { value: 'openai', label: 'OpenAI', url: 'https://api.openai.com/v1', key: true },
-  { value: 'anthropic', label: 'Anthropic', url: 'https://api.anthropic.com', key: true },
+  { value: 'anthropic', label: 'Anthropic', url: '', key: true },
   { value: 'google', label: 'Google Gemini', url: '', key: true },
   { value: 'dashscope', label: '阿里云百炼 / DashScope', url: 'https://dashscope.aliyuncs.com/compatible-mode/v1', key: true },
   { value: 'ark', label: '火山引擎 Ark', url: 'https://ark.cn-beijing.volces.com/api/v3', key: true },
