@@ -153,8 +153,6 @@ async def get_recording_storage(request: Request, db: AsyncSession = Depends(get
 
 
 # ── LLM connection repository ────────────────────────────────────────────────
-import base64
-import hashlib
 import json
 from datetime import datetime
 from cryptography.fernet import Fernet
@@ -163,11 +161,33 @@ from db.models import LLMConnection, LLMModel
 
 
 def _llm_cipher() -> Fernet:
-    # Reuse the installation's persisted secret so encrypted credentials remain
-    # readable after restart; never expose this key through an API response.
-    from auth.jwt_handler import JWT_SECRET
-    key = base64.urlsafe_b64encode(hashlib.sha256((JWT_SECRET + ":llm-connections:v1").encode()).digest())
-    return Fernet(key)
+    # Keep LLM credential encryption independent from JWT signing-key rotation.
+    # The key is local to this installation and persists beside the application DB.
+    configured = os.getenv("SAB_LLM_ENCRYPTION_KEY", "").strip()
+    if configured:
+        try:
+            return Fernet(configured.encode("ascii"))
+        except (ValueError, UnicodeEncodeError) as exc:
+            raise RuntimeError("SAB_LLM_ENCRYPTION_KEY must be a valid Fernet key") from exc
+
+    data_dir = Path(os.getenv("SAB_DATA_DIR", str(Path(__file__).resolve().parent.parent / "data")))
+    key_path = data_dir / ".llm_encryption_key"
+    data_dir.mkdir(parents=True, exist_ok=True)
+    try:
+        key = key_path.read_bytes()
+    except FileNotFoundError:
+        generated = Fernet.generate_key()
+        try:
+            fd = os.open(str(key_path), os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
+            with os.fdopen(fd, "wb") as handle:
+                handle.write(generated)
+            key = generated
+        except FileExistsError:
+            key = key_path.read_bytes()
+    try:
+        return Fernet(key.strip())
+    except ValueError as exc:
+        raise RuntimeError(f"Invalid LLM encryption key file: {key_path}") from exc
 
 
 def _encrypt_secret(value: str) -> str:
