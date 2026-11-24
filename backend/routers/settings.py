@@ -349,7 +349,7 @@ async def delete_llm_provider(provider_id: str, request: Request, db: AsyncSessi
 
 class LLMConnectionCreate(BaseModel):
     name: str = Field(min_length=1, max_length=120)
-    provider: str = Field(min_length=1, max_length=40)
+    provider: str = Field(min_length=1, max_length=80)
     base_url: str = ""
     api_key: str = ""
     aws_access_key_id: str = ""
