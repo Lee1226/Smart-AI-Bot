@@ -635,6 +635,36 @@ export const fetchNodeContext = (nodeId: string) =>
 // ── Settings ─────────────────────────────────────────────────────────────────
 
 export const fetchSettings = () => api.get<Settings>('/settings').then(r => r.data)
+
+export interface LLMConnection {
+  id: string; name: string; provider: string; base_url: string
+  has_api_key: boolean; has_aws_credentials: boolean; aws_region_name: string; notes: string
+  last_test_status: 'untested' | 'success' | 'failed'; last_test_message: string
+  last_tested_at: string | null; model_count: number
+}
+export interface LLMModel {
+  id: string; connection_id: string; model_name: string; description: string
+  capabilities: string[]; enabled: boolean; created_at: string | null
+}
+export const fetchLLMConnections = () => api.get<LLMConnection[]>('/settings/llm-connections').then(r => r.data)
+export const createLLMConnection = (data: {
+  name: string; provider: string; base_url?: string; api_key?: string
+  aws_access_key_id?: string; aws_secret_access_key?: string; aws_region_name?: string; notes?: string
+}) => api.post<LLMConnection>('/settings/llm-connections', data).then(r => r.data)
+export const updateLLMConnection = (id: string, data: Record<string, unknown>) =>
+  api.put<LLMConnection>(`/settings/llm-connections/${id}`, data).then(r => r.data)
+export const deleteLLMConnection = (id: string) => api.delete(`/settings/llm-connections/${id}`)
+export const fetchLLMModels = (connectionId: string) =>
+  api.get<LLMModel[]>(`/settings/llm-connections/${connectionId}/models`).then(r => r.data)
+export const createLLMModel = (connectionId: string, data: {
+  model_name: string; description?: string; capabilities?: string[]; enabled?: boolean
+}) => api.post<LLMModel>(`/settings/llm-connections/${connectionId}/models`, data).then(r => r.data)
+export const updateLLMModel = (id: string, data: {
+  model_name: string; description?: string; capabilities?: string[]; enabled?: boolean
+}) => api.put<LLMModel>(`/settings/llm-models/${id}`, data).then(r => r.data)
+export const deleteLLMModel = (id: string) => api.delete(`/settings/llm-models/${id}`)
+export const testLLMConnection = (id: string, modelId?: string) =>
+  api.post<{ ok: boolean; message: string; tested_model: string }>(`/settings/llm-connections/${id}/test`, null, { params: modelId ? { model_id: modelId } : {} }).then(r => r.data)
 export interface RecordingStorageStats {
   directory: string
   retention_days: number
