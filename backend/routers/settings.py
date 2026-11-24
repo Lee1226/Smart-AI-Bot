@@ -394,6 +394,106 @@ async def delete_llm_model(model_id: str, request: Request, db: AsyncSession = D
     return {"ok": True}
 
 
+@router.post("/llm-connections/import-existing")
+async def import_existing_llm_settings(request: Request, db: AsyncSession = Depends(get_db)):
+    """Copy configured legacy account providers into the encrypted model repository."""
+    require_role(request, "owner", "admin")
+    account_id = require_account_id(request)
+    settings = await load_settings(account_id)
+    provider_specs = [
+        ("openai", "OpenAI", "openai_api_key", "", ["gpt-4o", "gpt-4o-mini", "gpt-4-turbo", "gpt-3.5-turbo"]),
+        ("anthropic", "Anthropic", "anthropic_api_key", "anthropic_base_url", ["claude-opus-4-6", "claude-sonnet-4-6", "claude-haiku-4-5"]),
+        ("google", "Google Gemini", "gemini_api_key", "", ["gemini-1.5-pro", "gemini-1.5-flash", "gemini-2.0-flash"]),
+        ("zhipuai", "智谱 AI", "zhipu_api_key", "", ["glm-4v", "glm-4v-plus", "glm-4-plus", "glm-4-flash"]),
+        ("dashscope", "阿里云百炼", "dashscope_api_key", "dashscope_base_url", ["qwen3.8-max", "qwen3.8-flash", "qwen3.7-plus", "qwen3.7-flash", "qwen3.5-plus", "qwen3.5-flash", "qwen-plus"]),
+        ("groq", "Groq", "groq_api_key", "", ["llama-3.1-70b-versatile", "llama-3.1-8b-instant", "mixtral-8x7b-32768"]),
+        ("ark", "火山引擎 Ark", "ark_api_key", "ark_base_url", ["your-endpoint-id"]),
+    ]
+    imported_connections = 0
+    imported_models = 0
+    skipped_providers = []
+    default_provider = (settings.get("default_provider") or "openai").lower()
+    default_model = (settings.get("default_model") or "").strip()
+    verifier_provider = (settings.get("verifier_provider") or "").lower()
+    verifier_model = (settings.get("verifier_model") or "").strip()
+    candidates = []
+    for provider, label, key_field, base_field, presets in provider_specs:
+        api_key = (settings.get(key_field) or "").strip()
+        if not api_key:
+            skipped_providers.append(provider)
+            continue
+        candidates.append({
+            "provider": provider, "label": label, "base_url": (settings.get(base_field) or "").strip(),
+            "api_key": api_key, "aws_access": "", "aws_secret": "", "aws_region": "us-east-1", "models": presets,
+        })
+    ollama_url = (settings.get("ollama_base_url") or "").strip()
+    if ollama_url:
+        candidates.append({
+            "provider": "ollama", "label": "Ollama", "base_url": ollama_url,
+            "api_key": "", "aws_access": "", "aws_secret": "", "aws_region": "us-east-1",
+            "models": ["llama3", "llama3.1", "qwen2", "mistral"],
+        })
+    aws_access = (settings.get("aws_access_key_id") or "").strip()
+    aws_secret = (settings.get("aws_secret_access_key") or "").strip()
+    if aws_access and aws_secret:
+        candidates.append({
+            "provider": "bedrock", "label": "AWS Bedrock", "base_url": "",
+            "api_key": "", "aws_access": aws_access, "aws_secret": aws_secret,
+            "aws_region": (settings.get("aws_region_name") or "us-east-1").strip(),
+            "models": ["us.anthropic.claude-sonnet-4-6", "us.anthropic.claude-opus-4-8", "us.anthropic.claude-haiku-4-5-20251001-v1:0"],
+        })
+    elif aws_access or aws_secret:
+        skipped_providers.append("bedrock (AWS credentials incomplete)")
+    marker = "[imported-from-platform-settings]"
+    for item in candidates:
+        provider = item["provider"]
+        row = (await db.execute(select(LLMConnection).where(
+            LLMConnection.account_id == account_id,
+            LLMConnection.provider == provider,
+            LLMConnection.notes.contains(marker),
+        ))).scalar_one_or_none()
+        if row is None:
+            row = LLMConnection(
+                account_id=account_id, name=f'{item["label"]}（平台配置导入）',
+                provider=provider, base_url=item["base_url"],
+                api_key_enc=_encrypt_secret(item["api_key"]),
+                aws_access_key_id_enc=_encrypt_secret(item["aws_access"]),
+                aws_secret_access_key_enc=_encrypt_secret(item["aws_secret"]),
+                aws_region_name=item["aws_region"],
+                notes=f'{marker} 原平台设置迁移记录；后续修改请在模型配置仓库维护。',
+            )
+            db.add(row)
+            await db.flush()
+            imported_connections += 1
+        model_names = list(dict.fromkeys(item["models"] + [
+            default_model if default_provider == provider else "",
+            verifier_model if verifier_provider == provider else "",
+        ]))
+        for model_name in filter(None, model_names):
+            existing_model = (await db.execute(select(LLMModel).where(
+                LLMModel.account_id == account_id, LLMModel.connection_id == row.id,
+                LLMModel.model_name == model_name,
+            ))).scalar_one_or_none()
+            if existing_model is not None:
+                continue
+            is_selected = (
+                (default_provider == provider and default_model == model_name)
+                or (verifier_provider == provider and verifier_model == model_name)
+            )
+            db.add(LLMModel(
+                account_id=account_id, connection_id=row.id, model_name=model_name,
+                description="原平台设置当前使用模型" if is_selected else "平台内置模型预设（默认停用）",
+                capabilities_json='["text"]', enabled=is_selected,
+            ))
+            imported_models += 1
+    await db.commit()
+    return {
+        "imported_connections": imported_connections, "imported_models": imported_models,
+        "skipped_providers": skipped_providers,
+        "message": "已导入现有平台模型配置；当前默认模型和 Verifier 模型已启用，其余预设模型默认停用。",
+    }
+
+
 @router.post("/llm-connections/{connection_id}/test")
 async def test_llm_connection(connection_id: str, request: Request, model_id: Optional[str] = None, db: AsyncSession = Depends(get_db)):
     require_role(request, "owner", "admin")
