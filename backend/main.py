@@ -1,4 +1,9 @@
 """FastAPI application entry point for smart-androidbot."""
+import os
+
+# Force LiteLLM to use its bundled model cost map; do not fetch it from GitHub.
+os.environ["LITELLM_LOCAL_MODEL_COST_MAP"] = "True"
+
 import logging
 from contextlib import asynccontextmanager
 from pathlib import Path
