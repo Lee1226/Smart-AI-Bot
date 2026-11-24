@@ -221,15 +221,11 @@ function AppLayout() {
   const t = useT()
   const activeItem = NAV_GROUPS.flatMap(group => group.items.flatMap(item => [item, ...(item.children ?? [])])).find(item => item.paths.some(path => matchesPath(pathname, path)))
   const pageLabel = activeItem ? t(activeItem.label.zh, activeItem.label.en) : t('工作台', 'Workbench')
-  const [settingsExpanded, setSettingsExpanded] = useState(['/settings'].some(path => matchesPath(pathname, path)))
   const [resultsExpanded, setResultsExpanded] = useState(['/runs', '/recordings'].some(path => matchesPath(pathname, path)))
   const [openPlatformExpanded, setOpenPlatformExpanded] = useState(['/open-platform'].some(path => matchesPath(pathname, path)))
-  const [corpusExpanded, setCorpusExpanded] = useState(['/audio-corpus'].some(path => matchesPath(pathname, path)))
   useEffect(() => {
     if (['/runs', '/recordings'].some(path => matchesPath(pathname, path))) setResultsExpanded(true)
     if (matchesPath(pathname, '/open-platform')) setOpenPlatformExpanded(true)
-    if (matchesPath(pathname, '/audio-corpus')) setCorpusExpanded(true)
-    if (matchesPath(pathname, '/settings')) setSettingsExpanded(true)
   }, [pathname])
 
   return (
