@@ -366,3 +366,41 @@ class ExecutionPlan(Base):
     account_id: Mapped[Optional[str]] = mapped_column(String, nullable=True, index=True)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
     updated_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+
+class LLMConnection(Base):
+    """Account-scoped reusable provider connection; credentials are encrypted."""
+    __tablename__ = "llm_connections"
+    __table_args__ = (UniqueConstraint("account_id", "name", name="uq_llm_connection_account_name"),)
+
+    id: Mapped[str] = mapped_column(String, primary_key=True, default=_uuid)
+    account_id: Mapped[str] = mapped_column(ForeignKey("accounts.id"), index=True)
+    name: Mapped[str] = mapped_column(String)
+    provider: Mapped[str] = mapped_column(String, index=True)
+    base_url: Mapped[str] = mapped_column(Text, default="")
+    api_key_enc: Mapped[str] = mapped_column(Text, default="")
+    aws_access_key_id_enc: Mapped[str] = mapped_column(Text, default="")
+    aws_secret_access_key_enc: Mapped[str] = mapped_column(Text, default="")
+    aws_region_name: Mapped[str] = mapped_column(String, default="us-east-1")
+    notes: Mapped[str] = mapped_column(Text, default="")
+    last_test_status: Mapped[str] = mapped_column(String, default="untested")
+    last_test_message: Mapped[str] = mapped_column(Text, default="")
+    last_tested_at: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+    updated_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+
+class LLMModel(Base):
+    """A manually managed model exposed by an LLM connection."""
+    __tablename__ = "llm_models"
+    __table_args__ = (UniqueConstraint("account_id", "connection_id", "model_name", name="uq_llm_model_connection_name"),)
+
+    id: Mapped[str] = mapped_column(String, primary_key=True, default=_uuid)
+    account_id: Mapped[str] = mapped_column(ForeignKey("accounts.id"), index=True)
+    connection_id: Mapped[str] = mapped_column(ForeignKey("llm_connections.id", ondelete="CASCADE"), index=True)
+    model_name: Mapped[str] = mapped_column(String)
+    description: Mapped[str] = mapped_column(Text, default="")
+    capabilities_json: Mapped[str] = mapped_column(Text, default='["text"]')
+    enabled: Mapped[bool] = mapped_column(Boolean, default=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+    updated_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
