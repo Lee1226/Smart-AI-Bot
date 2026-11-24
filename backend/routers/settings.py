@@ -261,7 +261,7 @@ async def create_llm_connection(payload: LLMConnectionCreate, request: Request, 
     db.add(row)
     try:
         await db.commit()
-    except Exception:
+    except IntegrityError:
         await db.rollback()
         raise HTTPException(status_code=409, detail="Connection name already exists")
     await db.refresh(row)
@@ -293,7 +293,12 @@ async def update_llm_connection(connection_id: str, payload: LLMConnectionUpdate
         row.last_test_message = ""
         row.last_tested_at = None
     row.updated_at = datetime.utcnow()
-    await db.commit(); await db.refresh(row)
+    try:
+        await db.commit()
+    except IntegrityError:
+        await db.rollback()
+        raise HTTPException(status_code=409, detail="Connection name already exists")
+    await db.refresh(row)
     count = await db.scalar(select(func.count(LLMModel.id)).where(LLMModel.connection_id == row.id))
     return _connection_dict(row, count or 0)
 
@@ -327,7 +332,7 @@ async def create_llm_model(connection_id: str, payload: LLMModelInput, request: 
         description=payload.description.strip(), capabilities_json=json.dumps(payload.capabilities), enabled=payload.enabled)
     db.add(row)
     try: await db.commit()
-    except Exception:
+    except IntegrityError:
         await db.rollback(); raise HTTPException(status_code=409, detail="This model already exists on the connection")
     await db.refresh(row)
     return _model_dict(row)
@@ -343,7 +348,7 @@ async def update_llm_model(model_id: str, payload: LLMModelInput, request: Reque
     row.capabilities_json = json.dumps(payload.capabilities); row.enabled = payload.enabled
     row.updated_at = datetime.utcnow()
     try: await db.commit()
-    except Exception:
+    except IntegrityError:
         await db.rollback(); raise HTTPException(status_code=409, detail="This model already exists on the connection")
     return _model_dict(row)
 
