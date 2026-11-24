@@ -3,36 +3,31 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import {
   createLLMConnection, createLLMModel, deleteLLMConnection, deleteLLMModel,
   fetchLLMConnections, fetchLLMModels, importExistingLLMSettings, LLMConnection, LLMModel,
-  testLLMConnection, updateLLMConnection, updateLLMModel,
+  testLLMConnection, updateLLMConnection, updateLLMModel, fetchLLMProviders,
+  createLLMProvider, updateLLMProvider, deleteLLMProvider, LLMProvider, LLMProviderInput,
 } from '../lib/api'
 
-const PROVIDERS = [
-  { value: 'openai', label: 'OpenAI', url: 'https://api.openai.com/v1', key: true },
-  { value: 'anthropic', label: 'Anthropic', url: '', key: true },
-  { value: 'google', label: 'Google Gemini', url: '', key: true },
-  { value: 'dashscope', label: '阿里云百炼 / DashScope', url: 'https://dashscope.aliyuncs.com/compatible-mode/v1', key: true },
-  { value: 'ark', label: '火山引擎 Ark', url: 'https://ark.cn-beijing.volces.com/api/v3', key: true },
-  { value: 'zhipuai', label: '智谱 AI', url: 'https://open.bigmodel.cn/api/paas/v4', key: true },
-  { value: 'groq', label: 'Groq', url: 'https://api.groq.com/openai/v1', key: true },
-  { value: 'ollama', label: 'Ollama', url: 'http://localhost:11434', key: false },
-  { value: 'bedrock', label: 'AWS Bedrock', url: '', key: false },
-  { value: 'openai-compatible', label: '自定义 OpenAI Compatible', url: '', key: true },
-]
 const inputClass = 'w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm outline-none focus:border-blue-400 focus:ring-2 focus:ring-blue-100'
 const buttonClass = 'rounded-lg px-3 py-2 text-sm font-medium transition disabled:opacity-50'
-const providerLabel = (value: string) => PROVIDERS.find(p => p.value === value)?.label || value
 
 export default function ModelRepository() {
   const qc = useQueryClient()
-  const [tab, setTab] = useState<'connections' | 'models'>('connections')
+  const [tab, setTab] = useState<'connections' | 'models' | 'providers'>('connections')
   const [selectedId, setSelectedId] = useState('')
   const [connectionDialog, setConnectionDialog] = useState(false)
   const [modelDialog, setModelDialog] = useState(false)
+  const [providerDialog, setProviderDialog] = useState(false)
+  const [editingProvider, setEditingProvider] = useState<LLMProvider | null>(null)
+  const [providerForm, setProviderForm] = useState<LLMProviderInput>({ provider_id: '', name: '', protocol_type: 'openai-compatible', adapter_id: 'openai-compatible', default_base_url: '', auth_type: 'api_key', enabled: true })
   const [editingConnection, setEditingConnection] = useState<LLMConnection | null>(null)
   const [editingModel, setEditingModel] = useState<LLMModel | null>(null)
-  const [form, setForm] = useState({ name: '', provider: 'openai', base_url: 'https://api.openai.com/v1', api_key: '', aws_access_key_id: '', aws_secret_access_key: '', aws_region_name: 'us-east-1', notes: '' })
+  const [form, setForm] = useState({ name: '', provider: '', base_url: '', api_key: '', aws_access_key_id: '', aws_secret_access_key: '', aws_region_name: 'us-east-1', notes: '' })
   const [modelForm, setModelForm] = useState({ model_name: '', description: '', capabilities: 'text', enabled: true })
   const [message, setMessage] = useState('')
+  const { data: providers = [], isLoading: providersLoading } = useQuery({ queryKey: ['llm-providers'], queryFn: () => fetchLLMProviders(true) })
+  const availableProviders = providers.filter(p => p.enabled)
+  const providerLabel = (value: string) => providers.find(p => p.provider_id === value)?.name || value
+  const selectedProvider = providers.find(p => p.provider_id === form.provider)
   const { data: connections = [], isLoading } = useQuery({ queryKey: ['llm-connections'], queryFn: fetchLLMConnections })
   const current = connections.find(c => c.id === selectedId) || connections[0]
   const activeId = current?.id || ''
@@ -40,7 +35,8 @@ export default function ModelRepository() {
     queryKey: ['llm-models', activeId], queryFn: () => fetchLLMModels(activeId), enabled: !!activeId,
   })
   const enabledModels = useMemo(() => connections.reduce((n, c) => n + (c.id === activeId ? models.filter(m => m.enabled).length : 0), 0), [connections, activeId, models])
-  const refresh = () => { qc.invalidateQueries({ queryKey: ['llm-connections'] }); qc.invalidateQueries({ queryKey: ['llm-models'] }) }
+  const refresh = () => { qc.invalidateQueries({ queryKey: ['llm-connections'] }); qc.invalidateQueries({ queryKey: ['llm-models'] }); qc.invalidateQueries({ queryKey: ['llm-providers'] }) }
+  const providerMutation = useMutation({ mutationFn: () => editingProvider ? updateLLMProvider(editingProvider.id, providerForm) : createLLMProvider(providerForm), onSuccess: () => { setProviderDialog(false); setEditingProvider(null); setMessage('供应商已保存'); refresh() }, onError: (e: any) => setMessage(e.response?.data?.detail || '保存供应商失败') })
   const connectionMutation = useMutation({
     mutationFn: () => editingConnection
       ? updateLLMConnection(editingConnection.id, { name: form.name, provider: form.provider, base_url: form.base_url, api_key: form.api_key || undefined, aws_access_key_id: form.aws_access_key_id || undefined, aws_secret_access_key: form.aws_secret_access_key || undefined, aws_region_name: form.aws_region_name, notes: form.notes })
@@ -68,9 +64,7 @@ export default function ModelRepository() {
     },
     onError: (e: any) => setMessage(e.response?.data?.detail || '导入现有模型配置失败'),
   })
-  const openCreateConnection = () => {
-    setEditingConnection(null); setForm({ name: '', provider: 'openai', base_url: 'https://api.openai.com/v1', api_key: '', aws_access_key_id: '', aws_secret_access_key: '', aws_region_name: 'us-east-1', notes: '' }); setConnectionDialog(true)
-  }
+  const openCreateConnection = () => { const p = availableProviders[0]; setEditingConnection(null); setForm({ name: '', provider: p?.provider_id || '', base_url: p?.default_base_url || '', api_key: '', aws_access_key_id: '', aws_secret_access_key: '', aws_region_name: 'us-east-1', notes: '' }); setConnectionDialog(true) }
   const openEditConnection = (c: LLMConnection) => {
     setEditingConnection(c); setForm({ name: c.name, provider: c.provider, base_url: c.base_url, api_key: '', aws_access_key_id: '', aws_secret_access_key: '', aws_region_name: c.aws_region_name, notes: c.notes }); setConnectionDialog(true)
   }
@@ -87,7 +81,9 @@ export default function ModelRepository() {
     try { await deleteLLMModel(m.id); setMessage('模型已删除'); refresh() }
     catch (e: any) { setMessage(e.response?.data?.detail || '删除失败') }
   }
-  const provider = PROVIDERS.find(p => p.value === form.provider) || PROVIDERS[0]
+  const openCreateProvider = () => { setEditingProvider(null); setProviderForm({ provider_id: '', name: '', protocol_type: 'openai-compatible', adapter_id: 'openai-compatible', default_base_url: '', auth_type: 'api_key', enabled: true }); setProviderDialog(true) }
+  const openEditProvider = (p: LLMProvider) => { setEditingProvider(p); setProviderForm({ provider_id: p.provider_id, name: p.name, protocol_type: p.protocol_type, adapter_id: p.adapter_id, default_base_url: p.default_base_url, auth_type: p.auth_type, enabled: p.enabled, legacy_api_key_field: p.legacy_api_key_field, legacy_base_url_field: p.legacy_base_url_field, model_presets: p.model_presets }); setProviderDialog(true) }
+  const removeProvider = async (p: LLMProvider) => { if (!confirm('确定删除供应商“' + p.name + '”？')) return; try { await deleteLLMProvider(p.id); setMessage('供应商已删除'); refresh() } catch (e: any) { setMessage(e.response?.data?.detail || '删除供应商失败') } }
 
   return <div className="mx-auto max-w-6xl space-y-5">
     <header className="rounded-2xl bg-gradient-to-br from-[#175CD3] via-[#2878E8] to-[#38A6D9] p-6 text-white shadow-[0_16px_40px_rgba(37,99,235,0.16)]">
@@ -104,14 +100,14 @@ export default function ModelRepository() {
       <div className="flex flex-wrap items-center justify-between gap-3 border-b border-slate-100 px-5 py-4">
         <div className="flex gap-1 rounded-lg bg-slate-100 p-1">
           <button className={`${buttonClass} ${tab === 'connections' ? 'bg-white text-blue-700 shadow-sm' : 'text-slate-600'}`} onClick={() => setTab('connections')}>连接管理</button>
-          <button className={`${buttonClass} ${tab === 'models' ? 'bg-white text-blue-700 shadow-sm' : 'text-slate-600'}`} onClick={() => setTab('models')}>模型管理</button>
+          <button className={`${buttonClass} ${tab === 'models' ? 'bg-white text-blue-700 shadow-sm' : 'text-slate-600'}`} onClick={() => setTab('models')}>模型管理</button><button className={`${buttonClass} ${tab === 'providers' ? 'bg-white text-blue-700 shadow-sm' : 'text-slate-600'}`} onClick={() => setTab('providers')}>供应商管理</button>
         </div>
         {tab === 'connections'
           ? <div className="flex flex-wrap gap-2">
               <button className={`${buttonClass} border border-slate-200 bg-white text-slate-600 hover:bg-slate-50`} disabled={importMutation.isPending} onClick={() => importMutation.mutate()}>{importMutation.isPending ? '导入中…' : '导入现有平台配置'}</button>
               <button className={`${buttonClass} bg-blue-600 text-white hover:bg-blue-700`} onClick={openCreateConnection}>＋ 添加连接</button>
             </div>
-          : <button className={`${buttonClass} bg-blue-600 text-white hover:bg-blue-700 disabled:opacity-40`} disabled={!current} onClick={() => openModel()}>＋ 添加模型</button>}
+           : tab === 'models' ? <button className={`${buttonClass} bg-blue-600 text-white hover:bg-blue-700 disabled:opacity-40`} disabled={!current} onClick={() => openModel()}>＋ 添加模型</button> : <button className={`${buttonClass} bg-blue-600 text-white`} onClick={openCreateProvider}>＋ 添加供应商</button>}
       </div>
       {message && <div className="flex items-center justify-between border-b border-blue-100 bg-blue-50 px-5 py-2 text-sm text-blue-800"><span>{message}</span><button onClick={() => setMessage('')} aria-label="关闭">×</button></div>}
       {tab === 'connections' ? <div className="p-5">
@@ -121,21 +117,30 @@ export default function ModelRepository() {
             <div className="flex items-start gap-3"><div className="grid h-10 w-10 shrink-0 place-items-center rounded-xl bg-slate-100 text-lg text-slate-600">◈</div><div className="min-w-0 flex-1"><div className="flex flex-wrap items-center gap-2"><h3 className="font-semibold text-slate-800">{c.name}</h3><span className={`rounded-full px-2 py-0.5 text-[11px] ${c.last_test_status === 'success' ? 'bg-emerald-50 text-emerald-700' : c.last_test_status === 'failed' ? 'bg-rose-50 text-rose-700' : 'bg-slate-100 text-slate-500'}`}>{c.last_test_status === 'success' ? '连接正常' : c.last_test_status === 'failed' ? '测试失败' : '尚未测试'}</span></div><p className="mt-1 text-xs text-slate-500">{providerLabel(c.provider)} · {c.model_count} 个模型</p><p className="mt-2 truncate font-mono text-xs text-slate-400">{c.base_url || '未设置 API Base URL'}</p></div></div>
             <div className="mt-4 flex flex-wrap items-center gap-2 border-t border-slate-100 pt-3"><button className={`${buttonClass} bg-blue-50 text-blue-700`} onClick={() => { setSelectedId(c.id); setTab('models') }}>管理模型</button><button disabled={testMutation.isPending || c.model_count === 0} className={`${buttonClass} border border-slate-200 text-slate-600`} onClick={() => testMutation.mutate(c.id)}>{testMutation.isPending ? '测试中…' : '测试连接'}</button><button className={`${buttonClass} text-slate-500 hover:bg-slate-100`} onClick={() => openEditConnection(c)}>编辑</button><button className={`${buttonClass} text-rose-600 hover:bg-rose-50`} onClick={() => removeConnection(c)}>删除</button></div>
           </article>)}</div>}
-      </div> : <div className="p-5">
+      </div> : tab === 'models' ? <div className="p-5">
         <div className="mb-4 flex flex-wrap items-center gap-3"><label className="text-sm text-slate-600">所属连接</label><select className={`${inputClass} max-w-sm`} value={activeId} onChange={e => setSelectedId(e.target.value)}>{connections.map(c => <option key={c.id} value={c.id}>{c.name} · {providerLabel(c.provider)}</option>)}</select>{current && <span className="text-xs text-slate-400">{current.base_url || providerLabel(current.provider)}</span>}</div>
         {!current ? <p className="py-10 text-center text-sm text-slate-400">请先创建一个模型连接。</p> : modelsLoading ? <p className="py-10 text-center text-sm text-slate-400">加载模型中…</p> : models.length === 0 ? <div className="rounded-xl border border-dashed border-slate-300 px-6 py-12 text-center"><p className="font-medium text-slate-700">这个连接还没有模型</p><p className="mt-2 text-sm text-slate-500">可以手动添加模型名称，不依赖供应商模型列表接口。</p><button className={`${buttonClass} mt-4 bg-blue-600 text-white`} onClick={() => openModel()}>添加模型</button></div> :
         <div className="overflow-x-auto"><table className="w-full min-w-[640px] text-left text-sm"><thead><tr className="border-b border-slate-100 text-xs text-slate-500"><th className="px-3 py-3 font-medium">模型名称</th><th className="px-3 py-3 font-medium">能力</th><th className="px-3 py-3 font-medium">状态</th><th className="px-3 py-3 text-right font-medium">操作</th></tr></thead><tbody>{models.map(m => <tr key={m.id} className="border-b border-slate-50 last:border-0"><td className="px-3 py-3"><div className="font-mono font-medium text-slate-800">{m.model_name}</div><div className="mt-1 text-xs text-slate-400">{m.description || '—'}</div></td><td className="px-3 py-3"><div className="flex flex-wrap gap-1">{m.capabilities.map(c => <span key={c} className="rounded bg-slate-100 px-2 py-0.5 text-xs text-slate-600">{c}</span>)}</div></td><td className="px-3 py-3"><span className={`rounded-full px-2 py-1 text-xs ${m.enabled ? 'bg-emerald-50 text-emerald-700' : 'bg-slate-100 text-slate-500'}`}>{m.enabled ? '已启用' : '已停用'}</span></td><td className="px-3 py-3 text-right"><button className="px-2 py-1 text-xs text-blue-700 hover:underline" onClick={() => openModel(m)}>编辑</button><button className="px-2 py-1 text-xs text-rose-600 hover:underline" onClick={() => removeModel(m)}>删除</button></td></tr>)}</tbody></table></div>}
-      </div>}
+      </div> : <div className="p-5">{providersLoading ? <p className="py-8 text-center text-sm text-slate-400">加载供应商中…</p> : <div className="overflow-x-auto"><table className="w-full min-w-[680px] text-left text-sm"><thead><tr className="border-b text-xs text-slate-500"><th className="p-3">名称</th><th className="p-3">标识</th><th className="p-3">协议</th><th className="p-3">默认地址</th><th className="p-3">状态</th><th className="p-3 text-right">操作</th></tr></thead><tbody>{providers.map(p => <tr key={p.id} className="border-b border-slate-50"><td className="p-3">{p.name}</td><td className="p-3 font-mono text-xs">{p.provider_id}</td><td className="p-3">{p.protocol_type}</td><td className="p-3 text-xs">{p.default_base_url || '—'}</td><td className="p-3">{p.enabled ? '启用' : '停用'}</td><td className="p-3 text-right"><button className="px-2 text-blue-700" onClick={() => openEditProvider(p)}>编辑</button><button className="px-2 text-rose-600" onClick={() => removeProvider(p)}>删除</button></td></tr>)}</tbody></table></div>}</div>}
     </section>
     {connectionDialog && <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/40 p-4" role="dialog" aria-modal="true"><div className="max-h-[90vh] w-full max-w-xl overflow-y-auto rounded-2xl bg-white p-6 shadow-2xl"><div className="flex items-center justify-between"><h2 className="text-lg font-semibold text-slate-800">{editingConnection ? '编辑连接' : '添加模型连接'}</h2><button onClick={() => setConnectionDialog(false)} className="text-xl text-slate-400">×</button></div><div className="mt-5 grid gap-4">
       <label className="space-y-1 text-xs font-medium text-slate-600">连接名称<input className={inputClass} value={form.name} onChange={e => setForm({ ...form, name: e.target.value })} placeholder="例如：百炼生产环境" /></label>
-      <label className="space-y-1 text-xs font-medium text-slate-600">供应商类型<select className={inputClass} value={form.provider} onChange={e => { const p = PROVIDERS.find(x => x.value === e.target.value)!; setForm({ ...form, provider: p.value, base_url: p.url }) }}>{PROVIDERS.map(p => <option key={p.value} value={p.value}>{p.label}</option>)}</select></label>
+      <label className="space-y-1 text-xs font-medium text-slate-600">供应商类型<select className={inputClass} value={form.provider} onChange={e => { const p = availableProviders.find(x => x.provider_id === e.target.value); setForm({ ...form, provider: p?.provider_id || "", base_url: p?.default_base_url || "", api_key: "" }) }}>{availableProviders.map(p => <option key={p.id} value={p.provider_id}>{p.name}</option>)}</select></label>
       <label className="space-y-1 text-xs font-medium text-slate-600">API Base URL<input className={inputClass} value={form.base_url} onChange={e => setForm({ ...form, base_url: e.target.value })} placeholder="https://..." /></label>
-      {provider.key && <label className="space-y-1 text-xs font-medium text-slate-600">API Key<input type="password" className={inputClass} value={form.api_key} onChange={e => setForm({ ...form, api_key: e.target.value })} placeholder={editingConnection ? '留空保持现有密钥' : '输入 API Key'} /></label>}
-      {form.provider === 'bedrock' && <><label className="space-y-1 text-xs font-medium text-slate-600">AWS Access Key ID<input className={inputClass} value={form.aws_access_key_id} onChange={e => setForm({ ...form, aws_access_key_id: e.target.value })} /></label><label className="space-y-1 text-xs font-medium text-slate-600">AWS Secret Access Key<input type="password" className={inputClass} value={form.aws_secret_access_key} onChange={e => setForm({ ...form, aws_secret_access_key: e.target.value })} /></label><label className="space-y-1 text-xs font-medium text-slate-600">AWS Region<input className={inputClass} value={form.aws_region_name} onChange={e => setForm({ ...form, aws_region_name: e.target.value })} /></label></>}
+      {selectedProvider?.auth_type === "api_key" && <label className="space-y-1 text-xs font-medium text-slate-600">API Key<input type="password" className={inputClass} value={form.api_key} onChange={e => setForm({ ...form, api_key: e.target.value })} placeholder={editingConnection ? '留空保持现有密钥' : '输入 API Key'} /></label>}
+      {selectedProvider?.auth_type === 'aws' && <><label className="space-y-1 text-xs font-medium text-slate-600">AWS Access Key ID<input className={inputClass} value={form.aws_access_key_id} onChange={e => setForm({ ...form, aws_access_key_id: e.target.value })} /></label><label className="space-y-1 text-xs font-medium text-slate-600">AWS Secret Access Key<input type="password" className={inputClass} value={form.aws_secret_access_key} onChange={e => setForm({ ...form, aws_secret_access_key: e.target.value })} /></label><label className="space-y-1 text-xs font-medium text-slate-600">AWS Region<input className={inputClass} value={form.aws_region_name} onChange={e => setForm({ ...form, aws_region_name: e.target.value })} /></label></>}
       <label className="space-y-1 text-xs font-medium text-slate-600">备注<textarea className={inputClass} rows={2} value={form.notes} onChange={e => setForm({ ...form, notes: e.target.value })} /></label>
       <div className="flex justify-end gap-2 pt-2"><button className={`${buttonClass} border border-slate-200 text-slate-600`} onClick={() => setConnectionDialog(false)}>取消</button><button disabled={connectionMutation.isPending || !form.name.trim()} className={`${buttonClass} bg-blue-600 text-white`} onClick={() => connectionMutation.mutate()}>{connectionMutation.isPending ? '保存中…' : '保存连接'}</button></div>
     </div></div></div>}
+    {providerDialog && <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/40 p-4" role="dialog" aria-modal="true"><div className="max-h-[90vh] w-full max-w-xl overflow-y-auto rounded-2xl bg-white p-6 shadow-2xl">
+      <div className="flex items-center justify-between"><h2 className="text-lg font-semibold">{editingProvider ? "编辑供应商" : "添加供应商"}</h2><button onClick={() => setProviderDialog(false)}>×</button></div><div className="mt-5 grid gap-3">
+      <label className="space-y-1 text-xs font-medium text-slate-600">供应商名称<input className={inputClass} value={providerForm.name} onChange={e => setProviderForm({ ...providerForm, name: e.target.value })} /></label>
+      <label className="space-y-1 text-xs font-medium text-slate-600">唯一标识<input className={inputClass} value={providerForm.provider_id} onChange={e => setProviderForm({ ...providerForm, provider_id: e.target.value.toLowerCase().replace(/[^a-z0-9._-]/g, "-") })} /></label>
+      <label className="space-y-1 text-xs font-medium text-slate-600">协议适配器<select className={inputClass} value={providerForm.adapter_id} onChange={e => setProviderForm({ ...providerForm, adapter_id: e.target.value, protocol_type: e.target.value === "openai-compatible" ? "openai-compatible" : "native" })}><option value="openai-compatible">OpenAI Compatible</option><option value="openai">OpenAI</option><option value="anthropic">Anthropic</option><option value="google">Google Gemini</option><option value="dashscope">阿里云百炼</option><option value="ark">火山引擎 Ark</option><option value="zhipuai">智谱 AI</option><option value="groq">Groq</option><option value="ollama">Ollama</option><option value="bedrock">AWS Bedrock</option></select></label>
+      <label className="space-y-1 text-xs font-medium text-slate-600">默认 Base URL<input className={inputClass} value={providerForm.default_base_url || ""} onChange={e => setProviderForm({ ...providerForm, default_base_url: e.target.value })} /></label>
+      <label className="space-y-1 text-xs font-medium text-slate-600">认证方式<select className={inputClass} value={providerForm.auth_type} onChange={e => setProviderForm({ ...providerForm, auth_type: e.target.value })}><option value="api_key">API Key</option><option value="none">无需认证</option><option value="aws">AWS 凭据</option></select></label>
+      <label className="flex items-center gap-2 text-sm"><input type="checkbox" checked={providerForm.enabled} onChange={e => setProviderForm({ ...providerForm, enabled: e.target.checked })} />启用</label>
+      <div className="flex justify-end gap-2"><button className={buttonClass} onClick={() => setProviderDialog(false)}>取消</button><button className={buttonClass + " bg-blue-600 text-white"} disabled={providerMutation.isPending || !providerForm.name.trim() || !providerForm.provider_id.trim()} onClick={() => providerMutation.mutate()}>保存供应商</button></div></div></div></div>}
     {modelDialog && <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/40 p-4" role="dialog" aria-modal="true"><div className="w-full max-w-lg rounded-2xl bg-white p-6 shadow-2xl"><div className="flex items-center justify-between"><h2 className="text-lg font-semibold text-slate-800">{editingModel ? '编辑模型' : '添加模型'}</h2><button onClick={() => setModelDialog(false)} className="text-xl text-slate-400">×</button></div><div className="mt-5 grid gap-4">
       <label className="space-y-1 text-xs font-medium text-slate-600">模型名称<input className={inputClass} value={modelForm.model_name} onChange={e => setModelForm({ ...modelForm, model_name: e.target.value })} placeholder="例如：qwen-plus" /></label>
       <label className="space-y-1 text-xs font-medium text-slate-600">模型备注<input className={inputClass} value={modelForm.description} onChange={e => setModelForm({ ...modelForm, description: e.target.value })} placeholder="例如：通用对话模型" /></label>
