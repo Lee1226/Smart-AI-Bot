@@ -401,13 +401,13 @@ async def import_existing_llm_settings(request: Request, db: AsyncSession = Depe
     account_id = require_account_id(request)
     settings = await load_settings(account_id)
     provider_specs = [
-        ("openai", "OpenAI", "openai_api_key", "", ["gpt-4o", "gpt-4o-mini", "gpt-4-turbo", "gpt-3.5-turbo"]),
-        ("anthropic", "Anthropic", "anthropic_api_key", "anthropic_base_url", ["claude-opus-4-6", "claude-sonnet-4-6", "claude-haiku-4-5"]),
-        ("google", "Google Gemini", "gemini_api_key", "", ["gemini-1.5-pro", "gemini-1.5-flash", "gemini-2.0-flash"]),
-        ("zhipuai", "智谱 AI", "zhipu_api_key", "", ["glm-4v", "glm-4v-plus", "glm-4-plus", "glm-4-flash"]),
-        ("dashscope", "阿里云百炼", "dashscope_api_key", "dashscope_base_url", ["qwen3.8-max", "qwen3.8-flash", "qwen3.7-plus", "qwen3.7-flash", "qwen3.5-plus", "qwen3.5-flash", "qwen-plus"]),
-        ("groq", "Groq", "groq_api_key", "", ["llama-3.1-70b-versatile", "llama-3.1-8b-instant", "mixtral-8x7b-32768"]),
-        ("ark", "火山引擎 Ark", "ark_api_key", "ark_base_url", []),
+        ("openai", "OpenAI", "openai_api_key", "", "https://api.openai.com/v1", ["gpt-4o", "gpt-4o-mini", "gpt-4-turbo", "gpt-3.5-turbo"]),
+        ("anthropic", "Anthropic", "anthropic_api_key", "anthropic_base_url", "", ["claude-opus-4-6", "claude-sonnet-4-6", "claude-haiku-4-5"]),
+        ("google", "Google Gemini", "gemini_api_key", "", "", ["gemini-1.5-pro", "gemini-1.5-flash", "gemini-2.0-flash"]),
+        ("zhipuai", "智谱 AI", "zhipu_api_key", "", "https://open.bigmodel.cn/api/paas/v4", ["glm-4v", "glm-4v-plus", "glm-4-plus", "glm-4-flash"]),
+        ("dashscope", "阿里云百炼", "dashscope_api_key", "dashscope_base_url", "https://dashscope.aliyuncs.com/compatible-mode/v1", ["qwen3.8-max", "qwen3.8-flash", "qwen3.7-plus", "qwen3.7-flash", "qwen3.5-plus", "qwen3.5-flash", "qwen-plus"]),
+        ("groq", "Groq", "groq_api_key", "", "https://api.groq.com/openai/v1", ["llama-3.1-70b-versatile", "llama-3.1-8b-instant", "mixtral-8x7b-32768"]),
+        ("ark", "火山引擎 Ark", "ark_api_key", "ark_base_url", "https://ark.cn-beijing.volces.com/api/v3", []),
     ]
     imported_connections = 0
     imported_models = 0
@@ -418,17 +418,18 @@ async def import_existing_llm_settings(request: Request, db: AsyncSession = Depe
     verifier_provider = provider_aliases.get(verifier_provider_raw, verifier_provider_raw)
     verifier_model = (settings.get("verifier_model") or "").strip()
     candidates = []
-    for provider, label, key_field, base_field, presets in provider_specs:
-        # Create a provider profile even when the legacy settings contain no key.
-        # Empty credentials remain empty and the connection cannot pass a live test
-        # until the user fills them in from the repository UI.
+    for provider, label, key_field, base_field, default_base_url, presets in provider_specs:
+        # Keep provider-native endpoints implicit where LiteLLM selects them;
+        # use explicit URLs for OpenAI-compatible providers.
+        configured_base_url = (settings.get(base_field) or "").strip() if base_field else ""
         candidates.append({
-            "provider": provider, "label": label, "base_url": (settings.get(base_field) or "").strip(),
+            "provider": provider, "label": label,
+            "base_url": configured_base_url or default_base_url,
             "api_key": (settings.get(key_field) or "").strip(),
             "aws_access": "", "aws_secret": "", "aws_region": "us-east-1", "models": presets,
         })
     candidates.append({
-        "provider": "ollama", "label": "Ollama", "base_url": (settings.get("ollama_base_url") or "").strip(),
+        "provider": "ollama", "label": "Ollama", "base_url": (settings.get("ollama_base_url") or "http://localhost:11434").strip(),
         "api_key": "", "aws_access": "", "aws_secret": "", "aws_region": "us-east-1",
         "models": ["llama3", "llama3.1", "qwen2", "mistral"],
     })
