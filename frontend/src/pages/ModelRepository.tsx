@@ -2,7 +2,7 @@ import { useMemo, useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import {
   createLLMConnection, createLLMModel, deleteLLMConnection, deleteLLMModel,
-  fetchLLMConnections, fetchLLMModels, LLMConnection, LLMModel,
+  fetchLLMConnections, fetchLLMModels, importExistingLLMSettings, LLMConnection, LLMModel,
   testLLMConnection, updateLLMConnection, updateLLMModel,
 } from '../lib/api'
 
@@ -60,6 +60,14 @@ export default function ModelRepository() {
     onSuccess: r => { setMessage(`连接测试成功：${r.tested_model}`); refresh() },
     onError: (e: any) => { setMessage(e.response?.data?.detail || '连接测试失败'); refresh() },
   })
+  const importMutation = useMutation({
+    mutationFn: importExistingLLMSettings,
+    onSuccess: r => {
+      setMessage(`已导入 ${r.imported_connections} 个连接、${r.imported_models} 个模型${r.skipped_providers.length ? `；未配置凭据的供应商已跳过：${r.skipped_providers.join('、')}` : ''}`)
+      refresh()
+    },
+    onError: (e: any) => setMessage(e.response?.data?.detail || '导入现有模型配置失败'),
+  })
   const openCreateConnection = () => {
     setEditingConnection(null); setForm({ name: '', provider: 'openai', base_url: 'https://api.openai.com/v1', api_key: '', aws_access_key_id: '', aws_secret_access_key: '', aws_region_name: 'us-east-1', notes: '' }); setConnectionDialog(true)
   }
@@ -99,7 +107,10 @@ export default function ModelRepository() {
           <button className={`${buttonClass} ${tab === 'models' ? 'bg-white text-blue-700 shadow-sm' : 'text-slate-600'}`} onClick={() => setTab('models')}>模型管理</button>
         </div>
         {tab === 'connections'
-          ? <button className={`${buttonClass} bg-blue-600 text-white hover:bg-blue-700`} onClick={openCreateConnection}>＋ 添加连接</button>
+          ? <div className="flex flex-wrap gap-2">
+              <button className={`${buttonClass} border border-slate-200 bg-white text-slate-600 hover:bg-slate-50`} disabled={importMutation.isPending} onClick={() => importMutation.mutate()}>{importMutation.isPending ? '导入中…' : '导入现有平台配置'}</button>
+              <button className={`${buttonClass} bg-blue-600 text-white hover:bg-blue-700`} onClick={openCreateConnection}>＋ 添加连接</button>
+            </div>
           : <button className={`${buttonClass} bg-blue-600 text-white hover:bg-blue-700 disabled:opacity-40`} disabled={!current} onClick={() => openModel()}>＋ 添加模型</button>}
       </div>
       {message && <div className="flex items-center justify-between border-b border-blue-100 bg-blue-50 px-5 py-2 text-sm text-blue-800"><span>{message}</span><button onClick={() => setMessage('')} aria-label="关闭">×</button></div>}
