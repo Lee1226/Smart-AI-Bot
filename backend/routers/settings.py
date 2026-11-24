@@ -455,8 +455,17 @@ async def import_existing_llm_settings(request: Request, db: AsyncSession = Depe
             LLMConnection.notes.contains(marker),
         ))).scalar_one_or_none()
         if row is None:
+            base_name = f'{item["label"]}（平台配置导入）'
+            connection_name = base_name
+            suffix = 2
+            while await db.scalar(select(func.count(LLMConnection.id)).where(
+                LLMConnection.account_id == account_id,
+                LLMConnection.name == connection_name,
+            )):
+                connection_name = f"{base_name} {suffix}"
+                suffix += 1
             row = LLMConnection(
-                account_id=account_id, name=f'{item["label"]}（平台配置导入）',
+                account_id=account_id, name=connection_name,
                 provider=provider, base_url=item["base_url"],
                 api_key_enc=_encrypt_secret(item["api_key"]),
                 aws_access_key_id_enc=_encrypt_secret(item["aws_access"]),
