@@ -249,6 +249,14 @@ async def execute_execution_plan_run(
         api_key = resolve_api_key(settings, provider)
         api_base = resolve_api_base(settings, provider)
         v_provider, v_model, v_key, v_base = resolve_verifier(settings)
+        # Match TestCaseAgent: an unset verifier inherits the run's primary model.
+        # Resolve fallbacks against the verifier target, not the execution target.
+        v_provider = v_provider or provider
+        v_model = v_model or model
+        if v_provider == provider:
+            v_key = v_key or api_key
+            v_base = v_base or api_base
+        verifier_fallbacks = build_fallback_chain(settings, v_provider, v_model)
         fallbacks = build_fallback_chain(settings, provider, model)
         language = resolve_language(settings)
         if not api_key and (provider or "").lower() != "ollama":
@@ -273,7 +281,14 @@ async def execute_execution_plan_run(
                 "recognition_rules": json.loads(item.recognition_rules_json or "{}"),
                 "handling_rules": json.loads(item.handling_rules_json or "{}"),
             } for item in knowledge_rows]
-        verifier = LLMVerifier(v_provider, v_model, v_key, v_base, fallbacks=fallbacks, language=language)
+        logger.info(
+            "[plan:%s] verifier model resolved: %s/%s",
+            run_id, v_provider, v_model,
+        )
+        verifier = LLMVerifier(
+            v_provider, v_model, v_key, v_base,
+            fallbacks=verifier_fallbacks, language=language,
+        )
 
         async with AsyncSessionLocal() as db:
             await db.execute(update(TestRun).where(TestRun.id == run_id).values(status="running"))
