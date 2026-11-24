@@ -2,7 +2,7 @@ import { useMemo, useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import {
   createLLMConnection, createLLMModel, deleteLLMConnection, deleteLLMModel,
-  fetchLLMConnections, fetchLLMModels, importExistingLLMSettings, LLMConnection, LLMModel,
+  fetchLLMConnections, fetchLLMModels, LLMConnection, LLMModel,
   testLLMConnection, updateLLMConnection, updateLLMModel, fetchLLMProviders,
 } from '../lib/api'
 
@@ -60,14 +60,6 @@ export default function ModelRepository() {
     onSuccess: r => { setMessage(`连接测试成功：${r.tested_model}`); refresh() },
     onError: (e: any) => { setMessage(e.response?.data?.detail || '连接测试失败'); refresh() },
   })
-  const importMutation = useMutation({
-    mutationFn: importExistingLLMSettings,
-    onSuccess: r => {
-      setMessage(`已导入 ${r.imported_connections} 个连接、${r.imported_models} 个模型${r.repaired_base_urls ? `；补全了 ${r.repaired_base_urls} 个已有连接的 Base URL` : ''}${r.skipped_providers.length ? `；未配置凭据的供应商已跳过：${r.skipped_providers.join('、')}` : ''}`)
-      refresh()
-    },
-    onError: (e: any) => setMessage(e.response?.data?.detail || '导入现有模型配置失败'),
-  })
   const openCreateConnection = () => { setEditingConnection(null); setForm({ name: '', provider: '', base_url: '', api_key: '', aws_access_key_id: '', aws_secret_access_key: '', aws_region_name: 'us-east-1', notes: '' }); setConnectionDialog(true) }
   const openEditConnection = (c: LLMConnection) => {
     setEditingConnection(c); setForm({ name: c.name, provider: providers.find(p => p.id === c.provider_catalog_id)?.provider_id || c.provider, base_url: c.base_url, api_key: '', aws_access_key_id: '', aws_secret_access_key: '', aws_region_name: c.aws_region_name, notes: c.notes }); setConnectionDialog(true)
@@ -105,7 +97,6 @@ export default function ModelRepository() {
         </div>
         {tab === 'connections'
           ? <div className="flex flex-wrap gap-2">
-              <button className={`${buttonClass} border border-slate-200 bg-white text-slate-600 hover:bg-slate-50`} disabled={importMutation.isPending} onClick={() => importMutation.mutate()}>{importMutation.isPending ? '导入中…' : '导入现有平台配置'}</button>
               <button className={`${buttonClass} bg-blue-600 text-white hover:bg-blue-700`} onClick={openCreateConnection}>＋ 添加连接</button>
             </div>
            : <button className={`${buttonClass} bg-blue-600 text-white hover:bg-blue-700 disabled:opacity-40`} disabled={!current} onClick={() => openModel()}>＋ 添加模型</button>}
