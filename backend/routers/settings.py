@@ -558,6 +558,7 @@ async def import_existing_llm_settings(request: Request, db: AsyncSession = Depe
     settings = await load_settings(account_id)
     imported_connections = 0
     imported_models = 0
+    repaired_base_urls = 0
     provider_aliases = {"gemini": "google", "zhipu": "zhipuai"}
     default_provider = provider_aliases.get((settings.get("default_provider") or "openai").lower(), (settings.get("default_provider") or "openai").lower())
     default_model = (settings.get("default_model") or "").strip()
@@ -622,6 +623,7 @@ async def import_existing_llm_settings(request: Request, db: AsyncSession = Depe
         # that a user has already configured manually.
         if not (row.base_url or "").strip() and item["base_url"]:
             row.base_url = item["base_url"]
+            repaired_base_urls += 1
         model_names = list(dict.fromkeys(item["models"] + [
             default_model if default_provider == provider else "",
             verifier_model if verifier_provider == provider else "",
@@ -646,6 +648,7 @@ async def import_existing_llm_settings(request: Request, db: AsyncSession = Depe
     await db.commit()
     return {
         "imported_connections": imported_connections, "imported_models": imported_models,
+        "repaired_base_urls": repaired_base_urls,
         "skipped_providers": [],
         "message": "已按供应商数据库目录导入连接；未配置凭据的连接保留为空，补充凭据后即可测试。当前默认模型和 Verifier 模型已启用，其余预设模型默认停用。",
     }
