@@ -664,15 +664,6 @@ export interface LLMModel {
   capabilities: string[]; enabled: boolean; created_at: string | null
 }
 export const fetchLLMConnections = () => api.get<LLMConnection[]>('/settings/llm-connections').then(r => r.data)
-export interface ImportExistingLLMSettingsResult {
-  imported_connections: number
-  imported_models: number
-  repaired_base_urls: number
-  skipped_providers: string[]
-  message: string
-}
-export const importExistingLLMSettings = () =>
-  api.post<ImportExistingLLMSettingsResult>('/settings/llm-connections/import-existing').then(r => r.data)
 export const createLLMConnection = (data: {
   name: string; provider: string; base_url?: string; api_key?: string
   aws_access_key_id?: string; aws_secret_access_key?: string; aws_region_name?: string; notes?: string
