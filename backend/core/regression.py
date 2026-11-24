@@ -39,7 +39,7 @@ async def prepare_run(run_id, emit):
         await db.commit()
     if config.get('suite_apps'):
         from core.test_runner import _suite_app_package
-        platform = connected_devices[run.device_id].platform
+        platform = WebSocketDevice(run.device_id).platform
         package = await _suite_app_package(run.suite_id, platform)
         if package != config['suite_apps'].get(run.suite_id, {}).get(platform):
             raise RuntimeError('套件的应用配置发生变更，请创建新计划')
