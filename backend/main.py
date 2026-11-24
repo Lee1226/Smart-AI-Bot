@@ -3,6 +3,7 @@ import os
 
 # Force LiteLLM to use its bundled model cost map; do not fetch it from GitHub.
 os.environ["LITELLM_LOCAL_MODEL_COST_MAP"] = "True"
+os.environ["LITELLM_LOCAL_ANTHROPIC_BETA_HEADERS"] = "True"
 
 import logging
 from contextlib import asynccontextmanager
