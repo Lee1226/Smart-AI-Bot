@@ -279,6 +279,8 @@ async def list_llm_providers(request: Request, include_disabled: bool = True, db
 async def create_llm_provider(payload: LLMProviderInput, request: Request, db: AsyncSession = Depends(get_db)):
     require_role(request, "owner", "admin")
     account_id = require_account_id(request)
+    if payload.auth_type not in {"api_key", "none", "aws"}:
+        raise HTTPException(status_code=422, detail="不支持的认证方式")
     # adapter_id names an implemented protocol adapter, not a provider option.
     supported_adapters = {"openai", "anthropic", "google", "dashscope", "ark", "zhipuai", "groq", "ollama", "bedrock", "openai-compatible"}
     if payload.adapter_id not in supported_adapters:
@@ -310,6 +312,8 @@ async def update_llm_provider(provider_id: str, payload: LLMProviderInput, reque
     used = await db.scalar(select(func.count(LLMConnection.id)).where(LLMConnection.provider_catalog_id == row.id))
     if used and (payload.provider_id.strip().lower() != row.provider_id or payload.adapter_id != row.adapter_id):
         raise HTTPException(status_code=409, detail="该供应商已有连接，不能修改唯一标识或协议适配器")
+    if payload.auth_type not in {"api_key", "none", "aws"}:
+        raise HTTPException(status_code=422, detail="不支持的认证方式")
     supported_adapters = {"openai", "anthropic", "google", "dashscope", "ark", "zhipuai", "groq", "ollama", "bedrock", "openai-compatible"}
     if payload.adapter_id not in supported_adapters:
         raise HTTPException(status_code=422, detail="当前协议适配器尚未实现")
@@ -556,7 +560,7 @@ async def import_existing_llm_settings(request: Request, db: AsyncSession = Depe
     verifier_provider_raw = (settings.get("verifier_provider") or "").lower()
     verifier_provider = provider_aliases.get(verifier_provider_raw, verifier_provider_raw)
     verifier_model = (settings.get("verifier_model") or "").strip()
-    provider_rows = (await db.execute(select(LLMProvider).where(LLMProvider.account_id == account_id).order_by(LLMProvider.name.asc()))).scalars().all()
+    provider_rows = (await db.execute(select(LLMProvider).where(LLMProvider.account_id == account_id, LLMProvider.enabled.is_(True)).order_by(LLMProvider.name.asc()))).scalars().all()
     candidates = []
     for provider_row in provider_rows:
         key_field = provider_row.legacy_api_key_field
