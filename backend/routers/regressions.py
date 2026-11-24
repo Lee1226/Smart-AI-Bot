@@ -18,6 +18,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from auth.access import require_device, require_suite
+from agent.ws_device import WebSocketDevice
 from core.regression import ARTIFACT_DIR, grants
 from core.test_runner import node_targets_for_suite, start_tree_run, cancel_run
 from db.database import AsyncSessionLocal
@@ -153,16 +154,16 @@ async def create_plan(body: PlanIn, request: Request, db: AsyncSession = Depends
         versions[sid] = [{'node_id': t.node_id, 'steps': [{'action': c.action, 'expected': c.expected} for c in t.chain]} for t in targets]
     for did in body.device_ids:
         device = await require_device(request, db, did)
-        conn = connected_devices.get(did)
-        if not conn or not conn.is_connected:
+        transport = WebSocketDevice(did)
+        if not transport.is_connected():
             raise HTTPException(422, '设备离线：' + device.name)
         if (artifact or body.clear_data) and device.connection_type != 'adb_bridge':
             raise HTTPException(422, '自动安装和清数据当前仅支持 Android ADB 桥接：' + device.name)
         for sid in body.suite_ids:
             await _validate_project_target(db, sid, did)
             from core.test_runner import _suite_app_package
-            package = await _suite_app_package(sid, conn.platform)
-            suite_apps.setdefault(sid, {})[conn.platform] = package
+            package = await _suite_app_package(sid, transport.platform)
+            suite_apps.setdefault(sid, {})[transport.platform] = package
             if body.app_package.strip() and package and body.app_package.strip() != package:
                 raise HTTPException(422, '准备应用包名与套件被测应用不一致，请为被测应用选择对应套件')
         devices.append(device)
@@ -183,7 +184,7 @@ async def create_plan(body: PlanIn, request: Request, db: AsyncSession = Depends
             db.add(run); await db.flush()
             from core.test_accounts import select_run_account
             await select_run_account(db, run, body.test_accounts.get(f'{suite.id}:{device.id}', ''),
-                                     connected_devices[device.id].platform)
+                                     WebSocketDevice(device.id).platform)
             runs.append(run)
             db.add(RegressionTarget(plan_id=plan.id, run_id=run.id, suite_name=suite.name, device_name=device.name))
             for target in targets_by_suite[suite.id]:
@@ -232,8 +233,8 @@ async def retry_failed(plan_id: str, request: Request, db: AsyncSession = Depend
             raise HTTPException(422, '原运行已删除，无法重跑')
         await require_device(request, db, old.device_id)
         await require_suite(request, db, old.suite_id)
-        conn = connected_devices.get(old.device_id)
-        if not conn or not conn.is_connected:
+        transport = WebSocketDevice(old.device_id)
+        if not transport.is_connected():
             raise HTTPException(422, '设备离线：' + row['device_name'])
         await _validate_project_target(db, old.suite_id, old.device_id)
         targets = await node_targets_for_suite(db, old.suite_id)
@@ -244,7 +245,7 @@ async def retry_failed(plan_id: str, request: Request, db: AsyncSession = Depend
         db.add(run); await db.flush()
         from core.test_accounts import select_run_account
         selected_account = old.test_account_id or config.get('test_accounts', {}).get(f'{old.suite_id}:{old.device_id}', '')
-        await select_run_account(db, run, selected_account, conn.platform)
+        await select_run_account(db, run, selected_account, transport.platform)
         runs.append(run)
         db.add(RegressionTarget(plan_id=new.id, run_id=run.id, suite_name=row['suite_name'], device_name=row['device_name']))
         for target in targets:
