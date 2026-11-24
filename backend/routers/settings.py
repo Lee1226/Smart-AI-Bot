@@ -18,7 +18,7 @@ from auth.access import require_account_id, require_role
 from core.settings_store import load_settings, save_settings
 from core.run_recorder import recording_directory, cleanup_expired_recordings
 from db.database import AsyncSessionLocal
-from db.models import TestRun
+from db.models import TestRun, LLMProvider, LLMProviderCatalogState
 
 router = APIRouter(prefix="/api/settings", tags=["settings"])
 
@@ -196,7 +196,7 @@ def _encrypt_secret(value: str) -> str:
 
 def _connection_dict(row: LLMConnection, model_count: int = 0) -> dict:
     return {
-        "id": row.id, "name": row.name, "provider": row.provider,
+        "id": row.id, "name": row.name, "provider": row.provider, "provider_catalog_id": row.provider_catalog_id,
         "base_url": row.base_url, "has_api_key": bool(row.api_key_enc),
         "has_aws_credentials": bool(row.aws_access_key_id_enc and row.aws_secret_access_key_enc),
         "aws_region_name": row.aws_region_name, "notes": row.notes,
@@ -216,6 +216,119 @@ def _model_dict(row: LLMModel) -> dict:
     return {"id": row.id, "connection_id": row.connection_id, "model_name": row.model_name,
             "description": row.description, "capabilities": capabilities, "enabled": bool(row.enabled),
             "created_at": row.created_at.isoformat() if row.created_at else None}
+
+
+
+class LLMProviderInput(BaseModel):
+    provider_id: str = Field(min_length=2, max_length=80, pattern=r"^[a-z0-9][a-z0-9._-]*$")
+    name: str = Field(min_length=1, max_length=120)
+    protocol_type: str = "openai-compatible"
+    adapter_id: str = "openai-compatible"
+    default_base_url: str = ""
+    auth_type: str = "api_key"
+    enabled: bool = True
+    legacy_api_key_field: str = ""
+    legacy_base_url_field: str = ""
+    model_presets: list[str] = Field(default_factory=list)
+
+
+def _provider_dict(row: LLMProvider) -> dict:
+    try:
+        presets = json.loads(row.model_presets_json or "[]")
+    except (TypeError, ValueError):
+        presets = []
+    return {
+        "id": row.id, "provider_id": row.provider_id, "name": row.name,
+        "protocol_type": row.protocol_type, "adapter_id": row.adapter_id,
+        "default_base_url": row.default_base_url, "auth_type": row.auth_type,
+        "enabled": bool(row.enabled), "legacy_api_key_field": row.legacy_api_key_field,
+        "legacy_base_url_field": row.legacy_base_url_field, "model_presets": presets,
+        "created_at": row.created_at.isoformat() if row.created_at else None,
+        "updated_at": row.updated_at.isoformat() if row.updated_at else None,
+    }
+
+
+@router.get("/llm-providers")
+async def list_llm_providers(request: Request, include_disabled: bool = True, db: AsyncSession = Depends(get_db)):
+    require_role(request, "owner", "admin")
+    query = select(LLMProvider).where(LLMProvider.account_id == require_account_id(request))
+    if not include_disabled:
+        query = query.where(LLMProvider.enabled.is_(True))
+    rows = (await db.execute(query.order_by(LLMProvider.name.asc()))).scalars().all()
+    return [_provider_dict(row) for row in rows]
+
+
+@router.post("/llm-providers")
+async def create_llm_provider(payload: LLMProviderInput, request: Request, db: AsyncSession = Depends(get_db)):
+    require_role(request, "owner", "admin")
+    account_id = require_account_id(request)
+    # adapter_id names an implemented protocol adapter, not a provider option.
+    supported_adapters = {"openai", "anthropic", "google", "dashscope", "ark", "zhipuai", "groq", "ollama", "bedrock", "openai-compatible"}
+    if payload.adapter_id not in supported_adapters:
+        raise HTTPException(status_code=422, detail="当前协议适配器尚未实现")
+    row = LLMProvider(account_id=account_id, provider_id=payload.provider_id.strip().lower(),
+        name=payload.name.strip(), protocol_type=payload.protocol_type.strip(),
+        adapter_id=payload.adapter_id, default_base_url=payload.default_base_url.strip(),
+        auth_type=payload.auth_type.strip(), enabled=payload.enabled,
+        legacy_api_key_field=payload.legacy_api_key_field.strip(),
+        legacy_base_url_field=payload.legacy_base_url_field.strip(),
+        model_presets_json=json.dumps(payload.model_presets, ensure_ascii=False))
+    db.add(row)
+    try:
+        await db.commit()
+    except IntegrityError:
+        await db.rollback()
+        raise HTTPException(status_code=409, detail="供应商标识已存在")
+    await db.refresh(row)
+    return _provider_dict(row)
+
+
+@router.put("/llm-providers/{provider_id}")
+async def update_llm_provider(provider_id: str, payload: LLMProviderInput, request: Request, db: AsyncSession = Depends(get_db)):
+    require_role(request, "owner", "admin")
+    account_id = require_account_id(request)
+    row = await db.get(LLMProvider, provider_id)
+    if row is None or row.account_id != account_id:
+        raise HTTPException(status_code=404, detail="供应商不存在")
+    if payload.provider_id.strip().lower() != row.provider_id:
+        used = await db.scalar(select(func.count(LLMConnection.id)).where(LLMConnection.provider_catalog_id == row.id))
+        if used:
+            raise HTTPException(status_code=409, detail="该供应商已有连接，不能修改唯一标识")
+    supported_adapters = {"openai", "anthropic", "google", "dashscope", "ark", "zhipuai", "groq", "ollama", "bedrock", "openai-compatible"}
+    if payload.adapter_id not in supported_adapters:
+        raise HTTPException(status_code=422, detail="当前协议适配器尚未实现")
+    row.provider_id = payload.provider_id.strip().lower()
+    row.name = payload.name.strip()
+    row.protocol_type = payload.protocol_type.strip()
+    row.adapter_id = payload.adapter_id
+    row.default_base_url = payload.default_base_url.strip()
+    row.auth_type = payload.auth_type.strip()
+    row.enabled = payload.enabled
+    row.legacy_api_key_field = payload.legacy_api_key_field.strip()
+    row.legacy_base_url_field = payload.legacy_base_url_field.strip()
+    row.model_presets_json = json.dumps(payload.model_presets, ensure_ascii=False)
+    row.updated_at = datetime.utcnow()
+    try:
+        await db.commit()
+    except IntegrityError:
+        await db.rollback()
+        raise HTTPException(status_code=409, detail="供应商标识已存在")
+    return _provider_dict(row)
+
+
+@router.delete("/llm-providers/{provider_id}")
+async def delete_llm_provider(provider_id: str, request: Request, db: AsyncSession = Depends(get_db)):
+    require_role(request, "owner", "admin")
+    account_id = require_account_id(request)
+    row = await db.get(LLMProvider, provider_id)
+    if row is None or row.account_id != account_id:
+        raise HTTPException(status_code=404, detail="供应商不存在")
+    count = await db.scalar(select(func.count(LLMConnection.id)).where(LLMConnection.provider_catalog_id == row.id))
+    if count:
+        raise HTTPException(status_code=409, detail="该供应商仍有关联连接，请先删除或迁移这些连接")
+    await db.delete(row)
+    await db.commit()
+    return {"ok": True}
 
 
 class LLMConnectionCreate(BaseModel):
@@ -272,9 +385,18 @@ async def list_llm_connections(request: Request, db: AsyncSession = Depends(get_
 async def create_llm_connection(payload: LLMConnectionCreate, request: Request, db: AsyncSession = Depends(get_db)):
     require_role(request, "owner", "admin")
     account_id = require_account_id(request)
-    if not payload.api_key and payload.provider not in {"ollama", "bedrock"} and not (payload.aws_access_key_id and payload.aws_secret_access_key):
-        raise HTTPException(status_code=422, detail="API Key is required for this provider")
-    row = LLMConnection(account_id=account_id, name=payload.name.strip(), provider=payload.provider.strip().lower(),
+    provider_row = (await db.execute(select(LLMProvider).where(
+        LLMProvider.account_id == account_id, LLMProvider.provider_id == payload.provider.strip().lower(),
+        LLMProvider.enabled.is_(True)
+    ))).scalar_one_or_none()
+    if provider_row is None:
+        raise HTTPException(status_code=422, detail="请选择一个已启用的供应商")
+    if provider_row.auth_type == "api_key" and not payload.api_key:
+        raise HTTPException(status_code=422, detail="该供应商需要 API Key")
+    if provider_row.auth_type == "aws" and not (payload.aws_access_key_id and payload.aws_secret_access_key):
+        raise HTTPException(status_code=422, detail="该供应商需要 AWS 凭据")
+    row = LLMConnection(account_id=account_id, name=payload.name.strip(), provider=provider_row.adapter_id,
+        provider_catalog_id=provider_row.id,
         base_url=payload.base_url.strip(), api_key_enc=_encrypt_secret(payload.api_key),
         aws_access_key_id_enc=_encrypt_secret(payload.aws_access_key_id),
         aws_secret_access_key_enc=_encrypt_secret(payload.aws_secret_access_key),
@@ -294,6 +416,16 @@ async def update_llm_connection(connection_id: str, payload: LLMConnectionUpdate
     require_role(request, "owner", "admin")
     row = await _owned_connection(db, require_account_id(request), connection_id)
     values = payload.model_dump(exclude_unset=True)
+    if "provider" in values and values["provider"] is not None:
+        provider_row = (await db.execute(select(LLMProvider).where(
+            LLMProvider.account_id == row.account_id,
+            LLMProvider.provider_id == str(values["provider"]).strip().lower(),
+            LLMProvider.enabled.is_(True)
+        ))).scalar_one_or_none()
+        if provider_row is None:
+            raise HTTPException(status_code=422, detail="请选择一个已启用的供应商")
+        values["provider"] = provider_row.adapter_id
+        row.provider_catalog_id = provider_row.id
     if values.pop("clear_api_key", False): row.api_key_enc = ""
     if values.pop("clear_aws_credentials", False):
         row.aws_access_key_id_enc = ""; row.aws_secret_access_key_enc = ""
