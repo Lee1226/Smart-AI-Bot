@@ -156,7 +156,7 @@ import base64
 import hashlib
 import json
 from datetime import datetime
-from cryptography.fernet import Fernet, InvalidToken
+from cryptography.fernet import Fernet
 from sqlalchemy import func
 from db.models import LLMConnection, LLMModel
 
@@ -285,8 +285,13 @@ async def update_llm_connection(connection_id: str, payload: LLMConnectionUpdate
     if values.get("aws_secret_access_key"):
         row.aws_secret_access_key_enc = _encrypt_secret(values.pop("aws_secret_access_key"))
     else: values.pop("aws_secret_access_key", None)
+    connection_changed = any(key in values for key in ("provider", "base_url")) or bool(payload.api_key) or bool(payload.aws_access_key_id) or bool(payload.aws_secret_access_key) or payload.clear_api_key or payload.clear_aws_credentials
     for key, value in values.items():
         if value is not None and hasattr(row, key): setattr(row, key, value.strip() if isinstance(value, str) else value)
+    if connection_changed:
+        row.last_test_status = "untested"
+        row.last_test_message = ""
+        row.last_tested_at = None
     row.updated_at = datetime.utcnow()
     await db.commit(); await db.refresh(row)
     count = await db.scalar(select(func.count(LLMModel.id)).where(LLMModel.connection_id == row.id))
