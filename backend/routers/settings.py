@@ -413,7 +413,7 @@ async def create_llm_connection(payload: LLMConnectionCreate, request: Request, 
         raise HTTPException(status_code=422, detail="该供应商需要 AWS 凭据")
     row = LLMConnection(account_id=account_id, name=payload.name.strip(), provider=provider_row.adapter_id,
         provider_catalog_id=provider_row.id,
-        base_url=payload.base_url.strip(), api_key_enc=_encrypt_secret(payload.api_key),
+        base_url=payload.base_url.strip() or provider_row.default_base_url, api_key_enc=_encrypt_secret(payload.api_key),
         aws_access_key_id_enc=_encrypt_secret(payload.aws_access_key_id),
         aws_secret_access_key_enc=_encrypt_secret(payload.aws_secret_access_key),
         aws_region_name=payload.aws_region_name.strip() or "us-east-1", notes=payload.notes.strip())
@@ -435,10 +435,9 @@ async def update_llm_connection(connection_id: str, payload: LLMConnectionUpdate
     if "provider" in values and values["provider"] is not None:
         provider_row = (await db.execute(select(LLMProvider).where(
             LLMProvider.account_id == row.account_id,
-            LLMProvider.provider_id == str(values["provider"]).strip().lower(),
-            LLMProvider.enabled.is_(True)
+            LLMProvider.provider_id == str(values["provider"]).strip().lower()
         ))).scalar_one_or_none()
-        if provider_row is None:
+        if provider_row is None or (not provider_row.enabled and provider_row.id != row.provider_catalog_id):
             raise HTTPException(status_code=422, detail="请选择一个已启用的供应商")
         values["provider"] = provider_row.adapter_id
         row.provider_catalog_id = provider_row.id
@@ -578,6 +577,13 @@ async def import_existing_llm_settings(request: Request, db: AsyncSession = Depe
             LLMConnection.provider_catalog_id == item["catalog"].id,
             LLMConnection.notes.contains(marker),
         ))).scalar_one_or_none()
+        if row is None:
+            row = (await db.execute(select(LLMConnection).where(
+                LLMConnection.account_id == account_id,
+                LLMConnection.provider == item["adapter"],
+                LLMConnection.provider_catalog_id.is_(None),
+                LLMConnection.notes.contains(marker),
+            ))).scalar_one_or_none()
         if row is None:
             base_name = f'{item["label"]}（平台配置导入）'
             connection_name = base_name
