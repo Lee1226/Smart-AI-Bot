@@ -109,6 +109,21 @@ async def init_db():
         await _ensure_columns("test_results", {"account_id": "VARCHAR"})
         await _ensure_columns("test_step_logs", {"account_id": "VARCHAR"})
 
+    # ── Seed the account-scoped LLM provider catalog exactly once ───────────
+    from db.models import Account, LLMProvider, LLMProviderCatalogState
+    from db.seed_llm_providers import DEFAULT_LLM_PROVIDERS
+    from sqlalchemy import select as _select
+    async with AsyncSessionLocal() as provider_session:
+        account_ids = (await provider_session.execute(_select(Account.id))).scalars().all()
+        for account_id in account_ids:
+            state = await provider_session.get(LLMProviderCatalogState, account_id)
+            if state is not None:
+                continue
+            for item in DEFAULT_LLM_PROVIDERS:
+                provider_session.add(LLMProvider(account_id=account_id, **item))
+            provider_session.add(LLMProviderCatalogState(account_id=account_id))
+        await provider_session.commit()
+
     from sqlalchemy import select as _select
     # ── Migrate legacy per-device app metadata into shared catalog tables ──
     # Safe to run on every startup; old rows remain available for rollback.
