@@ -404,3 +404,31 @@ class LLMModel(Base):
     enabled: Mapped[bool] = mapped_column(Boolean, default=True)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
     updated_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+class LLMProvider(Base):
+    """Account-scoped provider definition; UI options are loaded from this table."""
+    __tablename__ = "llm_providers"
+    __table_args__ = (UniqueConstraint("account_id", "provider_id", name="uq_llm_provider_account_id"),)
+
+    id: Mapped[str] = mapped_column(String, primary_key=True, default=_uuid)
+    account_id: Mapped[str] = mapped_column(ForeignKey("accounts.id"), index=True)
+    provider_id: Mapped[str] = mapped_column(String, index=True)
+    name: Mapped[str] = mapped_column(String)
+    protocol_type: Mapped[str] = mapped_column(String, default="openai-compatible")
+    default_base_url: Mapped[str] = mapped_column(Text, default="")
+    auth_type: Mapped[str] = mapped_column(String, default="api_key")
+    enabled: Mapped[bool] = mapped_column(Boolean, default=True)
+    legacy_api_key_field: Mapped[str] = mapped_column(String, default="")
+    legacy_base_url_field: Mapped[str] = mapped_column(String, default="")
+    model_presets_json: Mapped[str] = mapped_column(Text, default="[]")
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+    updated_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+
+class LLMProviderCatalogState(Base):
+    """Records one-time provider seed completion so user deletions stay deleted."""
+    __tablename__ = "llm_provider_catalog_states"
+
+    account_id: Mapped[str] = mapped_column(ForeignKey("accounts.id"), primary_key=True)
+    initialized_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+
