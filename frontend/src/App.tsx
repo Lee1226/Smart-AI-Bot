@@ -12,7 +12,7 @@ import Runs from './pages/Runs'
 import Recordings from './pages/Recordings'
 import Regressions from './pages/Regressions'
 import RunDetail from './pages/RunDetail'
-import Settings from './pages/Settings'
+import Settings from './pages/Settings'\nimport ModelRepository from './pages/ModelRepository'
 import RecordingSettings from './pages/RecordingSettings'
 import QuickRun from './pages/QuickRun'
 import Recorder from './pages/Recorder'
@@ -219,13 +219,13 @@ function AppLayout() {
   const t = useT()
   const activeItem = NAV_GROUPS.flatMap(group => group.items.flatMap(item => [item, ...(item.children ?? [])])).find(item => item.paths.some(path => matchesPath(pathname, path)))
   const pageLabel = activeItem ? t(activeItem.label.zh, activeItem.label.en) : t('工作台', 'Workbench')
-  const [resultsExpanded, setResultsExpanded] = useState(['/runs', '/recordings'].some(path => matchesPath(pathname, path)))
+  const [settingsExpanded, setSettingsExpanded] = useState(['/settings'].some(path => matchesPath(pathname, path)))\n  const [resultsExpanded, setResultsExpanded] = useState(['/runs', '/recordings'].some(path => matchesPath(pathname, path)))
   const [openPlatformExpanded, setOpenPlatformExpanded] = useState(['/open-platform'].some(path => matchesPath(pathname, path)))
   const [corpusExpanded, setCorpusExpanded] = useState(['/audio-corpus'].some(path => matchesPath(pathname, path)))
   useEffect(() => {
     if (['/runs', '/recordings'].some(path => matchesPath(pathname, path))) setResultsExpanded(true)
     if (matchesPath(pathname, '/open-platform')) setOpenPlatformExpanded(true)
-    if (matchesPath(pathname, '/audio-corpus')) setCorpusExpanded(true)
+    if (matchesPath(pathname, '/audio-corpus')) setCorpusExpanded(true)\n    if (matchesPath(pathname, '/settings')) setSettingsExpanded(true)
   }, [pathname])
 
   return (
@@ -355,7 +355,7 @@ function AppLayout() {
               <Route path="/open-platform/keys" element={<Account />} />
               <Route path="/open-platform/docs" element={<OpenApiDocs />} />
               <Route path="/account" element={<Navigate to="/open-platform/keys" replace />} />
-              <Route path="/settings" element={<PageTabs section="settings"><Settings /></PageTabs>} />
+              <Route path="/settings" element={<PageTabs section="settings"><Settings /></PageTabs>} />\n              <Route path="/settings/models" element={<ModelRepository />} />
               <Route path="/settings/recording" element={<PageTabs section="settings"><RecordingSettings /></PageTabs>} />
             </Routes>
           </div>
