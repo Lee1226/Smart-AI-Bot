@@ -4,6 +4,7 @@ Each account owns its own settings blob (isolated from other tenants and from
 the operator).  Reading/writing requires owner/admin of that account.
 """
 from pathlib import Path
+import os
 from typing import Optional
 import shutil
 
@@ -362,33 +363,64 @@ async def test_llm_connection(connection_id: str, request: Request, model_id: Op
         if chosen is None or chosen.account_id != account_id or chosen.connection_id != connection_id:
             raise HTTPException(status_code=404, detail="Model not found on this connection")
     else:
-        chosen = (await db.execute(select(LLMModel).where(LLMModel.account_id == account_id, LLMModel.connection_id == connection_id, LLMModel.enabled.is_(True)).limit(1))).scalar_one_or_none()
+        chosen = (await db.execute(select(LLMModel).where(
+            LLMModel.account_id == account_id, LLMModel.connection_id == connection_id,
+            LLMModel.enabled.is_(True)
+        ).limit(1))).scalar_one_or_none()
     if chosen is None:
         raise HTTPException(status_code=422, detail="Add an enabled model before testing this connection")
+
+    cipher = _llm_cipher()
+    api_key = cipher.decrypt(row.api_key_enc.encode()).decode() if row.api_key_enc else ""
+    aws_access = cipher.decrypt(row.aws_access_key_id_enc.encode()).decode() if row.aws_access_key_id_enc else ""
+    aws_secret = cipher.decrypt(row.aws_secret_access_key_enc.encode()).decode() if row.aws_secret_access_key_enc else ""
     try:
         from litellm import acompletion
-        cipher = _llm_cipher()
-        api_key = cipher.decrypt(row.api_key_enc.encode()).decode() if row.api_key_enc else None
-        model_name = chosen.model_name
-        provider = row.provider
-        if provider == "ollama": model = f"ollama_chat/{model_name}"
-        elif provider in {"openai-compatible", "openai_compatible", "custom"}: model = f"openai/{model_name}"
-        else: model = f"{provider}/{model_name}"
-        kwargs = {"model": model, "messages": [{"role": "user", "content": "Reply with OK."}], "max_tokens": 8, "timeout": 20}
-        if api_key: kwargs["api_key"] = api_key
-        if row.base_url: kwargs["api_base"] = row.base_url
-        if provider == "bedrock":
-            ak = cipher.decrypt(row.aws_access_key_id_enc.encode()).decode() if row.aws_access_key_id_enc else ""
-            sk = cipher.decrypt(row.aws_secret_access_key_enc.encode()).decode() if row.aws_secret_access_key_enc else ""
-            if ak and sk:
-                import os
-                os.environ["AWS_ACCESS_KEY_ID"] = ak; os.environ["AWS_SECRET_ACCESS_KEY"] = sk
-                os.environ["AWS_REGION_NAME"] = row.aws_region_name; os.environ["AWS_DEFAULT_REGION"] = row.aws_region_name
-        await acompletion(**kwargs)
-        row.last_test_status = "success"; row.last_test_message = "模型调用成功"
+        from agent.base import build_model_kwargs
+        model_name, extra = build_model_kwargs(row.provider, chosen.model_name, row.base_url)
+        kwargs = {
+            "model": model_name,
+            "messages": [{"role": "user", "content": "Reply with OK."}],
+            "max_tokens": 8,
+            "timeout": 20,
+            **extra,
+        }
+        if api_key:
+            kwargs["api_key"] = api_key
+        old_env = {key: os.environ.get(key) for key in (
+            "AWS_ACCESS_KEY_ID", "AWS_SECRET_ACCESS_KEY", "AWS_REGION_NAME",
+            "AWS_DEFAULT_REGION", "AWS_REGION"
+        )}
+        if row.provider == "bedrock":
+            if aws_access and aws_secret:
+                os.environ["AWS_ACCESS_KEY_ID"] = aws_access
+                os.environ["AWS_SECRET_ACCESS_KEY"] = aws_secret
+            os.environ["AWS_REGION_NAME"] = row.aws_region_name
+            os.environ["AWS_DEFAULT_REGION"] = row.aws_region_name
+            os.environ["AWS_REGION"] = row.aws_region_name
+        try:
+            await acompletion(**kwargs)
+        finally:
+            if row.provider == "bedrock":
+                for key, value in old_env.items():
+                    if value is None:
+                        os.environ.pop(key, None)
+                    else:
+                        os.environ[key] = value
+        row.last_test_status = "success"
+        row.last_test_message = "模型调用成功"
     except Exception as exc:
-        row.last_test_status = "failed"; row.last_test_message = str(exc)[:500]
+        row.last_test_status = "failed"
+        error_message = str(exc)[:500]
+        for secret in (api_key, aws_access, aws_secret):
+            if secret:
+                error_message = error_message.replace(secret, "[REDACTED]")
+        row.last_test_message = error_message
     row.last_tested_at = datetime.utcnow()
     await db.commit()
-    if row.last_test_status == "failed": raise HTTPException(status_code=502, detail=row.last_test_message)
-    return {"ok": True, "message": row.last_test_message, "tested_model": chosen.model_name, "tested_at": row.last_tested_at.isoformat()}
+    if row.last_test_status == "failed":
+        raise HTTPException(status_code=502, detail=row.last_test_message)
+    return {
+        "ok": True, "message": row.last_test_message,
+        "tested_model": chosen.model_name, "tested_at": row.last_tested_at.isoformat()
+    }
