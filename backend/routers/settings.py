@@ -148,3 +148,247 @@ async def get_recording_storage(request: Request, db: AsyncSession = Depends(get
         "disk_used_bytes": usage.used,
         "disk_free_bytes": usage.free,
     }
+
+
+# ── LLM connection repository ────────────────────────────────────────────────
+import base64
+import hashlib
+import json
+from datetime import datetime
+from cryptography.fernet import Fernet, InvalidToken
+from sqlalchemy import func
+from db.models import LLMConnection, LLMModel
+
+
+def _llm_cipher() -> Fernet:
+    # Reuse the installation's persisted secret so encrypted credentials remain
+    # readable after restart; never expose this key through an API response.
+    from auth.jwt_handler import JWT_SECRET
+    key = base64.urlsafe_b64encode(hashlib.sha256((JWT_SECRET + ":llm-connections:v1").encode()).digest())
+    return Fernet(key)
+
+
+def _encrypt_secret(value: str) -> str:
+    return _llm_cipher().encrypt(value.encode("utf-8")).decode("ascii") if value else ""
+
+
+def _connection_dict(row: LLMConnection, model_count: int = 0) -> dict:
+    return {
+        "id": row.id, "name": row.name, "provider": row.provider,
+        "base_url": row.base_url, "has_api_key": bool(row.api_key_enc),
+        "has_aws_credentials": bool(row.aws_access_key_id_enc and row.aws_secret_access_key_enc),
+        "aws_region_name": row.aws_region_name, "notes": row.notes,
+        "last_test_status": row.last_test_status, "last_test_message": row.last_test_message,
+        "last_tested_at": row.last_tested_at.isoformat() if row.last_tested_at else None,
+        "model_count": model_count,
+        "created_at": row.created_at.isoformat() if row.created_at else None,
+        "updated_at": row.updated_at.isoformat() if row.updated_at else None,
+    }
+
+
+def _model_dict(row: LLMModel) -> dict:
+    try:
+        capabilities = json.loads(row.capabilities_json or '["text"]')
+    except (TypeError, ValueError):
+        capabilities = ["text"]
+    return {"id": row.id, "connection_id": row.connection_id, "model_name": row.model_name,
+            "description": row.description, "capabilities": capabilities, "enabled": bool(row.enabled),
+            "created_at": row.created_at.isoformat() if row.created_at else None}
+
+
+class LLMConnectionCreate(BaseModel):
+    name: str = Field(min_length=1, max_length=120)
+    provider: str = Field(min_length=1, max_length=40)
+    base_url: str = ""
+    api_key: str = ""
+    aws_access_key_id: str = ""
+    aws_secret_access_key: str = ""
+    aws_region_name: str = "us-east-1"
+    notes: str = ""
+
+
+class LLMConnectionUpdate(BaseModel):
+    name: Optional[str] = None
+    provider: Optional[str] = None
+    base_url: Optional[str] = None
+    api_key: Optional[str] = None
+    clear_api_key: bool = False
+    aws_access_key_id: Optional[str] = None
+    aws_secret_access_key: Optional[str] = None
+    clear_aws_credentials: bool = False
+    aws_region_name: Optional[str] = None
+    notes: Optional[str] = None
+
+
+class LLMModelInput(BaseModel):
+    model_name: str = Field(min_length=1, max_length=200)
+    description: str = ""
+    capabilities: list[str] = Field(default_factory=lambda: ["text"])
+    enabled: bool = True
+
+
+async def _owned_connection(db: AsyncSession, account_id: str, connection_id: str):
+    row = await db.get(LLMConnection, connection_id)
+    if row is None or row.account_id != account_id:
+        raise HTTPException(status_code=404, detail="Model connection not found")
+    return row
+
+
+@router.get("/llm-connections")
+async def list_llm_connections(request: Request, db: AsyncSession = Depends(get_db)):
+    require_role(request, "owner", "admin")
+    account_id = require_account_id(request)
+    rows = (await db.execute(select(LLMConnection).where(LLMConnection.account_id == account_id).order_by(LLMConnection.created_at.desc()))).scalars().all()
+    result = []
+    for row in rows:
+        count = await db.scalar(select(func.count(LLMModel.id)).where(LLMModel.connection_id == row.id, LLMModel.account_id == account_id))
+        result.append(_connection_dict(row, count or 0))
+    return result
+
+
+@router.post("/llm-connections")
+async def create_llm_connection(payload: LLMConnectionCreate, request: Request, db: AsyncSession = Depends(get_db)):
+    require_role(request, "owner", "admin")
+    account_id = require_account_id(request)
+    if not payload.api_key and payload.provider not in {"ollama", "bedrock"} and not (payload.aws_access_key_id and payload.aws_secret_access_key):
+        raise HTTPException(status_code=422, detail="API Key is required for this provider")
+    row = LLMConnection(account_id=account_id, name=payload.name.strip(), provider=payload.provider.strip().lower(),
+        base_url=payload.base_url.strip(), api_key_enc=_encrypt_secret(payload.api_key),
+        aws_access_key_id_enc=_encrypt_secret(payload.aws_access_key_id),
+        aws_secret_access_key_enc=_encrypt_secret(payload.aws_secret_access_key),
+        aws_region_name=payload.aws_region_name.strip() or "us-east-1", notes=payload.notes.strip())
+    db.add(row)
+    try:
+        await db.commit()
+    except Exception:
+        await db.rollback()
+        raise HTTPException(status_code=409, detail="Connection name already exists")
+    await db.refresh(row)
+    return _connection_dict(row)
+
+
+@router.put("/llm-connections/{connection_id}")
+async def update_llm_connection(connection_id: str, payload: LLMConnectionUpdate, request: Request, db: AsyncSession = Depends(get_db)):
+    require_role(request, "owner", "admin")
+    row = await _owned_connection(db, require_account_id(request), connection_id)
+    values = payload.model_dump(exclude_unset=True)
+    if values.pop("clear_api_key", False): row.api_key_enc = ""
+    if values.pop("clear_aws_credentials", False):
+        row.aws_access_key_id_enc = ""; row.aws_secret_access_key_enc = ""
+    if values.get("api_key"):
+        row.api_key_enc = _encrypt_secret(values.pop("api_key"))
+    else: values.pop("api_key", None)
+    if values.get("aws_access_key_id"):
+        row.aws_access_key_id_enc = _encrypt_secret(values.pop("aws_access_key_id"))
+    else: values.pop("aws_access_key_id", None)
+    if values.get("aws_secret_access_key"):
+        row.aws_secret_access_key_enc = _encrypt_secret(values.pop("aws_secret_access_key"))
+    else: values.pop("aws_secret_access_key", None)
+    for key, value in values.items():
+        if value is not None and hasattr(row, key): setattr(row, key, value.strip() if isinstance(value, str) else value)
+    row.updated_at = datetime.utcnow()
+    await db.commit(); await db.refresh(row)
+    count = await db.scalar(select(func.count(LLMModel.id)).where(LLMModel.connection_id == row.id))
+    return _connection_dict(row, count or 0)
+
+
+@router.delete("/llm-connections/{connection_id}")
+async def delete_llm_connection(connection_id: str, request: Request, db: AsyncSession = Depends(get_db)):
+    require_role(request, "owner", "admin")
+    row = await _owned_connection(db, require_account_id(request), connection_id)
+    count = await db.scalar(select(func.count(LLMModel.id)).where(LLMModel.connection_id == row.id, LLMModel.account_id == row.account_id))
+    if count:
+        raise HTTPException(status_code=409, detail="Delete or move the models under this connection first")
+    await db.delete(row); await db.commit()
+    return {"ok": True}
+
+
+@router.get("/llm-connections/{connection_id}/models")
+async def list_llm_models(connection_id: str, request: Request, db: AsyncSession = Depends(get_db)):
+    require_role(request, "owner", "admin")
+    account_id = require_account_id(request)
+    await _owned_connection(db, account_id, connection_id)
+    rows = (await db.execute(select(LLMModel).where(LLMModel.account_id == account_id, LLMModel.connection_id == connection_id).order_by(LLMModel.created_at.desc()))).scalars().all()
+    return [_model_dict(row) for row in rows]
+
+
+@router.post("/llm-connections/{connection_id}/models")
+async def create_llm_model(connection_id: str, payload: LLMModelInput, request: Request, db: AsyncSession = Depends(get_db)):
+    require_role(request, "owner", "admin")
+    account_id = require_account_id(request)
+    await _owned_connection(db, account_id, connection_id)
+    row = LLMModel(account_id=account_id, connection_id=connection_id, model_name=payload.model_name.strip(),
+        description=payload.description.strip(), capabilities_json=json.dumps(payload.capabilities), enabled=payload.enabled)
+    db.add(row)
+    try: await db.commit()
+    except Exception:
+        await db.rollback(); raise HTTPException(status_code=409, detail="This model already exists on the connection")
+    await db.refresh(row)
+    return _model_dict(row)
+
+
+@router.put("/llm-models/{model_id}")
+async def update_llm_model(model_id: str, payload: LLMModelInput, request: Request, db: AsyncSession = Depends(get_db)):
+    require_role(request, "owner", "admin")
+    account_id = require_account_id(request)
+    row = await db.get(LLMModel, model_id)
+    if row is None or row.account_id != account_id: raise HTTPException(status_code=404, detail="Model not found")
+    row.model_name = payload.model_name.strip(); row.description = payload.description.strip()
+    row.capabilities_json = json.dumps(payload.capabilities); row.enabled = payload.enabled
+    row.updated_at = datetime.utcnow()
+    try: await db.commit()
+    except Exception:
+        await db.rollback(); raise HTTPException(status_code=409, detail="This model already exists on the connection")
+    return _model_dict(row)
+
+
+@router.delete("/llm-models/{model_id}")
+async def delete_llm_model(model_id: str, request: Request, db: AsyncSession = Depends(get_db)):
+    require_role(request, "owner", "admin")
+    row = await db.get(LLMModel, model_id)
+    if row is None or row.account_id != require_account_id(request): raise HTTPException(status_code=404, detail="Model not found")
+    await db.delete(row); await db.commit()
+    return {"ok": True}
+
+
+@router.post("/llm-connections/{connection_id}/test")
+async def test_llm_connection(connection_id: str, request: Request, model_id: Optional[str] = None, db: AsyncSession = Depends(get_db)):
+    require_role(request, "owner", "admin")
+    account_id = require_account_id(request)
+    row = await _owned_connection(db, account_id, connection_id)
+    chosen = None
+    if model_id:
+        chosen = await db.get(LLMModel, model_id)
+        if chosen is None or chosen.account_id != account_id or chosen.connection_id != connection_id:
+            raise HTTPException(status_code=404, detail="Model not found on this connection")
+    else:
+        chosen = (await db.execute(select(LLMModel).where(LLMModel.account_id == account_id, LLMModel.connection_id == connection_id, LLMModel.enabled.is_(True)).limit(1))).scalar_one_or_none()
+    if chosen is None:
+        raise HTTPException(status_code=422, detail="Add an enabled model before testing this connection")
+    try:
+        from litellm import acompletion
+        cipher = _llm_cipher()
+        api_key = cipher.decrypt(row.api_key_enc.encode()).decode() if row.api_key_enc else None
+        model_name = chosen.model_name
+        provider = row.provider
+        if provider == "ollama": model = f"ollama_chat/{model_name}"
+        elif provider in {"openai-compatible", "openai_compatible", "custom"}: model = f"openai/{model_name}"
+        else: model = f"{provider}/{model_name}"
+        kwargs = {"model": model, "messages": [{"role": "user", "content": "Reply with OK."}], "max_tokens": 8, "timeout": 20}
+        if api_key: kwargs["api_key"] = api_key
+        if row.base_url: kwargs["api_base"] = row.base_url
+        if provider == "bedrock":
+            ak = cipher.decrypt(row.aws_access_key_id_enc.encode()).decode() if row.aws_access_key_id_enc else ""
+            sk = cipher.decrypt(row.aws_secret_access_key_enc.encode()).decode() if row.aws_secret_access_key_enc else ""
+            if ak and sk:
+                import os
+                os.environ["AWS_ACCESS_KEY_ID"] = ak; os.environ["AWS_SECRET_ACCESS_KEY"] = sk
+                os.environ["AWS_REGION_NAME"] = row.aws_region_name; os.environ["AWS_DEFAULT_REGION"] = row.aws_region_name
+        await acompletion(**kwargs)
+        row.last_test_status = "success"; row.last_test_message = "模型调用成功"
+    except Exception as exc:
+        row.last_test_status = "failed"; row.last_test_message = str(exc)[:500]
+    row.last_tested_at = datetime.utcnow()
+    await db.commit()
+    if row.last_test_status == "failed": raise HTTPException(status_code=502, detail=row.last_test_message)
+    return {"ok": True, "message": row.last_test_message, "tested_model": chosen.model_name, "tested_at": row.last_tested_at.isoformat()}
