@@ -25,7 +25,6 @@ from db.database import AsyncSessionLocal
 from db.models import TestRun, TestResult, TestStepLog
 from db.regression_models import RegressionArtifact, RegressionPlan, RegressionTarget
 from routers.testruns import _default_provider_model, _run_out, _validate_project_target
-from ws.portal_ws import connected_devices
 
 router = APIRouter(prefix='/api/regressions', tags=['regressions'])
 download_router = APIRouter()
