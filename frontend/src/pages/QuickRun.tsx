@@ -1,10 +1,10 @@
-import { useState, useEffect, useRef } from 'react'
+import { useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useQuery, useMutation } from '@tanstack/react-query'
-import { fetchDevices, fetchSettings, fetchProjects, quickRun } from '../lib/api'
+import { fetchDevices, fetchProjects, quickRun } from '../lib/api'
 import { useT } from '../lib/i18n'
 import TestAccountSelect from '../components/TestAccountSelect'
-import { PROVIDERS, DEFAULT_MODEL } from '../lib/providerConfig'
+import { ExecutionModelSelect, useExecutionModels } from '../components/ExecutionModelSelect'
 
 export default function QuickRun() {
   const navigate = useNavigate()
@@ -13,45 +13,30 @@ export default function QuickRun() {
   const [goal, setGoal] = useState('')
   const [expected, setExpected] = useState('')
   const [deviceId, setDeviceId] = useState('')
-  const [provider, setProvider] = useState('openai')
-  const [model, setModel] = useState('gpt-4o')
+  const [modelId, setModelId] = useState('')
   const [maxSteps, setMaxSteps] = useState(20)
   const [projectId, setProjectId] = useState('')
   const [testAccountId, setTestAccountId] = useState('')
-  const settingsInitialized = useRef(false)
-
   const { data: devices = [] } = useQuery({ queryKey: ['devices'], queryFn: fetchDevices, refetchInterval: 5000 })
-  const { data: settings } = useQuery({ queryKey: ['settings'], queryFn: fetchSettings })
   const { data: projects = [] } = useQuery({ queryKey: ['projects'], queryFn: fetchProjects })
+  const { models } = useExecutionModels()
+  const selectedModel = models.find(item => item.id === modelId)
+
+  // Select the first enabled model only as an initial UI default.
+  useEffect(() => {
+    if (!modelId && models.length > 0) setModelId(models[0].id)
+  }, [models, modelId])
 
   const onlineDevices = devices.filter(d => d.status === 'online')
 
-  // Apply saved defaults only once on first load
-  useEffect(() => {
-    if (settings && !settingsInitialized.current) {
-      settingsInitialized.current = true
-      if (settings.default_provider) setProvider(settings.default_provider)
-      if (settings.default_model) setModel(settings.default_model)
-    }
-  }, [settings])
-
-  function handleProviderChange(p: string) {
-    setProvider(p)
-    // Use saved default only if this is the saved default provider; otherwise use per-provider default
-    if (settings && p === settings.default_provider && settings.default_model) {
-      setModel(settings.default_model)
-    } else {
-      setModel(DEFAULT_MODEL[p] || '')
-    }
-  }
-
-  const runMut = useMutation({
+   const runMut = useMutation({
     mutationFn: () => quickRun({
       goal,
       expected: expected || '任务完成',
       device_id: deviceId,
-      provider,
-      model,
+      provider: selectedModel?.provider || '',
+      model: selectedModel?.model_name || '',
+      model_id: modelId,
       max_steps: maxSteps,
       project_id: projectId,
       test_account_id: testAccountId,
@@ -63,7 +48,7 @@ export default function QuickRun() {
     },
   })
 
-  const canSubmit = goal.trim().length > 0 && deviceId.length > 0 && !runMut.isPending
+  const canSubmit = goal.trim().length > 0 && deviceId.length > 0 && !!selectedModel && !runMut.isPending
 
   return (
     <div className="mx-auto max-w-5xl space-y-7">
@@ -154,16 +139,7 @@ export default function QuickRun() {
             </div>
 
             <div className="grid gap-4 sm:grid-cols-2">
-              <div>
-                <label className="mb-2 block text-sm font-semibold text-slate-700">Provider</label>
-                <select className="w-full rounded-xl border border-slate-200 bg-white px-4 py-3 text-sm text-slate-700 outline-none focus:border-blue-400 focus:ring-4 focus:ring-blue-500/10" value={provider} onChange={e => handleProviderChange(e.target.value)}>
-                  {PROVIDERS.map(p => <option key={p}>{p}</option>)}
-                </select>
-              </div>
-              <div>
-                <label className="mb-2 block text-sm font-semibold text-slate-700">Model</label>
-                <input type="text" className="w-full rounded-xl border border-slate-200 bg-white px-4 py-3 font-mono text-sm text-slate-700 outline-none focus:border-blue-400 focus:ring-4 focus:ring-blue-500/10" value={model} onChange={e => setModel(e.target.value)} />
-              </div>
+              <ExecutionModelSelect value={modelId} onChange={setModelId} disabled={runMut.isPending} />
             </div>
 
             <div className="flex flex-col-reverse gap-3 border-t border-slate-100 pt-5 sm:flex-row sm:items-center sm:justify-between">
@@ -191,8 +167,8 @@ export default function QuickRun() {
             <h3 className="text-sm font-semibold text-slate-800">{t('当前配置', 'Current configuration')}</h3>
             <div className="mt-4 space-y-3 text-sm">
               <div className="flex items-center justify-between gap-3"><span className="text-slate-400">{t('在线设备', 'Online devices')}</span><strong className="text-slate-700">{onlineDevices.length}</strong></div>
-              <div className="flex items-center justify-between gap-3"><span className="text-slate-400">Provider</span><strong className="max-w-[150px] truncate text-slate-700">{provider}</strong></div>
-              <div className="flex items-center justify-between gap-3"><span className="text-slate-400">Model</span><strong className="max-w-[150px] truncate font-mono text-xs text-slate-700">{model || '—'}</strong></div>
+              <div className="flex items-center justify-between gap-3"><span className="text-slate-400">Provider</span><strong className="max-w-[150px] truncate text-slate-700">{selectedModel?.provider || '—'}</strong></div>
+              <div className="flex items-center justify-between gap-3"><span className="text-slate-400">Model</span><strong className="max-w-[150px] truncate font-mono text-xs text-slate-700">{selectedModel?.model_name || '—'}</strong></div>
               <div className="flex items-center justify-between gap-3"><span className="text-slate-400">{t('最大步数', 'Max steps')}</span><strong className="text-slate-700">{maxSteps}</strong></div>
             </div>
           </div>
