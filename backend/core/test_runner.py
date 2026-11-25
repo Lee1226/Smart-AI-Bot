@@ -58,12 +58,7 @@ def _missing_key(provider: str, api_key: str) -> bool:
 
 
 async def _resolve_run_model(run_id: str, account_id: str) -> dict:
-    """Resolve every run exclusively through its model-repository model_id.
-
-    Historical runs are backfilled during database initialization when their
-    provider/model identity maps to exactly one repository model. Unmatched
-    historical runs remain readable but cannot be executed directly.
-    """
+    """Resolve a run exclusively through its model-repository model_id."""
     from core.model_resolver import resolve_model_config
     async with AsyncSessionLocal() as session:
         run_row = await session.get(TestRun, run_id)
@@ -71,7 +66,7 @@ async def _resolve_run_model(run_id: str, account_id: str) -> dict:
             raise RuntimeError("测试任务不存在")
         model_id = (run_row.model_id or "").strip()
         if not model_id:
-            raise RuntimeError("该历史任务未能匹配模型仓库配置，无法直接重新运行")
+            raise RuntimeError("任务未关联有效的模型仓库配置，无法运行")
         return await resolve_model_config(session, account_id, model_id)
 
 
