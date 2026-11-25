@@ -70,7 +70,7 @@ async def _resolve_run_model(run_id: str, account_id: str) -> dict:
             raise RuntimeError("测试任务不存在")
         model_id = (run_row.model_id or "").strip()
         if not model_id:
-            raise RuntimeError("该历史任务未关联模型仓库模型，请重新运行时选择当前模型")
+            raise RuntimeError("该历史任务未能匹配模型仓库配置，无法直接重新运行")
         return await resolve_model_config(session, account_id, model_id)
 
 
