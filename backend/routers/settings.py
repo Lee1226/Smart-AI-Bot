@@ -45,6 +45,7 @@ class Settings(BaseModel):
     # Leave empty to use the same model as the agent.
     verifier_provider: Optional[str] = ""
     verifier_model: Optional[str] = ""
+    verifier_model_id: Optional[str] = ""
     # Webhook notification after run completes
     webhook_url: Optional[str] = ""
     webhook_type: Optional[str] = ""  # feishu / dingtalk / slack / custom
@@ -104,6 +105,9 @@ async def update_settings(new_settings: SettingsUpdate, request: Request, db: As
     for key in SECRET_FIELDS:
         if not incoming.get(key):
             incoming.pop(key, None)
+    if "verifier_model_id" in incoming and incoming["verifier_model_id"]:
+        from core.model_resolver import validate_model_selection
+        await validate_model_selection(db, account_id, incoming["verifier_model_id"])
     current.update(incoming)
     if "recording_storage_dir" in incoming:
         try:
