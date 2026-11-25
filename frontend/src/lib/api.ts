@@ -110,20 +110,6 @@ export interface StepLog {
 }
 
 export interface Settings {
-  openai_api_key: string
-  anthropic_api_key: string
-  anthropic_base_url: string
-  gemini_api_key: string
-  zhipu_api_key: string
-  dashscope_api_key: string
-  dashscope_base_url: string
-  groq_api_key: string
-  ollama_base_url: string
-  ark_api_key: string
-  ark_base_url: string
-  aws_access_key_id: string
-  aws_secret_access_key: string
-  aws_region_name: string
   default_model_id: string
   verifier_model_id: string
   webhook_url: string
@@ -652,12 +638,12 @@ export const fetchSettings = () => api.get<Settings>('/settings').then(r => r.da
 export interface LLMProvider {
   id: string; provider_id: string; name: string; protocol_type: string; adapter_id: string
   default_base_url: string; auth_type: string; enabled: boolean
-  legacy_api_key_field: string; legacy_base_url_field: string; model_presets: string[]
+  model_presets: string[]
 }
 export interface LLMProviderInput {
   provider_id: string; name: string; protocol_type: string; adapter_id: string
   default_base_url?: string; auth_type: string; enabled: boolean
-  legacy_api_key_field?: string; legacy_base_url_field?: string; model_presets?: string[]
+  model_presets?: string[]
 }
 export const fetchLLMProviders = (includeDisabled = true) =>
   api.get<LLMProvider[]>('/settings/llm-providers', { params: { include_disabled: includeDisabled } }).then(r => r.data)
