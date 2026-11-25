@@ -204,26 +204,10 @@ def apply_aws_env(settings: dict) -> None:
 
 
 def build_fallback_chain(settings: dict, primary_provider: str, primary_model: str) -> list:
-    """Ordered list of ModelTarget fallbacks from any other key'd provider."""
-    from agent.llm import ModelTarget
+    """Automatic provider switching is disabled.
 
-    candidates = [
-        ("openai", "openai_api_key", "gpt-4o"),
-        ("anthropic", "anthropic_api_key", "claude-3-5-sonnet-20241022"),
-        ("gemini", "gemini_api_key", "gemini-1.5-pro"),
-        ("zhipuai", "zhipu_api_key", "glm-4v"),
-        ("dashscope", "dashscope_api_key", "qwen3.5-plus"),
-        ("groq", "groq_api_key", "llama-3.2-90b-vision-preview"),
-    ]
-    chain: list = []
-    for provider, key_field, default_model in candidates:
-        if provider.lower() == (primary_provider or "").lower():
-            continue
-        key = settings.get(key_field, "")
-        if not key:
-            continue
-        chain.append(ModelTarget(
-            provider=provider, model=default_model,
-            api_key=key, api_base=resolve_api_base(settings, provider),
-        ))
-    return chain
+    A configured API key is not consent to use that provider as a backup.
+    If explicit per-run fallback configuration is introduced later, it must
+    resolve only user-selected model records rather than infer candidates.
+    """
+    return []
