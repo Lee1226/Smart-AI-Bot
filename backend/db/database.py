@@ -1,4 +1,3 @@
-import logging
 import os
 from pathlib import Path
 from sqlalchemy import text
@@ -8,7 +7,6 @@ from sqlalchemy.orm import DeclarativeBase
 _DEFAULT_DATA_DIR = Path(__file__).parent.parent / "data"
 DB_PATH = Path(os.getenv("SAB_DB_PATH", str(Path(os.getenv("SAB_DATA_DIR", str(_DEFAULT_DATA_DIR))) / "db.sqlite3")))
 DB_PATH.parent.mkdir(exist_ok=True)
-logger = logging.getLogger(__name__)
 
 engine = create_async_engine(f"sqlite+aiosqlite:///{DB_PATH}", echo=False)
 AsyncSessionLocal = async_sessionmaker(engine, expire_on_commit=False)
@@ -16,73 +14,6 @@ AsyncSessionLocal = async_sessionmaker(engine, expire_on_commit=False)
 
 class Base(DeclarativeBase):
     pass
-
-
-async def backfill_legacy_run_model_ids(session) -> int:
-    """Attach legacy runs to a repository model only when the match is unambiguous.
-
-    Matching is account-scoped and requires an exact model name plus the
-    historical provider identity. Generic adapter IDs are not treated as
-    provider identities because multiple providers may share one adapter.
-    Disabled models are included so historical identity is preserved.
-    """
-    from sqlalchemy import or_, select
-    from db.models import LLMConnection, LLMModel, LLMProvider, TestRun, TestSuite
-
-    unresolved = (await session.execute(
-        select(TestRun).where(
-            or_(TestRun.model_id.is_(None), TestRun.model_id == "")
-        )
-    )).scalars().all()
-    updated = 0
-
-    for run in unresolved:
-        provider = (run.provider or "").strip()
-        model_name = (run.model or "").strip()
-        if not provider or not model_name:
-            continue
-
-        account_id = run.account_id
-        suite = None
-        if not account_id and run.suite_id:
-            suite = await session.get(TestSuite, run.suite_id)
-            account_id = suite.account_id if suite else None
-        if not account_id:
-            continue
-
-        # A stored provider may be either a catalog provider ID or a
-        # shared runtime adapter ID. In the latter case, model-name matching
-        # can still identify a model when exactly one account-owned candidate
-        # exists across all connections using that adapter.
-        provider_match = (
-            (LLMProvider.provider_id == provider)
-            | (LLMConnection.provider == provider)
-        )
-
-        candidates = (await session.execute(
-            select(LLMModel.id)
-            .join(LLMConnection, LLMConnection.id == LLMModel.connection_id)
-            .outerjoin(LLMProvider, LLMProvider.id == LLMConnection.provider_catalog_id)
-            .where(
-                LLMModel.account_id == account_id,
-                LLMConnection.account_id == account_id,
-                LLMModel.model_name == model_name,
-                provider_match,
-            )
-            .distinct()
-        )).scalars().all()
-
-        if len(candidates) != 1:
-            continue
-
-        run.model_id = candidates[0]
-        if not run.account_id:
-            run.account_id = account_id
-        updated += 1
-
-    if updated:
-        await session.commit()
-    return updated
 
 
 async def init_db():
@@ -204,12 +135,6 @@ async def init_db():
                     connection.provider = match.adapter_id
         await provider_session.commit()
 
-    # Backfill historical task model IDs only after provider identities have
-    # been normalized and linked to the provider catalog.
-    async with AsyncSessionLocal() as run_session:
-        backfilled_runs = await backfill_legacy_run_model_ids(run_session)
-    if backfilled_runs:
-        logger.info("Backfilled model IDs for %d historical test runs", backfilled_runs)
 
     from sqlalchemy import select as _select
     # ── Migrate legacy per-device app metadata into shared catalog tables ──
