@@ -16,6 +16,78 @@ class Base(DeclarativeBase):
     pass
 
 
+async def backfill_legacy_run_model_ids(session) -> int:
+    """Attach legacy runs to a repository model only when the match is unambiguous.
+
+    Matching is account-scoped and requires an exact model name plus the
+    historical provider identity. Generic adapter IDs are not treated as
+    provider identities because multiple providers may share one adapter.
+    Disabled models are included so historical identity is preserved.
+    """
+    from sqlalchemy import or_, select
+    from db.models import LLMConnection, LLMModel, LLMProvider, TestRun, TestSuite
+
+    unresolved = (await session.execute(
+        select(TestRun).where(
+            or_(TestRun.model_id.is_(None), TestRun.model_id == "")
+        )
+    )).scalars().all()
+    updated = 0
+
+    for run in unresolved:
+        provider = (run.provider or "").strip()
+        model_name = (run.model or "").strip()
+        if not provider or not model_name:
+            continue
+
+        account_id = run.account_id
+        suite = None
+        if not account_id and run.suite_id:
+            suite = await session.get(TestSuite, run.suite_id)
+            account_id = suite.account_id if suite else None
+        if not account_id:
+            continue
+
+        # If the historical value is a shared adapter ID (for example,
+        # openai-compatible), do not use it as a provider fallback.
+        shared_adapter = await session.scalar(
+            select(LLMProvider.id).where(
+                LLMProvider.account_id == account_id,
+                LLMProvider.adapter_id == provider,
+                LLMProvider.provider_id != provider,
+            ).limit(1)
+        )
+
+        provider_match = [LLMProvider.provider_id == provider]
+        if not shared_adapter:
+            provider_match.append(LLMConnection.provider == provider)
+
+        candidates = (await session.execute(
+            select(LLMModel.id)
+            .join(LLMConnection, LLMConnection.id == LLMModel.connection_id)
+            .outerjoin(LLMProvider, LLMProvider.id == LLMConnection.provider_catalog_id)
+            .where(
+                LLMModel.account_id == account_id,
+                LLMConnection.account_id == account_id,
+                LLMModel.model_name == model_name,
+                or_(*provider_match),
+            )
+            .distinct()
+        )).scalars().all()
+
+        if len(candidates) != 1:
+            continue
+
+        run.model_id = candidates[0]
+        if not run.account_id:
+            run.account_id = account_id
+        updated += 1
+
+    if updated:
+        await session.commit()
+    return updated
+
+
 async def init_db():
     # Import models so every table is registered on Base.metadata before
     # create_all runs — independent of import order at the call site.
@@ -134,6 +206,11 @@ async def init_db():
                     connection.provider_catalog_id = match.id
                     connection.provider = match.adapter_id
         await provider_session.commit()
+
+    # Backfill historical task model IDs only after provider identities have
+    # been normalized and linked to the provider catalog.
+    async with AsyncSessionLocal() as run_session:
+        await backfill_legacy_run_model_ids(run_session)
 
     from sqlalchemy import select as _select
     # ── Migrate legacy per-device app metadata into shared catalog tables ──
