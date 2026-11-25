@@ -86,6 +86,7 @@ class LLMVerifier:
         api_base: str = "",
         fallbacks: Optional[list] = None,
         language: str = "",
+        provider_kwargs: Optional[dict] = None,
     ) -> None:
         self.provider = provider
         self.model = model
@@ -93,7 +94,7 @@ class LLMVerifier:
         self.api_base = api_base
         self.fallbacks: list = fallbacks or []
         self.language: str = language
-        self._primary = ModelTarget(provider, model, api_key, api_base)
+        self._primary = ModelTarget(provider, model, api_key, api_base, provider_kwargs or {})
 
     async def verify(
         self,
