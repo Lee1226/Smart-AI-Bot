@@ -173,6 +173,7 @@ class TestRun(Base):
     status: Mapped[str] = mapped_column(String, default="pending")  # pending/running/done
     provider: Mapped[str] = mapped_column(String, default="")
     model: Mapped[str] = mapped_column(String, default="")
+    model_id: Mapped[str] = mapped_column(String, default="", index=True)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
     finished_at: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True)
     account_id: Mapped[Optional[str]] = mapped_column(String, nullable=True)
