@@ -44,6 +44,7 @@ DEFAULT_SETTINGS = {
     "aws_region_name": "us-east-1",
     "default_provider": "openai",
     "default_model": "gpt-4o",
+    "default_model_id": "",
     "verifier_provider": "",
     "verifier_model": "",
     "verifier_model_id": "",
