@@ -2,6 +2,7 @@ import { useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { Link } from 'react-router-dom'
 import TestAccountSelect from '../components/TestAccountSelect'
+import { ExecutionModelSelect, useExecutionModels } from '../components/ExecutionModelSelect'
 import { api, fetchDevices, fetchSuites } from '../lib/api'
 
 type Target = {problems?:{status:string;reason:string}[];run_id:string;suite_name:string;device_name:string;status:string;passed:number;total:number;failed:number;errored:number;skipped:number;preparation?:Record<string, unknown>;diagnostics?:{status?:string;reason?:string}}
@@ -15,6 +16,9 @@ export default function Regressions() {
   const plans=useQuery({queryKey:['regressions'],queryFn:()=>api.get<Plan[]>('/regressions').then(r=>r.data),refetchInterval:3000})
   const artifacts=useQuery({queryKey:['regression-artifacts'],queryFn:()=>api.get<Artifact[]>('/regressions/artifacts').then(r=>r.data)})
   const [selected,setSelected]=useState(''),[name,setName]=useState(''),[environment,setEnvironment]=useState('默认环境')
+  const [modelId,setModelId]=useState('')
+  const { models }=useExecutionModels()
+  const selectedModel=models.find(item=>item.id===modelId)
   const [testAccounts,setTestAccounts]=useState<Record<string,string>>({})
   const [suiteIds,setSuiteIds]=useState<string[]>([]),[deviceIds,setDeviceIds]=useState<string[]>([])
   const [artifactId,setArtifactId]=useState(''),[version,setVersion]=useState(''),[pkg,setPkg]=useState(''),[clear,setClear]=useState(false)
@@ -26,9 +30,13 @@ export default function Regressions() {
   return <div className="mx-auto max-w-[1500px] space-y-7">
     <div className="relative overflow-hidden rounded-2xl bg-gradient-to-br from-[#175CD3] via-[#2878E8] to-[#38A6D9] px-5 py-6 text-white shadow-[0_18px_45px_rgba(37,99,235,0.18)] sm:px-6"><div className="pointer-events-none absolute -right-12 -top-20 h-64 w-64 rounded-full border-[36px] border-white/10"/><div className="relative"><div className="mb-3 inline-flex rounded-full border border-white/20 bg-white/10 px-3 py-1 text-xs font-semibold text-blue-50">AI 终端 · 批量执行</div><h1 className="text-xl font-bold tracking-tight sm:text-2xl">多设备回归</h1><p className="mt-3 max-w-2xl text-sm leading-6 text-blue-50/90">同一设备按任务排队，不同设备并发执行。每个套件与设备组合生成独立运行记录。</p></div></div>
     {error&&<div role="alert" className="rounded-xl border border-rose-100 bg-rose-50 px-4 py-3 text-sm text-rose-700">{error}</div>}
-    <form className="rounded-2xl border border-slate-200/80 bg-white p-6 shadow-[0_8px_28px_rgba(31,75,135,0.05)] space-y-5 sm:p-7" onSubmit={e=>{e.preventDefault();void act(async()=>{const r=await api.post<Plan>('/regressions',{name,suite_ids:suiteIds,device_ids:deviceIds,test_accounts:testAccounts,environment,artifact_id:artifactId,app_package:pkg,clear_data:clear,max_steps:steps,commit_sha:commit,build_url:build});setSelected(r.data.id)})}}>
+    <form className="rounded-2xl border border-slate-200/80 bg-white p-6 shadow-[0_8px_28px_rgba(31,75,135,0.05)] space-y-5 sm:p-7" onSubmit={e=>{e.preventDefault();void act(async()=>{if(!selectedModel) throw new Error('请先从模型仓库选择一个可用模型');const r=await api.post<Plan>('/regressions',{name,model_id:modelId,suite_ids:suiteIds,device_ids:deviceIds,test_accounts:testAccounts,environment,artifact_id:artifactId,app_package:pkg,clear_data:clear,max_steps:steps,commit_sha:commit,build_url:build});setSelected(r.data.id)})}}>
       <div><h2 className="text-lg font-semibold text-slate-900">创建回归计划</h2><p className="mt-1 text-sm text-slate-500">选择测试套件与目标设备，按组合创建独立执行记录</p></div>
       <div className="grid grid-cols-2 gap-4"><label className="text-sm">计划名称<input required aria-label="计划名称" className={box} value={name} onChange={e=>setName(e.target.value)}/></label><label className="text-sm">环境标签<input aria-label="环境标签" className={box} value={environment} onChange={e=>setEnvironment(e.target.value)}/></label></div>
+      <div className="max-w-xl">
+        <ExecutionModelSelect value={modelId} onChange={setModelId} disabled={busy}/>
+        <p className="mt-1 text-xs text-slate-500">所有设备与套件组合严格使用此模型，不自动切换到其他模型。</p>
+      </div>
       <p className="text-xs text-ink-mute">环境标签用于追溯；准备步骤支持安装 APK、清应用数据和启动应用。不会自动切换服务端环境。</p>
       <div className="grid grid-cols-2 gap-4">
         <fieldset className="rounded-xl border border-slate-200 bg-slate-50/60 p-4 max-h-52 overflow-auto"><legend className="text-sm px-1">用例套件</legend>{suites.data?.items.filter(s=>s.case_count>0).map(s=><label key={s.id} className="flex gap-2 text-sm py-1"><input type="checkbox" checked={suiteIds.includes(s.id)} onChange={()=>toggle(suiteIds,s.id,setSuiteIds)}/>{s.name}（{s.case_count}）</label>)}</fieldset>
@@ -56,7 +64,7 @@ export default function Regressions() {
         <p className="text-xs text-ink-mute">自动安装与清数据仅支持 Android ADB 桥接，包名需与套件应用一致。安装前校验 SHA-256 与真实 APK 包名。</p>
         <div className="grid grid-cols-3 gap-3"><label className="text-sm">每用例最大步数<input type="number" min={1} max={100} className={box} value={steps} onChange={e=>setSteps(+e.target.value)}/></label><label className="text-sm">Commit SHA<input className={box} value={commit} onChange={e=>setCommit(e.target.value)}/></label><label className="text-sm">构建链接<input className={box} value={build} onChange={e=>setBuild(e.target.value)}/></label></div>
       </div></details>
-      <button disabled={busy||!suiteIds.length||!deviceIds.length} className="rounded-xl bg-gradient-to-r from-blue-600 to-blue-500 px-5 py-3 text-sm font-semibold text-white shadow-lg shadow-blue-500/20 transition hover:-translate-y-0.5 disabled:opacity-40">创建并运行（{suiteIds.length*deviceIds.length} 个组合）</button>
+      <button disabled={busy||!selectedModel||!suiteIds.length||!deviceIds.length} className="rounded-xl bg-gradient-to-r from-blue-600 to-blue-500 px-5 py-3 text-sm font-semibold text-white shadow-lg shadow-blue-500/20 transition hover:-translate-y-0.5 disabled:opacity-40">创建并运行（{suiteIds.length*deviceIds.length} 个组合）</button>
     </form>
     <div className="grid gap-5 xl:grid-cols-[280px_minmax(0,1fr)]">
       <div className="space-y-2 rounded-2xl border border-slate-200 bg-white p-3 shadow-[0_6px_22px_rgba(31,75,135,0.04)]">{plans.data?.map(p=><button key={p.id} onClick={()=>setSelected(p.id)} className={`w-full rounded-xl border border-slate-200 p-4 text-left transition hover:border-blue-200 hover:bg-blue-50/50 ${plan?.id===p.id?'bg-primary-soft':'bg-white'}`}><div className="text-sm font-medium">{p.name}</div><div className="text-xs mt-1">{labels[p.gate]}</div></button>)}{!plans.data?.length&&<p className="text-sm text-ink-mute">暂无回归计划</p>}</div>
