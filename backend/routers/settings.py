@@ -164,8 +164,15 @@ def _model_dict(row: LLMModel) -> dict:
         capabilities = json.loads(row.capabilities_json or '["text"]')
     except (TypeError, ValueError):
         capabilities = ["text"]
+    try:
+        fallback_model_ids = json.loads(row.fallback_model_ids_json or "[]")
+        if not isinstance(fallback_model_ids, list):
+            fallback_model_ids = []
+    except (TypeError, ValueError):
+        fallback_model_ids = []
     return {"id": row.id, "connection_id": row.connection_id, "model_name": row.model_name,
-            "description": row.description, "capabilities": capabilities, "enabled": bool(row.enabled),
+            "description": row.description, "capabilities": capabilities,
+            "fallback_model_ids": fallback_model_ids, "enabled": bool(row.enabled),
             "created_at": row.created_at.isoformat() if row.created_at else None}
 
 class LLMProviderInput(BaseModel):
@@ -319,7 +326,36 @@ class LLMModelInput(BaseModel):
     model_name: str = Field(min_length=1, max_length=200)
     description: str = ""
     capabilities: list[str] = Field(default_factory=lambda: ["text"])
+    fallback_model_ids: list[str] = Field(default_factory=list)
     enabled: bool = True
+
+
+async def _validate_fallback_models(
+    db: AsyncSession, account_id: str, primary_model_id: str, fallback_model_ids: list[str]
+):
+    """Validate an ordered, non-recursive fallback list against enabled account models."""
+    normalized = [str(model_id).strip() for model_id in fallback_model_ids]
+    if any(not model_id for model_id in normalized):
+        raise HTTPException(status_code=422, detail="备用模型 ID 不能为空")
+    if len(normalized) != len(set(normalized)):
+        raise HTTPException(status_code=422, detail="备用模型不能重复")
+    if primary_model_id and primary_model_id in normalized:
+        raise HTTPException(status_code=422, detail="主模型不能同时作为自己的备用模型")
+    if not normalized:
+        return
+    rows = (await db.execute(
+        select(LLMModel.id).join(LLMConnection, LLMConnection.id == LLMModel.connection_id).where(
+            LLMModel.id.in_(normalized),
+            LLMModel.account_id == account_id,
+            LLMModel.enabled.is_(True),
+            LLMConnection.account_id == account_id,
+        )
+    )).scalars().all()
+    available = set(rows)
+    invalid = [model_id for model_id in normalized if model_id not in available]
+    if invalid:
+        raise HTTPException(status_code=422, detail="备用模型必须是当前账号下已启用的模型，请检查已停用或不存在的模型")
+    return normalized
 
 
 async def _owned_connection(db: AsyncSession, account_id: str, connection_id: str):
@@ -464,11 +500,13 @@ async def create_llm_model(connection_id: str, payload: LLMModelInput, request: 
     require_role(request, "owner", "admin")
     account_id = require_account_id(request)
     connection = await _owned_connection(db, account_id, connection_id)
+    await _validate_fallback_models(db, account_id, "", payload.fallback_model_ids)
     connection.last_test_status = "untested"
     connection.last_test_message = ""
     connection.last_tested_at = None
     row = LLMModel(account_id=account_id, connection_id=connection_id, model_name=payload.model_name.strip(),
-        description=payload.description.strip(), capabilities_json=json.dumps(payload.capabilities), enabled=payload.enabled)
+        description=payload.description.strip(), capabilities_json=json.dumps(payload.capabilities),
+        fallback_model_ids_json=json.dumps(payload.fallback_model_ids), enabled=payload.enabled)
     db.add(row)
     try: await db.commit()
     except IntegrityError:
@@ -484,11 +522,14 @@ async def update_llm_model(model_id: str, payload: LLMModelInput, request: Reque
     row = await db.get(LLMModel, model_id)
     if row is None or row.account_id != account_id: raise HTTPException(status_code=404, detail="Model not found")
     connection = await _owned_connection(db, account_id, row.connection_id)
+    await _validate_fallback_models(db, account_id, row.id, payload.fallback_model_ids)
     connection.last_test_status = "untested"
     connection.last_test_message = ""
     connection.last_tested_at = None
     row.model_name = payload.model_name.strip(); row.description = payload.description.strip()
-    row.capabilities_json = json.dumps(payload.capabilities); row.enabled = payload.enabled
+    row.capabilities_json = json.dumps(payload.capabilities)
+    row.fallback_model_ids_json = json.dumps(payload.fallback_model_ids)
+    row.enabled = payload.enabled
     row.updated_at = datetime.utcnow()
     try: await db.commit()
     except IntegrityError:
