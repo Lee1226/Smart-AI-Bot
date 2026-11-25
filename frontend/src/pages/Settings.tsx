@@ -7,6 +7,7 @@ import {
 import { useT } from '../lib/i18n'
 import ProjectTestAccounts from '../components/ProjectTestAccounts'
 import { PROVIDER_MODELS, PROVIDERS } from '../lib/providerConfig'
+import { useExecutionModels } from '../components/ExecutionModelSelect'
 
 type FieldDef = { key: keyof SettingsData; label: string; placeholder?: string; type?: string }
 
@@ -142,6 +143,7 @@ export default function Settings() {
   const t = useT()
   const qc = useQueryClient()
   const { data: remote, isLoading } = useQuery({ queryKey: ['settings'], queryFn: fetchSettings })
+  const { models: executionModels, isLoading: modelsLoading, isError: modelsError } = useExecutionModels()
   const [form, setForm] = useState<Partial<SettingsData>>({})
   const [saved, setSaved] = useState(false)
   const [clearSecrets, setClearSecrets] = useState<string[]>([])
@@ -310,28 +312,31 @@ export default function Settings() {
             <p className="text-xs text-gray-400 mb-2">
               {t('用于 pass/fail 判断的专用模型。留空则与 Agent 使用同一模型。', 'A dedicated model for pass/fail judgement. Leave empty to use the same model as the Agent.')}
             </p>
-            <div className="grid grid-cols-2 gap-3">
-              <div>
-                <label className="block text-xs text-gray-500 mb-1">Provider</label>
-                <select
-                  className="w-full border rounded px-3 py-1.5 text-sm"
-                  value={form.verifier_provider || ''}
-                  onChange={e => set('verifier_provider', e.target.value)}
-                >
-                  <option value="">{t('— 与 Agent 相同 —', '— Same as Agent —')}</option>
-                  {PROVIDERS.map(p => <option key={p} value={p}>{p}</option>)}
-                </select>
-              </div>
-              <div>
-                <label className="block text-xs text-gray-500 mb-1">Model</label>
-                <input
-                  type="text"
-                  className="w-full border rounded px-3 py-1.5 text-sm font-mono"
-                  placeholder={t('留空 = 同 Agent', 'Empty = same as Agent')}
-                  value={form.verifier_model || ''}
-                  onChange={e => set('verifier_model', e.target.value)}
-                />
-              </div>
+            <div>
+              <label className="block text-xs text-gray-500 mb-1">{t('Verifier 模型', 'Verifier model')}</label>
+              <select
+                className="w-full border rounded px-3 py-2 text-sm"
+                value={form.verifier_model_id || ''}
+                disabled={modelsLoading || modelsError || saveMut.isPending}
+                onChange={e => setForm(prev => ({
+                  ...prev,
+                  verifier_model_id: e.target.value,
+                  // Clear legacy name-based settings so an empty selection truly means Agent model.
+                  verifier_provider: '',
+                  verifier_model: '',
+                }))}
+              >
+                <option value="">{t('与本次任务的 Agent 模型相同', 'Use the Agent model selected for this run')}</option>
+                {executionModels.map(model => (
+                  <option key={model.id} value={model.id}>
+                    {model.connection_name || '未命名连接'} · {model.provider || 'provider'} · {model.model_name}
+                  </option>
+                ))}
+              </select>
+              {modelsError && <p className="mt-1 text-xs text-red-600">{t('模型列表加载失败，请刷新页面重试。', 'Failed to load models. Refresh and try again.')}</p>}
+              {!modelsLoading && !modelsError && executionModels.length === 0 && (
+                <p className="mt-1 text-xs text-gray-400">{t('模型仓库中暂无已启用模型。', 'No enabled models in the model repository.')}</p>
+              )}
             </div>
           </div>
 
