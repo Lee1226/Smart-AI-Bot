@@ -403,6 +403,7 @@ class LLMModel(Base):
     model_name: Mapped[str] = mapped_column(String)
     description: Mapped[str] = mapped_column(Text, default="")
     capabilities_json: Mapped[str] = mapped_column(Text, default='["text"]')
+    fallback_model_ids_json: Mapped[str] = mapped_column(Text, default="[]")
     enabled: Mapped[bool] = mapped_column(Boolean, default=True)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
     updated_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
