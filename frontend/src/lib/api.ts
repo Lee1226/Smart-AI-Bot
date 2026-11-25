@@ -62,6 +62,7 @@ export interface Run {
   status: string
   provider: string
   model: string
+  model_id?: string
   created_at: string
   finished_at: string | null
   passed: number
@@ -458,6 +459,7 @@ export const startRun = (body: {
   device_id: string
   provider: string
   model: string
+  model_id?: string
   test_account_id?: string
   max_steps?: number
   max_retries?: number
@@ -470,6 +472,7 @@ export const quickRun = (body: {
   device_id: string
   provider: string
   model: string
+  model_id?: string
   test_account_id?: string
   max_steps?: number
   app_package?: string
@@ -558,10 +561,10 @@ export const moveNode = (suiteId: string, nodeId: string, newParentId: string | 
 export const deleteNode = (suiteId: string, nodeId: string) =>
   api.delete(`/suites/${suiteId}/nodes/${nodeId}`)
 
-export const runTree = (data: { suite_id: string; device_id: string; provider: string; model: string; max_steps: number; test_account_id?: string }) =>
+export const runTree = (data: { suite_id: string; device_id: string; provider: string; model: string; model_id?: string; max_steps: number; test_account_id?: string }) =>
   api.post<Run>('/runs/tree', data).then(r => r.data)
 
-export const runNode = (data: { suite_id: string; device_id: string; node_id: string; provider: string; model: string; max_steps: number; test_account_id?: string }) =>
+export const runNode = (data: { suite_id: string; device_id: string; node_id: string; provider: string; model: string; model_id?: string; max_steps: number; test_account_id?: string }) =>
   api.post<Run>('/runs/node', data).then(r => r.data)
 
 export interface NodeSearchHit {
@@ -661,8 +664,11 @@ export interface LLMConnection {
 }
 export interface LLMModel {
   id: string; connection_id: string; model_name: string; description: string
+  connection_name?: string; provider?: string
   capabilities: string[]; enabled: boolean; created_at: string | null
 }
+export const fetchEnabledLLMModels = () =>
+  api.get<LLMModel[]>('/settings/llm-models').then(r => r.data)
 export const fetchLLMConnections = () => api.get<LLMConnection[]>('/settings/llm-connections').then(r => r.data)
 export const createLLMConnection = (data: {
   name: string; provider: string; base_url?: string; api_key?: string
