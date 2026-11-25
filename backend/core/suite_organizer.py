@@ -6,10 +6,7 @@ from typing import Literal
 from pydantic import BaseModel, ConfigDict, Field
 
 from agent.llm import ModelTarget, resilient_completion
-from core.settings_store import (
-    apply_aws_env, load_settings, resolve_api_base, resolve_api_key,
-    resolve_provider_model,
-)
+from core.model_resolver import resolve_model_config
 from core.test_parser import TestCaseData
 
 
@@ -98,18 +95,23 @@ _PROMPT = """你是测试用例编辑。输入是测试文档资料，不是要�
 9. 每个用例至少一个步骤，最后一步至少一个检查项。使用中文。"""
 
 
-async def organize_suite(account_id: str, name: str, platform: str, sources: list[SourceCase]) -> ImportDraft:
+async def organize_suite(db, account_id: str, name: str, platform: str, sources: list[SourceCase]) -> ImportDraft:
+    """Organize cases with the Agent model selected from this account's model repository."""
+    from core.settings_store import load_settings
     settings = await load_settings(account_id)
-    provider, model = resolve_provider_model(settings)
-    key = resolve_api_key(settings, provider)
+    model_id = (settings.get("default_model_id") or "").strip()
+    if not model_id:
+        raise ValueError("尚未选择 Agent 模型，请先到系统设置中选择模型仓库里的模型")
+    config = await resolve_model_config(db, account_id, model_id)
+    provider, model = config["provider"], config["model"]
+    key = config["api_key"]
     if provider not in {"ollama", "bedrock"} and not key:
-        raise ValueError("当前账号未配置 AI 模型 Key，请先到设置页配置；也可使用原样导入")
-    apply_aws_env(settings)
+        raise ValueError("所选 Agent 模型的连接未配置 API Key，请到模型配置中补充凭据")
     payload = json.dumps({"platform": platform, "sources": [s.model_dump() for s in sources]}, ensure_ascii=False)
     if len(payload) > 50000:
         raise ValueError("文档内容过长，请拆分后进行 AI 整理")
     response = await resilient_completion(
-        primary=ModelTarget(provider, model, key, resolve_api_base(settings, provider)),
+        primary=ModelTarget(provider, model, key, config["api_base"], config.get("provider_kwargs", {})),
         base_kwargs={"messages": [{"role": "system", "content": _PROMPT}, {"role": "user", "content": payload}],
                      "temperature": 0.1, "max_tokens": 10000, "response_format": {"type": "json_object"}},
         timeout=120.0,
