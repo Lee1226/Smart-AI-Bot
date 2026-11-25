@@ -424,6 +424,7 @@ async def quick_run(req: QuickRunRequest, request: Request, db: AsyncSession = D
     await db.flush()
 
     def_provider, def_model = await _default_provider_model(account_id)
+    provider, model = await _selected_provider_model(db, account_id, req, def_provider, def_model)
     run = TestRun(
         suite_id=suite.id,
         device_id=req.device_id,
