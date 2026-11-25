@@ -9,6 +9,7 @@ import {
 import { useT } from '../lib/i18n'
 import LifecycleActionEditor, { type LifecycleAction } from './LifecycleActionEditor'
 import AudioCorpusPicker from './AudioCorpusPicker'
+import { ExecutionModelSelect, useExecutionModels } from './ExecutionModelSelect'
 import type { AudioPlaybackTurn } from '../lib/api'
 
 const STATUS_STYLE: Record<string, string> = {
@@ -64,6 +65,9 @@ export default function ExecutionPlanManager({ suiteId, platform, device }: { su
   const [targetStepIndex, setTargetStepIndex] = useState(0)
   const [executingStep, setExecutingStep] = useState<number | null>(null)
   const [executionLogs, setExecutionLogs] = useState<Array<{ id: string; time: string; step: number; status: 'success' | 'error'; message: string }>>([])
+  const [modelId, setModelId] = useState('')
+  const { models } = useExecutionModels()
+  const selectedModel = models.find(item => item.id === modelId)
 
   const { data: cases = [], isLoading: casesLoading } = useQuery({
     queryKey: ['suite-cases', suiteId],
@@ -120,7 +124,8 @@ export default function ExecutionPlanManager({ suiteId, platform, device }: { su
   const runMut = useMutation({
     mutationFn: () => {
       if (!selectedPlan || !device) throw new Error('请先选择已连接的测试设备')
-      return runExecutionPlan(selectedPlan.id, { device_id: device.id, max_steps: 8 })
+      if (!selectedModel) throw new Error('请先从模型仓库选择一个可用模型')
+      return runExecutionPlan(selectedPlan.id, { device_id: device.id, model_id: modelId, max_steps: 8 })
     },
     onSuccess: run => {
       alert(t(`执行任务已创建：${run.id}，可在测试运行记录中查看进度和结果。`, `Run created: ${run.id}. Track progress and results in Run History.`))
@@ -362,8 +367,12 @@ export default function ExecutionPlanManager({ suiteId, platform, device }: { su
                 <span className={`rounded-full px-2 py-1 text-[11px] ${STATUS_STYLE[selectedPlan.status] || 'bg-gray-100 text-gray-600'}`}>{selectedPlan.status}</span>
                 <span className="text-xs text-gray-400">{selectedPlan.steps.length} {t('个步骤', 'steps')}</span>
                 {!editing && <div className="ml-auto flex items-center gap-2">
+                  <div className="mb-3 max-w-md">
+                    <ExecutionModelSelect value={modelId} onChange={setModelId} disabled={runMut.isPending} />
+                    <p className="mt-1 text-[11px] text-gray-500">执行计划严格使用所选模型及其连接凭据，不启用隐式模型切换。</p>
+                  </div>
                   <button className="rounded-md bg-blue-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-blue-700 disabled:cursor-not-allowed disabled:opacity-50"
-                    disabled={!device || runMut.isPending || selectedPlan.steps.some(step => ['ai', 'hybrid'].includes(step.executor) && (step.intent?.status !== 'confirmed' || !step.intent?.description?.trim() || !step.intent?.expected_result?.trim()))}
+                    disabled={!device || !selectedModel || runMut.isPending || selectedPlan.steps.some(step => ['ai', 'hybrid'].includes(step.executor) && (step.intent?.status !== 'confirmed' || !step.intent?.description?.trim() || !step.intent?.expected_result?.trim()))}
                     onClick={() => runMut.mutate()}>
                     {runMut.isPending ? t('启动中…', 'Starting…') : t('运行执行计划', 'Run plan')}
                   </button>
