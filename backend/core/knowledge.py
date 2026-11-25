@@ -66,33 +66,37 @@ _META_RE = re.compile(r"<!--\s*smartbot-note\s*(\{.*?\})\s*-->", re.DOTALL)
 
 # ── Model resolution (reuse the operator account's configured model) ───────
 
-async def _resolve_operator_model() -> tuple[str, str, str, str, str]:
-    """(provider, model, api_key, api_base, language) from the operator settings.
+async def _resolve_operator_model() -> tuple[str, str, str, str, str, dict]:
+    """Resolve the operator's default model from the account-scoped model repository.
 
-    The knowledge base is operator-only (see routers/knowledge.py), so its LLM
-    runs on the operator's configured keys, not a per-tenant account.
+    Knowledge management is operator-only, so it uses the operator account's
+    default_model_id and the credentials stored on that model's connection.
     """
-    from core.settings_store import (
-        apply_aws_env,
-        load_settings,
-        operator_account_id,
-        resolve_api_base,
-        resolve_api_key,
-        resolve_language,
-        resolve_provider_model,
-    )
+    from core.model_resolver import resolve_model_config
+    from core.settings_store import load_settings, resolve_language, operator_account_id
     from db.database import AsyncSessionLocal
 
     async with AsyncSessionLocal() as db:
         op = await operator_account_id(db)
+    if not op:
+        raise RuntimeError("无法确定运营账号，暂时不能整理知识条目")
+
     settings = await load_settings(op)
-    provider, model = resolve_provider_model(settings)
-    api_key = resolve_api_key(settings, provider)
-    api_base = resolve_api_base(settings, provider)
-    language = resolve_language(settings)
-    if provider.lower() == "bedrock":
-        apply_aws_env(settings)
-    return provider, model, api_key, api_base, language
+    model_id = str(settings.get("default_model_id") or "").strip()
+    if not model_id:
+        raise RuntimeError("请先在系统设置中选择默认模型，再使用知识库 AI 整理功能")
+
+    async with AsyncSessionLocal() as db:
+        model_config = await resolve_model_config(db, op, model_id)
+
+    return (
+        model_config["provider"],
+        model_config["model"],
+        model_config["api_key"],
+        model_config["api_base"],
+        resolve_language(settings),
+        model_config.get("provider_kwargs", {}),
+    )
 
 
 # ── Storage ────────────────────────────────────────────────────────────────
@@ -268,7 +272,7 @@ async def organize(raw_input: str) -> dict:
 
     Always returns a usable dict; on any failure it falls back to storing the
     raw text verbatim so the user never loses input."""
-    provider, model, api_key, api_base, language = await _resolve_operator_model()
+    provider, model, api_key, api_base, language, provider_kwargs = await _resolve_operator_model()
     fallback = {
         "title": raw_input.strip()[:20] or "未命名",
         "body": raw_input.strip(),
@@ -277,7 +281,7 @@ async def organize(raw_input: str) -> dict:
     }
     try:
         response = await resilient_completion(
-            primary=ModelTarget(provider, model, api_key, api_base),
+            primary=ModelTarget(provider, model, api_key, api_base, provider_kwargs),
             base_kwargs={
                 "messages": [
                     {"role": "system", "content": _ORGANIZE_PROMPT + lang_directive(language)},
