@@ -1,16 +1,18 @@
-"""Settings — per-account LLM keys and model config, persisted to the DB.
+"""Account preferences and model-connection repository API, persisted to the DB.
 
 Each account owns its own settings blob (isolated from other tenants and from
 the operator).  Reading/writing requires owner/admin of that account.
 """
-from pathlib import Path
+import json
 import os
-from typing import Optional
 import shutil
+from datetime import datetime
+from pathlib import Path
+from typing import Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Request
 from pydantic import BaseModel, Field
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -20,7 +22,7 @@ from core.llm_crypto import decrypt_secret, encrypt_secret
 from core.model_adapters import SUPPORTED_MODEL_ADAPTERS
 from core.run_recorder import recording_directory, cleanup_expired_recordings
 from db.database import AsyncSessionLocal
-from db.models import TestRun, LLMProvider, LLMProviderCatalogState
+from db.models import TestRun, LLMProvider, LLMProviderCatalogState, LLMConnection, LLMModel
 
 router = APIRouter(prefix="/api/settings", tags=["settings"])
 
@@ -114,7 +116,6 @@ async def update_settings(new_settings: SettingsUpdate, request: Request, db: As
     return _masked(current)
 
 
-
 @router.get("/recording-storage")
 async def get_recording_storage(request: Request, db: AsyncSession = Depends(get_db)):
     """Return real disk usage and recording inventory for the current account."""
@@ -140,10 +141,6 @@ async def get_recording_storage(request: Request, db: AsyncSession = Depends(get
 
 
 # ── LLM connection repository ────────────────────────────────────────────────
-import json
-from datetime import datetime
-from sqlalchemy import func
-from db.models import LLMConnection, LLMModel
 
 
 
@@ -170,8 +167,6 @@ def _model_dict(row: LLMModel) -> dict:
     return {"id": row.id, "connection_id": row.connection_id, "model_name": row.model_name,
             "description": row.description, "capabilities": capabilities, "enabled": bool(row.enabled),
             "created_at": row.created_at.isoformat() if row.created_at else None}
-
-
 
 class LLMProviderInput(BaseModel):
     provider_id: str = Field(min_length=2, max_length=80, pattern=r"^[a-z0-9][a-z0-9._-]*$")
