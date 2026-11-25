@@ -491,12 +491,16 @@ async def execute_execution_plan_run(
 
         if final_status == "pass" and case.expected:
             await emit("所有步骤已执行，正在验证用例预期结果…")
-            confirmed, reason, shot_b64, _gap = await verifier.verify(
-                device, case.expected, log=emit, action_history=[
-                    f"Step {item.get('step')}: {item.get('executor')} {item.get('action')} → {item.get('result', item.get('error', ''))}"
-                    for item in action_history
-                ],
-            )
+            try:
+                confirmed, reason, shot_b64, _gap = await verifier.verify(
+                    device, case.expected, log=emit, action_history=[
+                        f"Step {item.get('step')}: {item.get('executor')} {item.get('action')} → {item.get('result', item.get('error', ''))}"
+                        for item in action_history
+                    ],
+                )
+            except Exception as exc:
+                # Provider failures mean the expected result could not be judged.
+                raise RuntimeError(f"验证服务调用失败，无法判定用例结果：{exc}") from exc
             final_status = "pass" if confirmed else "fail"
             final_reason = reason
             if shot_b64:
@@ -542,7 +546,8 @@ async def execute_execution_plan_run(
                 status="error", reason=str(exc), finished_at=datetime.utcnow()
             ))
             await db.commit()
-        await emit(f"执行计划运行错误：{exc}")
+        error_label = "验证服务异常" if str(exc).startswith("验证服务调用失败") else "执行计划运行错误"
+        await emit(f"{error_label}：{exc}")
     finally:
         if lifecycle_device is not None and lifecycle_post_actions:
             try:
