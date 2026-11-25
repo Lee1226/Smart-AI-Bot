@@ -40,7 +40,7 @@ function RunCard({ run, deviceName }: { run: Run; deviceName: string }) {
   const qc = useQueryClient()
   const active = ACTIVE.has(run.status)
   const rerun = useMutation({
-    mutationFn: () => startRun({ suite_id: run.suite_id, device_id: run.device_id, provider: run.provider, model: run.model, model_id: run.model_id }),
+    mutationFn: () => startRun({ suite_id: run.suite_id, device_id: run.device_id, provider: run.provider, model: run.model, model_id: run.model_id || '' }),
     onSuccess: next => { qc.invalidateQueries({ queryKey: ['runs'] }); navigate(`/runs/${next.id}`) },
   })
   const cancel = useMutation({
