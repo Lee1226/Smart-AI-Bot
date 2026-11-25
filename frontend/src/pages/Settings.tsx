@@ -6,45 +6,7 @@ import {
 } from '../lib/api'
 import { useT } from '../lib/i18n'
 import ProjectTestAccounts from '../components/ProjectTestAccounts'
-import { PROVIDER_MODELS, PROVIDERS } from '../lib/providerConfig'
 import { useExecutionModels } from '../components/ExecutionModelSelect'
-
-type FieldDef = { key: keyof SettingsData; label: string; placeholder?: string; type?: string }
-
-// Credential fields each provider needs. A provider with no entry needs no key.
-const PROVIDER_FIELDS: Record<string, FieldDef[]> = {
-  openai: [{ key: 'openai_api_key', label: 'API Key', placeholder: 'sk-…', type: 'password' }],
-  anthropic: [
-    { key: 'anthropic_api_key', label: 'API Key', placeholder: 'sk-ant-…', type: 'password' },
-    { key: 'anthropic_base_url', label: 'Base URL (LiteLLM proxy, optional)', placeholder: 'https://litellm.example.com' },
-  ],
-  ark: [
-    { key: 'ark_api_key', label: 'Ark API Key', placeholder: 'sk-…', type: 'password' },
-    { key: 'ark_base_url', label: 'Base URL', placeholder: 'https://ark.cn-beijing.volces.com/api/v3' },
-  ],
-  bedrock: [
-    { key: 'aws_access_key_id', label: 'AWS Access Key ID', placeholder: 'AKIA…' },
-    { key: 'aws_secret_access_key', label: 'AWS Secret Access Key', type: 'password' },
-    { key: 'aws_region_name', label: 'AWS Region', placeholder: 'us-east-2' },
-  ],
-  google: [{ key: 'gemini_api_key', label: 'API Key', type: 'password' }],
-  zhipuai: [{ key: 'zhipu_api_key', label: 'API Key', type: 'password' }],
-  dashscope: [
-    { key: 'dashscope_api_key', label: 'DashScope API Key', placeholder: 'sk-…', type: 'password' },
-    { key: 'dashscope_base_url', label: 'Base URL', placeholder: 'https://dashscope.aliyuncs.com/compatible-mode/v1' },
-  ],
-  groq: [{ key: 'groq_api_key', label: 'API Key', type: 'password' }],
-  ollama: [{ key: 'ollama_base_url', label: 'Base URL', placeholder: 'http://localhost:11434' }],
-}
-
-function isConfigured(form: Partial<SettingsData>, provider: string): boolean {
-  const fields = PROVIDER_FIELDS[provider] || []
-  // ollama only needs a base URL which has a default → always "ready"
-  if (provider === 'ollama') return true
-  return fields.some(f =>
-    !!(form[f.key] as string)?.trim() || form.configured_secrets?.includes(f.key as string)
-  )
-}
 
 function ProjectCard({ project, onDelete }: { project: Project; onDelete: () => void }) {
   const t = useT()
@@ -146,17 +108,14 @@ export default function Settings() {
   const { models: executionModels, isLoading: modelsLoading, isError: modelsError } = useExecutionModels()
   const [form, setForm] = useState<Partial<SettingsData>>({})
   const [saved, setSaved] = useState(false)
-  const [clearSecrets, setClearSecrets] = useState<string[]>([])
-  const [showOthers, setShowOthers] = useState(false)
   const [showAdvanced, setShowAdvanced] = useState(false)
 
   useEffect(() => { if (remote) setForm(remote) }, [remote])
 
   const saveMut = useMutation({
-    mutationFn: () => saveSettings({ ...form, clear_secrets: clearSecrets }),
+    mutationFn: () => saveSettings(form),
     onSuccess: (data) => {
       setForm(data)
-      setClearSecrets([])
       qc.invalidateQueries({ queryKey: ['settings'] }) // refresh useT so a language change re-renders the UI
       setSaved(true); setTimeout(() => setSaved(false), 2000)
     },
@@ -164,43 +123,7 @@ export default function Settings() {
 
   if (isLoading) return <p className="text-gray-500">Loading…</p>
 
-  const provider = form.default_provider || 'openai'
   const set = (k: keyof SettingsData, v: string) => setForm(prev => ({ ...prev, [k]: v }))
-
-  const Field = ({ f }: { f: FieldDef }) => (
-    <div>
-      <label className="block text-xs text-gray-500 mb-1">{f.label}</label>
-      <div className="flex items-center gap-2">
-      <input
-        type={f.type || 'text'}
-        className="w-full rounded-xl border border-slate-200 bg-slate-50/70 px-3 py-2 text-sm font-mono outline-none transition focus:border-blue-400 focus:bg-white focus:ring-4 focus:ring-blue-100"
-        disabled={clearSecrets.includes(f.key) || saveMut.isPending}
-        placeholder={clearSecrets.includes(f.key)
-          ? t('待删除，保存后生效', 'Pending deletion; save to apply')
-          : form.configured_secrets?.includes(f.key as string)
-          ? t('已配置；留空保持不变', 'Configured; leave blank to keep')
-          : (f.placeholder || '')}
-        value={(form[f.key] as string) || ''}
-        onChange={e => set(f.key, e.target.value)}
-      />
-      {form.configured_secrets?.includes(f.key) && (
-        <button
-          type="button"
-          disabled={saveMut.isPending}
-          className="shrink-0 text-xs text-red-600 hover:underline disabled:opacity-50"
-          aria-label={`${clearSecrets.includes(f.key) ? t('撤销删除', 'Undo deletion') : t('删除已配置', 'Delete configured')} ${f.label}`}
-          onClick={() => {
-            set(f.key, '')
-            setClearSecrets(prev => prev.includes(f.key) ? prev.filter(k => k !== f.key) : [...prev, f.key])
-          }}
-        >
-          {clearSecrets.includes(f.key) ? t('撤销删除', 'Undo deletion') : t('删除已配置 Key', 'Delete saved key')}
-        </button>
-      )}
-      </div>
-      {clearSecrets.includes(f.key) && <p className="mt-1 text-xs text-red-600">{t('此凭证将在保存设置后删除，相关模型可能无法调用。', 'Saving will delete this credential; dependent models may become unavailable.')}</p>}
-    </div>
-  )
 
   const Collapsible = ({ title, open, onToggle, children }:
     { title: ReactNode; open: boolean; onToggle: () => void; children: ReactNode }) => (
@@ -241,65 +164,34 @@ export default function Settings() {
           <p className="text-xs text-gray-400 mt-1">{t('AI 的思考 / 理由 / 校验结论 / 计划 与测试报告都用这个语言。', "The AI's thinking / reasoning / verification conclusions / plans and the test report all use this language.")}</p>
         </div>
 
-        {/* ── Agent Model + selected provider's credentials ── */}
+        {/* ── Agent model from the model repository ── */}
         <div className="space-y-3">
           <h3 className="text-sm font-medium">{t('Agent 模型', 'Agent Model')}</h3>
-          <div className="grid grid-cols-2 gap-3">
-            <div>
-              <label className="block text-xs text-gray-500 mb-1">Provider</label>
-              <select
-                className="w-full border rounded px-3 py-1.5 text-sm"
-                value={provider}
-                onChange={e => {
-                  const p = e.target.value
-                  setForm(prev => ({ ...prev, default_provider: p, default_model: (PROVIDER_MODELS[p] || [])[0] || '' }))
-                }}
-              >
-                {PROVIDERS.map(p => <option key={p} value={p}>{p}</option>)}
-              </select>
-            </div>
-            <div>
-              <label className="block text-xs text-gray-500 mb-1">Model</label>
-              <input
-                type="text"
-                className="w-full border rounded px-3 py-1.5 text-sm font-mono"
-                placeholder={PROVIDER_MODELS[provider]?.[0] || ''}
-                value={form.default_model || ''}
-                onChange={e => set('default_model', e.target.value)}
-              />
-            </div>
-          </div>
-          <p className="text-xs text-gray-400">
-            {t('可直接输入自定义 model 名，如 us.anthropic.claude-sonnet-4-6', 'You can enter a custom model name directly, e.g. us.anthropic.claude-sonnet-4-6')}
-          </p>
-
-          {/* credentials for the currently-selected provider, inline */}
-          {(PROVIDER_FIELDS[provider] || []).length > 0 && (
-            <div className="bg-gray-50 border rounded p-3 space-y-3">
-              <p className="text-xs font-medium text-gray-600">{provider} {t('凭证', 'credentials')}</p>
-              {(PROVIDER_FIELDS[provider] || []).map(f => <Field key={f.key as string} f={f} />)}
-            </div>
+          <label className="block text-xs text-gray-500 mb-1">{t('执行模型', 'Execution model')}</label>
+          <select
+            className="w-full border rounded-xl px-3 py-2 text-sm"
+            value={form.default_model_id || ''}
+            disabled={modelsLoading || modelsError || saveMut.isPending}
+            onChange={e => set('default_model_id', e.target.value)}
+          >
+            <option value="">{t('请选择模型仓库中的模型', 'Select a model from the model repository')}</option>
+            {executionModels.map(model => (
+              <option key={model.id} value={model.id}>
+                {model.connection_name || '未命名连接'} · {model.provider || 'provider'} · {model.model_name}
+              </option>
+            ))}
+          </select>
+          {modelsError && <p className="text-xs text-red-600">{t('模型列表加载失败，请刷新页面重试。', 'Failed to load models. Refresh and try again.')}</p>}
+          {!modelsLoading && !modelsError && executionModels.length === 0 && (
+            <p className="text-xs text-amber-600">{t('模型仓库中暂无已启用模型，请先添加并启用模型。', 'No enabled models. Add and enable a model in the model repository first.')}</p>
           )}
+          {form.default_model_id && !executionModels.some(model => model.id === form.default_model_id) && (
+            <p className="text-xs text-amber-600">{t('当前保存的 Agent 模型不在可用列表中，请重新选择并保存。', 'The saved Agent model is unavailable. Select an available model and save.')}</p>
+          )}
+          <p className="text-xs text-gray-400">
+            {t('Agent 的模型、API Key、Base URL 和协议参数统一从模型配置仓库读取。', 'The Agent model, API key, Base URL and protocol parameters are resolved from the model repository.')}
+          </p>
         </div>
-
-        {/* ── Other providers (for fallback / switching) ── */}
-        <Collapsible
-          title={<>{t('其它 Provider 凭证', 'Other provider credentials')} <span className="text-xs font-normal text-gray-400">{t('（用于切换 / fallback）', '(for switching / fallback)')}</span></>}
-          open={showOthers}
-          onToggle={() => setShowOthers(v => !v)}
-        >
-          {PROVIDERS.filter(p => p !== provider).map(p => (
-            <div key={p} className="border rounded p-3 space-y-3">
-              <p className="text-xs font-medium text-gray-600 flex items-center gap-2">
-                {p}
-                {isConfigured(form, p)
-                  ? <span className="text-ok">{t('✓ 已配置', '✓ Configured')}</span>
-                  : <span className="text-gray-400">{t('○ 未配置', '○ Not configured')}</span>}
-              </p>
-              {(PROVIDER_FIELDS[p] || []).map(f => <Field key={f.key as string} f={f} />)}
-            </div>
-          ))}
-        </Collapsible>
 
         {/* ── Advanced: Verifier + Webhook ── */}
         <Collapsible
@@ -385,7 +277,6 @@ export default function Settings() {
           className="w-full rounded-xl bg-gradient-to-r from-[#2169D5] to-[#328FE5] py-3 font-semibold text-white shadow-sm transition hover:brightness-105 disabled:opacity-50"
           disabled={saveMut.isPending}
           onClick={() => {
-            if (clearSecrets.length && !confirm(t('确认删除已标记的凭证？保存后无法恢复原 Key，需要重新填写。', 'Delete the marked credentials? Saved keys cannot be recovered; you will need to enter them again.'))) return
             saveMut.mutate()
           }}
         >
