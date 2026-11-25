@@ -45,6 +45,18 @@ from core.settings_store import (
 logger = logging.getLogger(__name__)
 
 
+async def _resolve_verifier_model(account_id: str, settings: dict):
+    """Resolve the dedicated verifier model; an empty ID preserves legacy/same-agent behavior."""
+    model_id = (settings.get("verifier_model_id") or "").strip()
+    if not model_id:
+        return resolve_verifier(settings)
+    from core.model_resolver import resolve_model_config, apply_model_credentials
+    async with AsyncSessionLocal() as session:
+        config = await resolve_model_config(session, account_id, model_id)
+    apply_model_credentials(config)
+    return config["provider"], config["model"], config["api_key"], config["api_base"]
+
+
 def _missing_key(provider: str, api_key: str) -> bool:
     """Check API-key requirements; Bedrock may authenticate through the AWS credential chain."""
     return not api_key and (provider or "").lower() not in {"ollama", "bedrock"}
@@ -290,7 +302,7 @@ async def execute_batch_run(run_id: str, state: "RunState", base_path: str,
         else:
             api_key = resolve_api_key(settings, provider)
             api_base = resolve_api_base(settings, provider)
-        v_provider, v_model, v_key, v_base = resolve_verifier(settings)
+        v_provider, v_model, v_key, v_base = await _resolve_verifier_model(account_id, settings)
         fallbacks = build_fallback_chain(settings, provider, model)
         language = resolve_language(settings)
         if _missing_key(provider, api_key):
@@ -563,7 +575,7 @@ async def execute_tree_run(run_id: str, state: "RunState", max_steps: int = 20,
         else:
             api_key = resolve_api_key(settings, provider)
             api_base = resolve_api_base(settings, provider)
-        v_provider, v_model, v_key, v_base = resolve_verifier(settings)
+        v_provider, v_model, v_key, v_base = await _resolve_verifier_model(account_id, settings)
         fallbacks = build_fallback_chain(settings, provider, model)
         language = resolve_language(settings)
         if _missing_key(provider, api_key):
@@ -883,7 +895,7 @@ async def execute_replay_run(
         else:
             api_key = resolve_api_key(settings, provider)
             api_base = resolve_api_base(settings, provider)
-        v_provider, v_model, v_key, v_base = resolve_verifier(settings)
+        v_provider, v_model, v_key, v_base = await _resolve_verifier_model(account_id, settings)
         fallbacks = build_fallback_chain(settings, provider, model)
         language = resolve_language(settings)
         if _missing_key(provider, api_key):
@@ -1063,10 +1075,17 @@ async def execute_run(
 
         device = WebSocketDevice(device_id)
         settings = await load_settings(account_id)
-        apply_aws_env(settings)  # export AWS creds so litellm/boto3 can reach Bedrock
-        api_key = resolve_api_key(settings, provider)
-        api_base = resolve_api_base(settings, provider)
-        v_provider, v_model, v_key, v_base = resolve_verifier(settings)
+        apply_aws_env(settings)  # legacy credentials for legacy runs
+        resolved_provider, resolved_model, model_config = await _resolve_run_model(
+            run_id, account_id, provider, model
+        )
+        if model_config:
+            provider, model = resolved_provider, resolved_model
+            api_key, api_base = model_config["api_key"], model_config["api_base"]
+        else:
+            api_key = resolve_api_key(settings, provider)
+            api_base = resolve_api_base(settings, provider)
+        v_provider, v_model, v_key, v_base = await _resolve_verifier_model(account_id, settings)
         fallbacks = build_fallback_chain(settings, provider, model)
         language = resolve_language(settings)
         if _missing_key(provider, api_key):
