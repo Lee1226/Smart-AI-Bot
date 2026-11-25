@@ -458,9 +458,9 @@ export const fetchResults = (runId: string) =>
 export const startRun = (body: {
   suite_id: string
   device_id: string
-  provider: string
-  model: string
-  model_id?: string
+  model_id: string
+  provider?: string
+  model?: string
   test_account_id?: string
   max_steps?: number
   max_retries?: number
@@ -471,9 +471,9 @@ export const quickRun = (body: {
   goal: string
   expected?: string
   device_id: string
-  provider: string
-  model: string
-  model_id?: string
+  model_id: string
+  provider?: string
+  model?: string
   test_account_id?: string
   max_steps?: number
   app_package?: string
@@ -562,11 +562,23 @@ export const moveNode = (suiteId: string, nodeId: string, newParentId: string | 
 export const deleteNode = (suiteId: string, nodeId: string) =>
   api.delete(`/suites/${suiteId}/nodes/${nodeId}`)
 
-export const runTree = (data: { suite_id: string; device_id: string; provider: string; model: string; model_id?: string; max_steps: number; test_account_id?: string }) =>
+export const runTree = (data: { suite_id: string; device_id: string; model_id: string; provider?: string; model?: string; max_steps: number; test_account_id?: string }) =>
   api.post<Run>('/runs/tree', data).then(r => r.data)
 
-export const runNode = (data: { suite_id: string; device_id: string; node_id: string; provider: string; model: string; model_id?: string; max_steps: number; test_account_id?: string }) =>
+export const runNode = (data: { suite_id: string; device_id: string; node_id: string; model_id: string; provider?: string; model?: string; max_steps: number; test_account_id?: string }) =>
   api.post<Run>('/runs/node', data).then(r => r.data)
+
+export const startBatchRun = (data: {
+  suite_id: string
+  device_id: string
+  model_id: string
+  case_ids: string[]
+  base_path?: string
+  max_steps?: number
+  test_account_id?: string
+  provider?: string
+  model?: string
+}) => api.post<Run>('/runs/batch', data).then(r => r.data)
 
 export interface NodeSearchHit {
   node_id: string
