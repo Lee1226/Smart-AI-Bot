@@ -44,8 +44,6 @@ class Settings(BaseModel):
     default_model_id: Optional[str] = ""         # selected Agent model from the model repository
     # Verifier can use a separate (stronger) model for pass/fail judgment.
     # Leave empty to use the same model as the agent.
-    verifier_provider: Optional[str] = ""
-    verifier_model: Optional[str] = ""
     verifier_model_id: Optional[str] = ""
     # Webhook notification after run completes
     webhook_url: Optional[str] = ""
