@@ -82,6 +82,7 @@ class ModelTarget:
     model: str
     api_key: str = ""
     api_base: str = ""
+    provider_kwargs: Dict[str, Any] = field(default_factory=dict)
 
     def label(self) -> str:
         return f"{self.provider}/{self.model}" if self.provider else self.model
@@ -92,6 +93,7 @@ class ModelTarget:
         kwargs = {**base_kwargs, "model": model_str, **extra}
         if self.api_key:
             kwargs["api_key"] = self.api_key
+        kwargs.update(self.provider_kwargs)
         return kwargs
 
 
