@@ -258,6 +258,7 @@ class LLMVerifier:
                 base_kwargs={"messages": verify_messages, "temperature": 0.1},
                 fallbacks=self.fallbacks,
                 timeout=60.0,
+                log=log,
             )
             content = (response.choices[0].message.content or "").strip()
 
