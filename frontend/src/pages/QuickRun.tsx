@@ -22,11 +22,6 @@ export default function QuickRun() {
   const { models } = useExecutionModels()
   const selectedModel = models.find(item => item.id === modelId)
 
-  // Select the first enabled model only as an initial UI default.
-  useEffect(() => {
-    if (!modelId && models.length > 0) setModelId(models[0].id)
-  }, [models, modelId])
-
   const onlineDevices = devices.filter(d => d.status === 'online')
 
    const runMut = useMutation({
