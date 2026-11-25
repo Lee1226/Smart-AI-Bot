@@ -11,10 +11,8 @@ from fastapi import APIRouter, HTTPException, Request
 from pydantic import BaseModel, Field
 
 from agent.ws_device import WebSocketDevice
-from core.settings_store import (
-    load_settings, resolve_api_key, resolve_api_base, resolve_provider_model,
-    apply_aws_env, resolve_language,
-)
+from core.settings_store import load_settings, resolve_language
+from core.model_resolver import resolve_model_config
 from core.test_agent import TestCaseAgent
 from core.test_parser import TestCaseData
 from core.device_scheduler import locks
@@ -29,8 +27,7 @@ class DebugStart(BaseModel):
     device_id: str = Field(min_length=1, max_length=128)
     goal: str = Field(min_length=1, max_length=4000)
     expected: str = Field(default="完成用户要求的操作，并说明执行结果", max_length=2000)
-    provider: str = Field(default="", max_length=64)
-    model: str = Field(default="", max_length=256)
+    model_id: str = Field(min_length=1, max_length=128)
     max_steps: int = Field(default=20, ge=1, le=60)
 
 
@@ -77,15 +74,16 @@ async def start_debug(body: DebugStart, request: Request):
         if not owned_device or owned_device.account_id != account_id:
             raise HTTPException(status_code=404, detail="设备不存在或无权访问")
     settings = await load_settings(account_id)
-    default_provider, default_model = resolve_provider_model(settings)
-    provider = (body.provider or default_provider).strip().lower()
-    model = (body.model or default_model).strip()
-    if not provider or not model:
-        raise HTTPException(status_code=422, detail="请指定模型服务商和模型")
-    api_key = resolve_api_key(settings, provider)
-    api_base = resolve_api_base(settings, provider)
-    if provider != "ollama" and not api_key:
-        raise HTTPException(status_code=400, detail=f"尚未配置 {provider} API Key，请先到设置页面配置")
+    async with AsyncSessionLocal() as db:
+        config = await resolve_model_config(db, account_id, body.model_id)
+    provider = config["provider"]
+    model = config["model"]
+    api_key = config["api_key"]
+    api_base = config["api_base"]
+    api_extra_kwargs = config.get("provider_kwargs", {})
+    if not api_key and (provider or "").lower() not in {"ollama", "bedrock"}:
+        raise HTTPException(status_code=400, detail="所选模型对应的连接未配置 API Key")
+
     device = WebSocketDevice(body.device_id)
     if not device.is_connected():
         raise HTTPException(status_code=409, detail="设备当前离线，请先连接设备")
@@ -105,10 +103,10 @@ async def start_debug(body: DebugStart, request: Request):
                 raise RuntimeError("等待设备空闲期间设备已断开")
             await session.set_status("running")
             await session.emit(f"已获得设备独占权，使用模型：{provider}/{model}")
-            apply_aws_env(settings)
             agent = TestCaseAgent(
                 device=device, provider=provider, model=model,
                 api_key=api_key, api_base=api_base,
+                api_extra_kwargs=api_extra_kwargs,
                 max_steps=body.max_steps, step_delay=1.0,
                 log_callback=session.emit,
                 fallbacks=[], allow_subagents=False,
