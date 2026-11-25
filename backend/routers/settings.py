@@ -4,6 +4,7 @@ Each account owns its own settings blob (isolated from other tenants and from
 the operator).  Reading/writing requires owner/admin of that account.
 """
 from pathlib import Path
+import os
 from typing import Optional
 import shutil
 
@@ -261,8 +262,7 @@ async def update_llm_provider(provider_id: str, payload: LLMProviderInput, reque
         raise HTTPException(status_code=409, detail="该供应商已有连接，不能修改唯一标识或协议适配器")
     if payload.auth_type not in {"api_key", "none", "aws"}:
         raise HTTPException(status_code=422, detail="不支持的认证方式")
-    supported_adapters = {"openai", "anthropic", "google", "dashscope", "ark", "zhipuai", "groq", "ollama", "bedrock", "openai-compatible"}
-    if payload.adapter_id not in supported_adapters:
+    if payload.adapter_id not in SUPPORTED_MODEL_ADAPTERS:
         raise HTTPException(status_code=422, detail="当前协议适配器尚未实现")
     row.provider_id = payload.provider_id.strip().lower()
     row.name = payload.name.strip()
@@ -363,8 +363,8 @@ async def create_llm_connection(payload: LLMConnectionCreate, request: Request, 
     row = LLMConnection(account_id=account_id, name=payload.name.strip(), provider=provider_row.adapter_id,
         provider_catalog_id=provider_row.id,
         base_url=payload.base_url.strip() or provider_row.default_base_url, api_key_enc=encrypt_secret(payload.api_key),
-        aws_access_key_id_enc=_encrypt_secret(payload.aws_access_key_id),
-        aws_secret_access_key_enc=_encrypt_secret(payload.aws_secret_access_key),
+        aws_access_key_id_enc=encrypt_secret(payload.aws_access_key_id),
+        aws_secret_access_key_enc=encrypt_secret(payload.aws_secret_access_key),
         aws_region_name=payload.aws_region_name.strip() or "us-east-1", notes=payload.notes.strip())
     db.add(row)
     try:
@@ -398,13 +398,13 @@ async def update_llm_connection(connection_id: str, payload: LLMConnectionUpdate
     if values.pop("clear_aws_credentials", False):
         row.aws_access_key_id_enc = ""; row.aws_secret_access_key_enc = ""
     if values.get("api_key"):
-        row.api_key_enc = _encrypt_secret(values.pop("api_key"))
+        row.api_key_enc = encrypt_secret(values.pop("api_key"))
     else: values.pop("api_key", None)
     if values.get("aws_access_key_id"):
-        row.aws_access_key_id_enc = _encrypt_secret(values.pop("aws_access_key_id"))
+        row.aws_access_key_id_enc = encrypt_secret(values.pop("aws_access_key_id"))
     else: values.pop("aws_access_key_id", None)
     if values.get("aws_secret_access_key"):
-        row.aws_secret_access_key_enc = _encrypt_secret(values.pop("aws_secret_access_key"))
+        row.aws_secret_access_key_enc = encrypt_secret(values.pop("aws_secret_access_key"))
     else: values.pop("aws_secret_access_key", None)
     connection_changed = any(key in values for key in ("provider", "base_url")) or bool(payload.api_key) or bool(payload.aws_access_key_id) or bool(payload.aws_secret_access_key) or payload.clear_api_key or payload.clear_aws_credentials
     for key, value in values.items():
