@@ -66,7 +66,17 @@ class OrganizerApiTests(unittest.TestCase):
                 "email": f"organizer-{suffix}-{i}@example.test", "password": "test-only-password", "name": "Organizer test"})
             assert response.status_code == 201, response.text
             cls.headers.append({"Authorization": "Bearer " + response.json()["access_token"]})
-        cls.client.put('/api/settings', json={"ark_api_key": "fake-test-key", "default_provider": "ark", "default_model": "test-model"}, headers=cls.headers[0])
+        connection = cls.client.post('/api/settings/llm-connections', json={
+            "name": "Organizer test connection", "provider": "ark",
+            "base_url": "https://example.test/v1", "api_key": "fake-test-key"
+        }, headers=cls.headers[0])
+        assert connection.status_code == 200, connection.text
+        model = cls.client.post(f"/api/settings/llm-connections/{connection.json()['id']}/models", json={
+            "model_name": "test-model", "capabilities": ["text"], "enabled": True
+        }, headers=cls.headers[0])
+        assert model.status_code == 200, model.text
+        selected = cls.client.put('/api/settings', json={"default_model_id": model.json()["id"]}, headers=cls.headers[0])
+        assert selected.status_code == 200, selected.text
 
     @classmethod
     def tearDownClass(cls):
@@ -113,4 +123,4 @@ class OrganizerApiTests(unittest.TestCase):
     def test_missing_model_key_has_actionable_error(self):
         response = self.client.post('/api/suites/import/ai-preview', files={"file": ("设置.xmind", xmind_bytes())}, headers=self.headers[1])
         self.assertEqual(response.status_code, 422)
-        self.assertIn('未配置', response.json()['detail'])
+        self.assertIn('尚未选择 Agent 模型', response.json()['detail'])
