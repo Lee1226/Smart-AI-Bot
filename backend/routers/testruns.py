@@ -108,6 +108,7 @@ class RunOut(BaseModel):
     status: str
     provider: str
     model: str
+    model_id: str = ""
     created_at: str
     finished_at: Optional[str] = None
     passed: int = 0
@@ -195,6 +196,7 @@ async def _run_out(run: TestRun, db: AsyncSession) -> RunOut:
         status=run.status,
         provider=run.provider,
         model=run.model,
+        model_id=run.model_id or "",
         created_at=run.created_at.isoformat(),
         finished_at=run.finished_at.isoformat() if run.finished_at else None,
         passed=counts.get("pass", 0),
@@ -465,6 +467,7 @@ class NodeRunRequest(BaseModel):
     node_id: str
     provider: str = ""
     model: str = ""
+    model_id: str = ""
     max_steps: int = 20
     webhook_url: str = ""
 
