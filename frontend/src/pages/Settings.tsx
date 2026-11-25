@@ -145,7 +145,7 @@ export default function Settings() {
       <header className="rounded-2xl bg-gradient-to-br from-[#175CD3] via-[#2878E8] to-[#38A6D9] p-5 text-white shadow-[0_16px_40px_rgba(37,99,235,0.18)] sm:p-6">
         <div className="text-xs font-semibold tracking-[0.18em] text-blue-100">AI 终端 · 平台配置</div>
         <h1 className="mt-2 text-xl font-bold">平台设置</h1>
-        <p className="mt-2 text-sm text-blue-100">配置语言、Agent 模型、服务凭证、验证模型与通知方式。</p>
+        <p className="mt-2 text-sm text-blue-100">配置语言、Agent 模型、Verifier 模型与通知方式。模型连接和凭据统一在模型配置中管理。</p>
       </header>
 
       <div className="rounded-2xl border border-slate-200/80 bg-white p-6 shadow-[0_8px_28px_rgba(31,75,135,0.05)] space-y-5">
