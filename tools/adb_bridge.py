@@ -10,10 +10,6 @@ import re
 import shlex
 import shutil
 import uuid
-import hashlib
-import os
-import tempfile
-import urllib.request
 import xml.etree.ElementTree as ET
 from pathlib import Path
 from urllib.parse import urlsplit, urlunsplit
@@ -179,49 +175,6 @@ class Bridge:
             await self.stop_video(p.get('stream_id'))
             return 'Video stopped'
         async with self.lock:
-            if method == 'app/install':
-                package = pkg()
-                url = p.get('download_url', '')
-                expected = p.get('sha256', '')
-                if urlsplit(url).scheme not in {'http', 'https'} or not re.fullmatch(r'[a-f0-9]{64}', expected):
-                    raise ValueError('Invalid APK source')
-                sdk = Path(os.getenv('ANDROID_HOME', os.getenv('ANDROID_SDK_ROOT', str(Path.home() / 'Library/Android/sdk'))))
-                aapt = shutil.which('aapt') or next((str(path) for path in sorted((sdk / 'build-tools').glob('*/aapt'), reverse=True)), None)
-                if not aapt:
-                    raise RuntimeError('APK verification requires Android SDK build-tools aapt on the bridge computer')
-                with tempfile.TemporaryDirectory(prefix='sab-apk-') as folder:
-                    apk = Path(folder) / 'app.apk'
-                    def download():
-                        digest, size = hashlib.sha256(), 0
-                        with urllib.request.urlopen(url, timeout=60) as response, apk.open('wb') as output:
-                            while chunk := response.read(1024 * 1024):
-                                size += len(chunk)
-                                if size > 512 * 1024 * 1024:
-                                    raise ValueError('APK too large')
-                                digest.update(chunk); output.write(chunk)
-                        if digest.hexdigest() != expected:
-                            raise ValueError('APK SHA256 mismatch')
-                    await asyncio.to_thread(download)
-                    process = await asyncio.create_subprocess_exec(aapt, 'dump', 'badging', str(apk), stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE)
-                    try:
-                        out, _ = await asyncio.wait_for(process.communicate(), 30)
-                    except BaseException:
-                        if process.returncode is None:
-                            process.kill()
-                        await process.wait()
-                        raise
-                    match = re.search(r"package: name='([^']+)' versionCode='([^']+)' versionName='([^']*)'", out.decode(errors='replace'))
-                    if process.returncode or not match or match[1] != package:
-                        raise ValueError('APK package does not match the configured app')
-                    result = (await self.command('install', '-r', str(apk), timeout=120)).decode(errors='replace')
-                    if 'Success' not in result:
-                        raise RuntimeError('APK installation failed')
-                    return {'package': package, 'version_code': match[2], 'version_name': match[3], 'sha256': expected}
-            if method == 'app/reset':
-                result = await self.shell('pm clear ' + shlex.quote(pkg()))
-                if result.strip() != 'Success':
-                    raise RuntimeError('Application data reset failed')
-                return 'Application data cleared'
             if method == 'diagnostics':
                 return {'status': 'collected', 'scope': 'recent device logs, not network capture',
                         'logcat': (await self.shell('logcat -d -t 400'))[-200000:],
