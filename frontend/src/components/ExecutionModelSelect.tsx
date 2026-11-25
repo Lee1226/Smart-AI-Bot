@@ -1,5 +1,6 @@
+import { useEffect } from 'react'
 import { useQuery } from '@tanstack/react-query'
-import { fetchEnabledLLMModels } from '../lib/api'
+import { fetchEnabledLLMModels, fetchSettings } from '../lib/api'
 
 export function useExecutionModels() {
   const query = useQuery({
@@ -17,7 +18,16 @@ export function ExecutionModelSelect({
   disabled?: boolean
 }) {
   const { models, isLoading, isError } = useExecutionModels()
+  const { data: settings } = useQuery({ queryKey: ['settings'], queryFn: fetchSettings })
+  const defaultModelId = settings?.default_model_id || ''
   const selected = models.find(model => model.id === value)
+
+  // Apply the platform default only when the caller has not selected a model.
+  // A manually selected model always takes precedence.
+  useEffect(() => {
+    if (value || !defaultModelId || isLoading || isError) return
+    if (models.some(model => model.id === defaultModelId)) onChange(defaultModelId)
+  }, [value, defaultModelId, models, isLoading, isError, onChange])
   return (
     <div>
       <label className="mb-2 block text-sm font-semibold text-slate-700">执行模型</label>
@@ -36,6 +46,9 @@ export function ExecutionModelSelect({
       </select>
       {models.length === 0 && !isLoading && !isError && (
         <p className="mt-1.5 text-xs text-amber-600">模型仓库中没有已启用的模型，请先添加并启用模型。</p>
+      )}
+      {!!defaultModelId && !isLoading && !isError && !models.some(model => model.id === defaultModelId) && (
+        <p className="mt-1.5 text-xs text-amber-600">平台默认模型当前不可用，请重新选择模型或到平台设置中更新默认模型。</p>
       )}
       {selected && (
         <p className="mt-1.5 text-xs text-slate-400">
