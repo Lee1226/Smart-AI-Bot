@@ -12,7 +12,7 @@ class SettingsSecretTests(unittest.IsolatedAsyncioTestCase):
         return Request({"type": "http", "state": {"account_id": "test-account", "role": role}})
 
     async def test_delete_and_read_back_without_touching_other_settings(self):
-        stored = {"ark_api_key": "fake-ark", "openai_api_key": "fake-openai", "default_model": "custom-model"}
+        stored = {"ark_api_key": "fake-ark", "openai_api_key": "fake-openai", "language": "en"}
 
         async def read(account):
             self.assertEqual(account, "test-account")
@@ -28,7 +28,7 @@ class SettingsSecretTests(unittest.IsolatedAsyncioTestCase):
             reread = await settings.get_settings(self.request())
         self.assertEqual(stored["ark_api_key"], "")
         self.assertEqual(stored["openai_api_key"], "fake-openai")
-        self.assertEqual(stored["default_model"], "custom-model")
+        self.assertEqual(stored["language"], "en")
         self.assertNotIn("ark_api_key", reread.configured_secrets)
         self.assertIn("openai_api_key", reread.configured_secrets)
         self.assertEqual(result.openai_api_key, "")
