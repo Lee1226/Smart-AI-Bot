@@ -23,7 +23,6 @@ from core.settings_store import (
     build_fallback_chain,
     load_settings,
     resolve_language,
-    resolve_verifier,
 )
 from core.test_agent import TestCaseAgent
 from core.test_parser import TestCaseData
@@ -268,7 +267,9 @@ async def execute_execution_plan_run(
         fallbacks = build_fallback_chain(settings, provider, model)
         language = resolve_language(settings)
         if not api_key and (provider or "").lower() not in {"ollama", "bedrock"}:
-            raise RuntimeError("当前账号未配置模型 API Key")
+            raise RuntimeError("当前执行模型未配置 API Key，请检查模型仓库中的连接凭据")
+        if not v_key and (v_provider or "").lower() not in {"ollama", "bedrock"}:
+            raise RuntimeError("当前 Verifier 模型未配置 API Key，请检查模型仓库中的连接凭据")
         from core.test_accounts import context_for_run
         login_context = await context_for_run(run_id)
         if login_context:
