@@ -145,7 +145,7 @@ export default function Settings() {
       <header className="rounded-2xl bg-gradient-to-br from-[#175CD3] via-[#2878E8] to-[#38A6D9] p-5 text-white shadow-[0_16px_40px_rgba(37,99,235,0.18)] sm:p-6">
         <div className="text-xs font-semibold tracking-[0.18em] text-blue-100">AI 终端 · 平台配置</div>
         <h1 className="mt-2 text-xl font-bold">平台设置</h1>
-        <p className="mt-2 text-sm text-blue-100">配置语言、Agent 模型、Verifier 模型与通知方式。模型连接和凭据统一在模型配置中管理。</p>
+        <p className="mt-2 text-sm text-blue-100">配置语言、默认执行模型、Verifier 模型与通知方式。模型连接和凭据统一在模型配置中管理。</p>
       </header>
 
       <div className="rounded-2xl border border-slate-200/80 bg-white p-6 shadow-[0_8px_28px_rgba(31,75,135,0.05)] space-y-5">
@@ -166,8 +166,8 @@ export default function Settings() {
 
         {/* ── Agent model from the model repository ── */}
         <div className="space-y-3">
-          <h3 className="text-sm font-medium">{t('Agent 模型', 'Agent Model')}</h3>
-          <label className="block text-xs text-gray-500 mb-1">{t('执行模型', 'Execution model')}</label>
+          <h3 className="text-sm font-medium">{t('默认执行模型', 'Default Execution Model')}</h3>
+          <label className="block text-xs text-gray-500 mb-1">{t('默认模型', 'Default model')}</label>
           <select
             className="w-full border rounded-xl px-3 py-2 text-sm"
             value={form.default_model_id || ''}
@@ -189,7 +189,7 @@ export default function Settings() {
             <p className="text-xs text-amber-600">{t('当前保存的 Agent 模型不在可用列表中，请重新选择并保存。', 'The saved Agent model is unavailable. Select an available model and save.')}</p>
           )}
           <p className="text-xs text-gray-400">
-            {t('Agent 的模型、API Key、Base URL 和协议参数统一从模型配置仓库读取。', 'The Agent model, API key, Base URL and protocol parameters are resolved from the model repository.')}
+            {t('默认执行模型的连接信息、API Key、Base URL 和协议参数统一从模型配置仓库读取。', 'The default execution model connection, API key, Base URL and protocol parameters are resolved from the model repository.')}
           </p>
         </div>
 
