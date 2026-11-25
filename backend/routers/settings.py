@@ -326,7 +326,7 @@ class LLMModelInput(BaseModel):
     model_name: str = Field(min_length=1, max_length=200)
     description: str = ""
     capabilities: list[str] = Field(default_factory=lambda: ["text"])
-    fallback_model_ids: list[str] = Field(default_factory=list)
+    fallback_model_ids: Optional[list[str]] = None
     enabled: bool = True
 
 
@@ -500,13 +500,13 @@ async def create_llm_model(connection_id: str, payload: LLMModelInput, request: 
     require_role(request, "owner", "admin")
     account_id = require_account_id(request)
     connection = await _owned_connection(db, account_id, connection_id)
-    await _validate_fallback_models(db, account_id, "", payload.fallback_model_ids)
+    fallback_model_ids = await _validate_fallback_models(db, account_id, "", payload.fallback_model_ids or [])
     connection.last_test_status = "untested"
     connection.last_test_message = ""
     connection.last_tested_at = None
     row = LLMModel(account_id=account_id, connection_id=connection_id, model_name=payload.model_name.strip(),
         description=payload.description.strip(), capabilities_json=json.dumps(payload.capabilities),
-        fallback_model_ids_json=json.dumps(payload.fallback_model_ids), enabled=payload.enabled)
+        fallback_model_ids_json=json.dumps(fallback_model_ids or []), enabled=payload.enabled)
     db.add(row)
     try: await db.commit()
     except IntegrityError:
@@ -522,13 +522,16 @@ async def update_llm_model(model_id: str, payload: LLMModelInput, request: Reque
     row = await db.get(LLMModel, model_id)
     if row is None or row.account_id != account_id: raise HTTPException(status_code=404, detail="Model not found")
     connection = await _owned_connection(db, account_id, row.connection_id)
-    await _validate_fallback_models(db, account_id, row.id, payload.fallback_model_ids)
+    fallback_model_ids = None
+    if payload.fallback_model_ids is not None:
+        fallback_model_ids = await _validate_fallback_models(db, account_id, row.id, payload.fallback_model_ids)
     connection.last_test_status = "untested"
     connection.last_test_message = ""
     connection.last_tested_at = None
     row.model_name = payload.model_name.strip(); row.description = payload.description.strip()
     row.capabilities_json = json.dumps(payload.capabilities)
-    row.fallback_model_ids_json = json.dumps(payload.fallback_model_ids)
+    if fallback_model_ids is not None:
+        row.fallback_model_ids_json = json.dumps(fallback_model_ids)
     row.enabled = payload.enabled
     row.updated_at = datetime.utcnow()
     try: await db.commit()
