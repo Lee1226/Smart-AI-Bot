@@ -421,6 +421,9 @@ class LLMProvider(Base):
     default_base_url: Mapped[str] = mapped_column(Text, default="")
     auth_type: Mapped[str] = mapped_column(String, default="api_key")
     enabled: Mapped[bool] = mapped_column(Boolean, default=True)
+    # Deprecated columns retained for compatibility with existing NOT NULL DB schema.
+    legacy_api_key_field: Mapped[str] = mapped_column(String, default="")
+    legacy_base_url_field: Mapped[str] = mapped_column(String, default="")
     model_presets_json: Mapped[str] = mapped_column(Text, default="[]")
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
     updated_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
