@@ -39,8 +39,6 @@ class Settings(BaseModel):
     aws_access_key_id: Optional[str] = ""
     aws_secret_access_key: Optional[str] = ""
     aws_region_name: Optional[str] = "us-east-1"
-    default_provider: Optional[str] = "openai"  # legacy compatibility for historical runs
-    default_model: Optional[str] = "gpt-4o"      # legacy compatibility for historical runs
     default_model_id: Optional[str] = ""         # selected Agent model from the model repository
     # Verifier can use a separate (stronger) model for pass/fail judgment.
     # Leave empty to use the same model as the agent.
