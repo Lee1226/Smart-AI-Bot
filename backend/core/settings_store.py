@@ -42,8 +42,6 @@ DEFAULT_SETTINGS = {
     "aws_access_key_id": "",
     "aws_secret_access_key": "",
     "aws_region_name": "us-east-1",
-    "default_provider": "openai",
-    "default_model": "gpt-4o",
     "default_model_id": "",
     "verifier_model_id": "",
     "webhook_url": "",
@@ -130,10 +128,9 @@ async def load_settings(account_id: str) -> dict:
             return dict(DEFAULT_SETTINGS)
     merged = dict(DEFAULT_SETTINGS)
     merged.update(data)
-    # Drop obsolete name-based Verifier settings from persisted account data.
-    # Verifier selection is now exclusively model-repository based.
-    merged.pop("verifier_provider", None)
-    merged.pop("verifier_model", None)
+    # Model selection is exclusively model-repository based.
+    for obsolete_key in ("default_provider", "default_model", "verifier_provider", "verifier_model"):
+        merged.pop(obsolete_key, None)
     return merged
 
 
@@ -165,13 +162,6 @@ def resolve_api_key(settings: dict, provider: str) -> str:
 def resolve_api_base(settings: dict, provider: str) -> str:
     field = _BASE_MAP.get((provider or "").lower(), "")
     return settings.get(field, "") if field else ""
-
-
-def resolve_provider_model(settings: dict) -> tuple[str, str]:
-    return (
-        settings.get("default_provider") or "openai",
-        settings.get("default_model") or "gpt-4o",
-    )
 
 
 def resolve_language(settings: dict) -> str:
