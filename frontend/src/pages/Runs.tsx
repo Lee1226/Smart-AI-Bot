@@ -69,9 +69,15 @@ function RunCard({ run, deviceName }: { run: Run; deviceName: string }) {
         {active && <button disabled={cancel.isPending} onClick={() => { if (confirm('确定取消这次测试任务吗？')) cancel.mutate() }} className="rounded-xl border border-amber-200 bg-amber-50/70 px-3.5 py-2 text-xs font-semibold text-amber-700 transition hover:bg-amber-100 disabled:opacity-40">{cancel.isPending ? '取消中…' : '取消任务'}</button>}
         {TERMINAL.has(run.status) && (
           <button
-            disabled={rerun.isPending || !rerunModelId}
-            title={rerunModelId ? '使用本次任务原模型重新运行' : '历史任务未能匹配模型仓库配置，无法直接重新运行'}
-            onClick={() => rerun.mutate()}
+            disabled={rerun.isPending}
+            title={rerunModelId ? '使用本次任务原模型重新运行' : '该历史任务未能匹配模型仓库配置'}
+            onClick={() => {
+              if (!rerunModelId) {
+                alert('该历史任务未能匹配模型仓库配置，无法直接重新运行。历史执行结果不受影响。')
+                return
+              }
+              rerun.mutate()
+            }}
             className="rounded-xl border border-blue-200 bg-blue-50 px-3.5 py-2 text-xs font-semibold text-blue-700 transition hover:bg-blue-100 disabled:opacity-40"
           >
             {rerun.isPending ? '启动中…' : '重新运行'}
