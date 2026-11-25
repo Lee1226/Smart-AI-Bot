@@ -22,3 +22,5 @@ class RegressionTarget(Base):
     suite_name: Mapped[str] = mapped_column(String)
     device_name: Mapped[str] = mapped_column(String)
     diagnostics_json: Mapped[str] = mapped_column(Text, default='{}')
+    # Retained for existing SQLite schemas; no longer used by regression execution.
+    preparation_json: Mapped[str] = mapped_column(Text, default='{}')
