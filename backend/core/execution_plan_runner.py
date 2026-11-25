@@ -20,11 +20,8 @@ from agent.verifier import LLMVerifier
 from core.run_recorder import RunRecorder
 from core.lifecycle_actions import run_lifecycle_actions
 from core.settings_store import (
-    apply_aws_env,
     build_fallback_chain,
     load_settings,
-    resolve_api_base,
-    resolve_api_key,
     resolve_language,
     resolve_verifier,
 )
