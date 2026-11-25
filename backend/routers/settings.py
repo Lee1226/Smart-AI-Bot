@@ -39,8 +39,9 @@ class Settings(BaseModel):
     aws_access_key_id: Optional[str] = ""
     aws_secret_access_key: Optional[str] = ""
     aws_region_name: Optional[str] = "us-east-1"
-    default_provider: Optional[str] = "openai"
-    default_model: Optional[str] = "gpt-4o"
+    default_provider: Optional[str] = "openai"  # legacy compatibility for historical runs
+    default_model: Optional[str] = "gpt-4o"      # legacy compatibility for historical runs
+    default_model_id: Optional[str] = ""         # selected Agent model from the model repository
     # Verifier can use a separate (stronger) model for pass/fail judgment.
     # Leave empty to use the same model as the agent.
     verifier_provider: Optional[str] = ""
@@ -105,6 +106,9 @@ async def update_settings(new_settings: SettingsUpdate, request: Request, db: As
     for key in SECRET_FIELDS:
         if not incoming.get(key):
             incoming.pop(key, None)
+    if incoming.get("default_model_id"):
+        from core.model_resolver import validate_model_selection
+        await validate_model_selection(db, account_id, incoming["default_model_id"])
     if "verifier_model_id" in incoming and incoming["verifier_model_id"]:
         from core.model_resolver import validate_model_selection
         await validate_model_selection(db, account_id, incoming["verifier_model_id"])
