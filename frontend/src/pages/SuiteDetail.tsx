@@ -217,10 +217,6 @@ export default function SuiteDetail() {
   const { models } = useExecutionModels()
   const selectedModel = models.find(item => item.id === modelId)
 
-  useEffect(() => {
-    if (!modelId && models.length > 0) setModelId(models[0].id)
-  }, [models, modelId])
-
   const { data: trends = [] } = useQuery({
     queryKey: ['trends', suiteId],
     queryFn: () => fetchTrends(suiteId!),
