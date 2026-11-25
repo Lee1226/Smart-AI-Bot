@@ -77,8 +77,8 @@ def _missing_key(provider: str, api_key: str) -> bool:
 async def _resolve_run_model(run_id: str, account_id: str, provider: str, model: str):
     """Use the selected model-repository record when the run carries model_id.
 
-    Legacy runs without model_id continue to use AccountSettings until the UI
-    has been migrated to submit model IDs.
+    Historical runs without model_id continue to use AccountSettings for
+    backward compatibility; newly created runs use the model repository.
     """
     from core.model_resolver import resolve_model_config
     async with AsyncSessionLocal() as session:
