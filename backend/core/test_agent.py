@@ -371,7 +371,10 @@ class TestCaseAgent:
             v_key = verifier_api_key
             v_base = verifier_api_base
         else:
-            v_provider, v_model, v_key, v_base = provider, model, api_key, api_base
+            v_provider = provider
+            v_model = verifier_model or model
+            v_key = verifier_api_key or api_key
+            v_base = verifier_api_base or api_base
         verifier_kwargs = verifier_extra_kwargs if verifier_provider else (api_extra_kwargs or {})
         self._verifier = LLMVerifier(v_provider, v_model, v_key, v_base, fallbacks=self.fallbacks, language=self.language, provider_kwargs=verifier_kwargs or {})
         self._reference_examples: list = reference_examples or []
