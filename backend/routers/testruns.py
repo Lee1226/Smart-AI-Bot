@@ -7,14 +7,14 @@ from typing import List, Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from fastapi.responses import FileResponse, HTMLResponse, StreamingResponse
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 from sqlalchemy import delete, func, or_, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from auth.access import require_device, require_node, require_run, require_suite
 from core.report import generate_html_report
 from core.run_recorder import has_recording, recording_path, recording_directory
-from core.settings_store import load_settings, resolve_provider_model
+from core.settings_store import load_settings
 from core.test_runner import active_runs, cancel_run, run_log_stream, start_run, start_batch_run
 from db.database import AsyncSessionLocal
 from core.step_tree import NodeRow, chain_to_node
@@ -36,21 +36,11 @@ from agent.ws_device import WebSocketDevice
 router = APIRouter(prefix="/api/runs", tags=["runs"])
 
 
-async def _default_provider_model(account_id: str) -> tuple[str, str]:
-    """Fall back to the account's configured default provider/model when a run
-    request doesn't specify one (so CLI / API callers get the configured LLM,
-    not the hard-coded placeholder)."""
-    settings = await load_settings(account_id)
-    return resolve_provider_model(settings)
-
-
-async def _selected_provider_model(db: AsyncSession, account_id: str, req, default_provider: str, default_model: str) -> tuple[str, str]:
-    """Resolve submitted model IDs server-side; never trust client provider/model labels."""
-    if getattr(req, "model_id", ""):
-        from core.model_resolver import validate_model_selection
-        model, connection = await validate_model_selection(db, account_id, req.model_id)
-        return connection.provider, model.model_name
-    return req.provider or default_provider, req.model or default_model
+async def _selected_provider_model(db: AsyncSession, account_id: str, model_id: str) -> tuple[str, str]:
+    """Resolve the selected repository model; client-supplied labels are never trusted."""
+    from core.model_resolver import validate_model_selection
+    model, connection = await validate_model_selection(db, account_id, model_id)
+    return connection.provider, model.model_name
 
 
 async def get_db():
@@ -66,7 +56,7 @@ class StartRunRequest(BaseModel):
     device_id: str
     provider: str = ""
     model: str = ""
-    model_id: str = ""
+    model_id: str = Field(min_length=1, max_length=128)
     max_steps: int = 20
     step_delay: float = 1.0
     max_retries: int = 0
@@ -83,7 +73,7 @@ class StartBatchRunRequest(BaseModel):
     device_id: str
     provider: str = ""
     model: str = ""
-    model_id: str = ""
+    model_id: str = Field(min_length=1, max_length=128)
     max_steps: int = 20
     base_path: str = ""          # the shared navigation prefix to enter once
     case_ids: List[str]          # the leaf cases to verify in one session
@@ -97,7 +87,7 @@ class QuickRunRequest(BaseModel):
     device_id: str
     provider: str = ""
     model: str = ""
-    model_id: str = ""
+    model_id: str = Field(min_length=1, max_length=128)
     max_steps: int = 20
     step_delay: float = 1.0
     max_retries: int = 0
@@ -263,8 +253,7 @@ async def create_run(req: StartRunRequest, request: Request, db: AsyncSession = 
 
     # Create run row
     account_id = request.state.account_id
-    def_provider, def_model = await _default_provider_model(account_id)
-    provider, model = await _selected_provider_model(db, account_id, req, def_provider, def_model)
+    provider, model = await _selected_provider_model(db, account_id, req.model_id)
     run = TestRun(
         suite_id=req.suite_id,
         device_id=req.device_id,
@@ -319,8 +308,7 @@ async def create_batch_run(req: StartBatchRunRequest, request: Request, db: Asyn
     if not ordered_ids:
         raise HTTPException(status_code=404, detail="None of the selected cases were found")
 
-    def_provider, def_model = await _default_provider_model(request.state.account_id)
-    provider, model = await _selected_provider_model(db, request.state.account_id, req, def_provider, def_model)
+    provider, model = await _selected_provider_model(db, request.state.account_id, req.model_id)
     run = TestRun(
         suite_id=req.suite_id, device_id=req.device_id,
         provider=provider, model=model, model_id=req.model_id, status="pending",
@@ -480,7 +468,7 @@ class NodeRunRequest(BaseModel):
     node_id: str
     provider: str = ""
     model: str = ""
-    model_id: str = ""
+    model_id: str = Field(min_length=1, max_length=128)
     max_steps: int = 20
     webhook_url: str = ""
 
