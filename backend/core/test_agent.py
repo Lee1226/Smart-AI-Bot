@@ -301,7 +301,6 @@ class TestCaseAgent:
         model: str,
         api_key: str = "",
         api_base: str = "",
-        api_extra_kwargs: Optional[dict] = None,
         max_steps: int = 20,
         step_delay: float = 1.0,
         log_callback=None,  # async callable(str)
@@ -309,7 +308,6 @@ class TestCaseAgent:
         verifier_model: str = "",
         verifier_api_key: str = "",
         verifier_api_base: str = "",
-        verifier_extra_kwargs: Optional[dict] = None,
         reference_examples: Optional[list] = None,  # starred action records from past runs
         lessons_learned: Optional[list] = None,  # negative experiences from past runs
         fallbacks: Optional[list] = None,  # list[ModelTarget] for resilient_completion
@@ -323,6 +321,8 @@ class TestCaseAgent:
         target_package: str = "",  # the app under test — tell the agent which app to launch
         action_observer=None,  # optional async observer used only by exploration
         exploration_knowledge: Optional[list] = None,
+        api_extra_kwargs: Optional[dict] = None,
+        verifier_extra_kwargs: Optional[dict] = None,
     ):
         self.login_context = login_context
         self.action_observer = action_observer
@@ -372,7 +372,8 @@ class TestCaseAgent:
             v_base = verifier_api_base
         else:
             v_provider, v_model, v_key, v_base = provider, model, api_key, api_base
-        self._verifier = LLMVerifier(v_provider, v_model, v_key, v_base, fallbacks=self.fallbacks, language=self.language, provider_kwargs=verifier_extra_kwargs or (api_extra_kwargs or {}))
+        verifier_kwargs = verifier_extra_kwargs if verifier_provider else (api_extra_kwargs or {})
+        self._verifier = LLMVerifier(v_provider, v_model, v_key, v_base, fallbacks=self.fallbacks, language=self.language, provider_kwargs=verifier_kwargs or {})
         self._reference_examples: list = reference_examples or []
         self._lessons_learned: list = lessons_learned or []
 
