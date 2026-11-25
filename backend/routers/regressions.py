@@ -98,8 +98,6 @@ async def create_plan(body: PlanIn, request: Request, db: AsyncSession = Depends
             from core.test_runner import _suite_app_package
             package = await _suite_app_package(sid, transport.platform)
             suite_apps.setdefault(sid, {})[transport.platform] = package
-            if body.app_package.strip() and package and body.app_package.strip() != package:
-                raise HTTPException(422, '准备应用包名与套件被测应用不一致，请为被测应用选择对应套件')
         devices.append(device)
     selected_model, selected_connection = await validate_model_selection(db, request.state.account_id, body.model_id)
     config = body.model_dump()
