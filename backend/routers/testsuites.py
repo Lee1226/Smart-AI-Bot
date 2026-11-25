@@ -421,7 +421,7 @@ class ImportSuiteBody(BaseModel):
 
 
 @router.post("/import/ai-preview", response_model=ImportDraft)
-async def preview_organized_suite(request: Request, file: UploadFile = File(...), platform: str = Form("android")):
+async def preview_organized_suite(request: Request, file: UploadFile = File(...), platform: str = Form("android"), db: AsyncSession = Depends(get_db)):
     """Generate a reviewable draft without creating or changing a suite."""
     if platform not in {"android", "ios", "harmony"}:
         raise HTTPException(status_code=422, detail="不支持的平台")
@@ -433,7 +433,7 @@ async def preview_organized_suite(request: Request, file: UploadFile = File(...)
     except Exception as exc:
         raise HTTPException(status_code=422, detail=f"文件无法解析：{exc}") from exc
     try:
-        return await organize_suite(request.state.account_id, file.filename or "AI 整理用例", platform, sources)
+        return await organize_suite(db, request.state.account_id, file.filename or "AI 整理用例", platform, sources)
     except ValueError as exc:
         # Pydantic/JSON validation failures should not echo model output.
         if type(exc) is ValueError:
@@ -515,7 +515,7 @@ async def preview_existing_suite(suite_id: str, body: OrganizeOptions, request: 
                     steps=[Step(**s) for s in json.loads(row.checkpoints or "[]")]) for row in rows]
     try:
         sources = source_cases(original)
-        draft = await organize_suite(request.state.account_id, suite.name + " · AI 整理", body.platform, sources)
+        draft = await organize_suite(db, request.state.account_id, suite.name + " · AI 整理", body.platform, sources)
         draft.app_package = suite.app_package or ""
         draft.project_id = suite.project_id or ""
         return draft
