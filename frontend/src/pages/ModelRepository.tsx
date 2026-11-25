@@ -3,7 +3,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import {
   createLLMConnection, createLLMModel, deleteLLMConnection, deleteLLMModel,
   fetchLLMConnections, fetchLLMModels, LLMConnection, LLMModel,
-  testLLMConnection, updateLLMConnection, updateLLMModel, fetchLLMProviders,
+  testLLMConnection, updateLLMConnection, updateLLMModel, fetchLLMProviders, fetchEnabledLLMModels,
 } from '../lib/api'
 
 const inputClass = 'w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm outline-none focus:border-blue-400 focus:ring-2 focus:ring-blue-100'
@@ -18,7 +18,9 @@ export default function ModelRepository() {
   const [editingConnection, setEditingConnection] = useState<LLMConnection | null>(null)
   const [editingModel, setEditingModel] = useState<LLMModel | null>(null)
   const [form, setForm] = useState({ name: '', provider: '', base_url: '', api_key: '', aws_access_key_id: '', aws_secret_access_key: '', aws_region_name: 'us-east-1', notes: '' })
-  const [modelForm, setModelForm] = useState({ model_name: '', description: '', capabilities: 'text', enabled: true })
+  const [modelForm, setModelForm] = useState({ model_name: '', description: '', capabilities: 'text', enabled: true, fallback_model_ids: [] as string[] })
+  const [fallbackSearch, setFallbackSearch] = useState('')
+  const [fallbackCandidate, setFallbackCandidate] = useState('')
   const [message, setMessage] = useState('')
   const { data: providers = [] } = useQuery({ queryKey: ['llm-providers'], queryFn: () => fetchLLMProviders(true) })
   const availableProviders = providers.filter(p => p.enabled || p.provider_id === form.provider)
@@ -39,8 +41,12 @@ export default function ModelRepository() {
   const { data: models = [], isLoading: modelsLoading } = useQuery({
     queryKey: ['llm-models', activeId], queryFn: () => fetchLLMModels(activeId), enabled: !!activeId,
   })
+  const { data: allEnabledModels = [] } = useQuery({ queryKey: ['llm-enabled-models'], queryFn: fetchEnabledLLMModels })
+  const fallbackOptions = allEnabledModels.filter(m => m.id !== editingModel?.id && !modelForm.fallback_model_ids.includes(m.id))
+    .filter(m => `${m.model_name} ${m.connection_name || ''} ${m.provider || ''}`.toLowerCase().includes(fallbackSearch.toLowerCase()))
+  const fallbackModels = modelForm.fallback_model_ids.map(id => allEnabledModels.find(m => m.id === id) || models.find(m => m.id === id)).filter((m): m is LLMModel => !!m)
   const enabledModels = useMemo(() => connections.reduce((n, c) => n + (c.id === activeId ? models.filter(m => m.enabled).length : 0), 0), [connections, activeId, models])
-  const refresh = () => { qc.invalidateQueries({ queryKey: ['llm-connections'] }); qc.invalidateQueries({ queryKey: ['llm-models'] }); qc.invalidateQueries({ queryKey: ['llm-providers'] }) }
+  const refresh = () => { qc.invalidateQueries({ queryKey: ['llm-connections'] }); qc.invalidateQueries({ queryKey: ['llm-models'] }); qc.invalidateQueries({ queryKey: ['llm-enabled-models'] }); qc.invalidateQueries({ queryKey: ['llm-providers'] }) }
   const connectionMutation = useMutation({
     mutationFn: () => editingConnection
       ? updateLLMConnection(editingConnection.id, { name: form.name, provider: form.provider, base_url: form.base_url, api_key: form.api_key || undefined, aws_access_key_id: form.aws_access_key_id || undefined, aws_secret_access_key: form.aws_secret_access_key || undefined, aws_region_name: form.aws_region_name, notes: form.notes })
@@ -50,8 +56,8 @@ export default function ModelRepository() {
   })
   const modelMutation = useMutation({
     mutationFn: () => editingModel
-      ? updateLLMModel(editingModel.id, { model_name: modelForm.model_name, description: modelForm.description, capabilities: modelForm.capabilities.split(',').map(x => x.trim()).filter(Boolean), enabled: modelForm.enabled })
-      : createLLMModel(activeId, { model_name: modelForm.model_name, description: modelForm.description, capabilities: modelForm.capabilities.split(',').map(x => x.trim()).filter(Boolean), enabled: modelForm.enabled }),
+      ? updateLLMModel(editingModel.id, { model_name: modelForm.model_name, description: modelForm.description, capabilities: modelForm.capabilities.split(',').map(x => x.trim()).filter(Boolean), enabled: modelForm.enabled, fallback_model_ids: modelForm.fallback_model_ids })
+      : createLLMModel(activeId, { model_name: modelForm.model_name, description: modelForm.description, capabilities: modelForm.capabilities.split(',').map(x => x.trim()).filter(Boolean), enabled: modelForm.enabled, fallback_model_ids: modelForm.fallback_model_ids }),
     onSuccess: () => { setModelDialog(false); setEditingModel(null); setMessage('模型已保存'); refresh() },
     onError: (e: any) => setMessage(e.response?.data?.detail || '保存模型失败'),
   })
@@ -65,8 +71,23 @@ export default function ModelRepository() {
     setEditingConnection(c); setForm({ name: c.name, provider: providers.find(p => p.id === c.provider_catalog_id)?.provider_id || c.provider, base_url: c.base_url, api_key: '', aws_access_key_id: '', aws_secret_access_key: '', aws_region_name: c.aws_region_name, notes: c.notes }); setConnectionDialog(true)
   }
   const openModel = (m?: LLMModel) => {
-    setEditingModel(m || null); setModelForm(m ? { model_name: m.model_name, description: m.description, capabilities: m.capabilities.join(', '), enabled: m.enabled } : { model_name: '', description: '', capabilities: 'text', enabled: true }); setModelDialog(true)
+    setEditingModel(m || null); setModelForm(m ? { model_name: m.model_name, description: m.description, capabilities: m.capabilities.join(', '), enabled: m.enabled, fallback_model_ids: m.fallback_model_ids || [] } : { model_name: '', description: '', capabilities: 'text', enabled: true, fallback_model_ids: [] }); setFallbackSearch(''); setFallbackCandidate(''); setModelDialog(true)
   }
+  const addFallbackModel = () => {
+    if (!fallbackCandidate || modelForm.fallback_model_ids.includes(fallbackCandidate)) return
+    setModelForm(current => ({ ...current, fallback_model_ids: [...current.fallback_model_ids, fallbackCandidate] }))
+    setFallbackCandidate('')
+  }
+  const moveFallbackModel = (index: number, direction: -1 | 1) => {
+    setModelForm(current => {
+      const next = [...current.fallback_model_ids]
+      const target = index + direction
+      if (target < 0 || target >= next.length) return current
+      ;[next[index], next[target]] = [next[target], next[index]]
+      return { ...current, fallback_model_ids: next }
+    })
+  }
+  const removeFallbackModel = (id: string) => setModelForm(current => ({ ...current, fallback_model_ids: current.fallback_model_ids.filter(x => x !== id) }))
   const removeConnection = async (c: LLMConnection) => {
     if (!confirm(`确定删除连接“${c.name}”？`)) return
     try { await deleteLLMConnection(c.id); if (selectedId === c.id) setSelectedId(''); setMessage('连接已删除'); refresh() }
@@ -112,7 +133,7 @@ export default function ModelRepository() {
       </div> : <div className="p-5">
         <div className="mb-4 flex flex-wrap items-center gap-3"><label className="text-sm text-slate-600">所属连接</label><select className={`${inputClass} max-w-sm`} value={activeId} onChange={e => setSelectedId(e.target.value)}>{connections.map(c => <option key={c.id} value={c.id}>{c.name} · {connectionProviderLabel(c)}</option>)}</select>{current && <span className="text-xs text-slate-400">{connectionBaseUrlLabel(current)}</span>}</div>
         {!current ? <p className="py-10 text-center text-sm text-slate-400">请先创建一个模型连接。</p> : modelsLoading ? <p className="py-10 text-center text-sm text-slate-400">加载模型中…</p> : models.length === 0 ? <div className="rounded-xl border border-dashed border-slate-300 px-6 py-12 text-center"><p className="font-medium text-slate-700">这个连接还没有模型</p><p className="mt-2 text-sm text-slate-500">可以手动添加模型名称，不依赖供应商模型列表接口。</p><button className={`${buttonClass} mt-4 bg-blue-600 text-white`} onClick={() => openModel()}>添加模型</button></div> :
-        <div className="overflow-x-auto"><table className="w-full min-w-[640px] text-left text-sm"><thead><tr className="border-b border-slate-100 text-xs text-slate-500"><th className="px-3 py-3 font-medium">模型名称</th><th className="px-3 py-3 font-medium">能力</th><th className="px-3 py-3 font-medium">状态</th><th className="px-3 py-3 text-right font-medium">操作</th></tr></thead><tbody>{models.map(m => <tr key={m.id} className="border-b border-slate-50 last:border-0"><td className="px-3 py-3"><div className="font-mono font-medium text-slate-800">{m.model_name}</div><div className="mt-1 text-xs text-slate-400">{m.description || '—'}</div></td><td className="px-3 py-3"><div className="flex flex-wrap gap-1">{m.capabilities.map(c => <span key={c} className="rounded bg-slate-100 px-2 py-0.5 text-xs text-slate-600">{c}</span>)}</div></td><td className="px-3 py-3"><span className={`rounded-full px-2 py-1 text-xs ${m.enabled ? 'bg-emerald-50 text-emerald-700' : 'bg-slate-100 text-slate-500'}`}>{m.enabled ? '已启用' : '已停用'}</span></td><td className="px-3 py-3 text-right"><button className="px-2 py-1 text-xs text-blue-700 hover:underline" onClick={() => openModel(m)}>编辑</button><button className="px-2 py-1 text-xs text-rose-600 hover:underline" onClick={() => removeModel(m)}>删除</button></td></tr>)}</tbody></table></div>}
+        <div className="overflow-x-auto"><table className="w-full min-w-[640px] text-left text-sm"><thead><tr className="border-b border-slate-100 text-xs text-slate-500"><th className="px-3 py-3 font-medium">模型名称</th><th className="px-3 py-3 font-medium">能力</th><th className="px-3 py-3 font-medium">备用策略</th><th className="px-3 py-3 font-medium">状态</th><th className="px-3 py-3 text-right font-medium">操作</th></tr></thead><tbody>{models.map(m => <tr key={m.id} className="border-b border-slate-50 last:border-0"><td className="px-3 py-3"><div className="font-mono font-medium text-slate-800">{m.model_name}</div><div className="mt-1 text-xs text-slate-400">{m.description || '—'}</div></td><td className="px-3 py-3"><div className="flex flex-wrap gap-1">{m.capabilities.map(c => <span key={c} className="rounded bg-slate-100 px-2 py-0.5 text-xs text-slate-600">{c}</span>)}</div></td><td className="px-3 py-3"><span className="text-xs text-slate-600">{m.fallback_model_ids?.length ? `${m.fallback_model_ids.length} 个备用模型` : '未配置'}</span></td><td className="px-3 py-3"><span className={`rounded-full px-2 py-1 text-xs ${m.enabled ? 'bg-emerald-50 text-emerald-700' : 'bg-slate-100 text-slate-500'}`}>{m.enabled ? '已启用' : '已停用'}</span></td><td className="px-3 py-3 text-right"><button className="px-2 py-1 text-xs text-blue-700 hover:underline" onClick={() => openModel(m)}>编辑</button><button className="px-2 py-1 text-xs text-rose-600 hover:underline" onClick={() => removeModel(m)}>删除</button></td></tr>)}</tbody></table></div>}
       </div>}
     </section>
     {connectionDialog && <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/40 p-4" role="dialog" aria-modal="true"><div className="max-h-[90vh] w-full max-w-xl overflow-y-auto rounded-2xl bg-white p-6 shadow-2xl"><div className="flex items-center justify-between"><h2 className="text-lg font-semibold text-slate-800">{editingConnection ? '编辑连接' : '添加模型连接'}</h2><button onClick={() => setConnectionDialog(false)} className="text-xl text-slate-400">×</button></div><div className="mt-5 grid gap-4">
@@ -124,10 +145,27 @@ export default function ModelRepository() {
       <label className="space-y-1 text-xs font-medium text-slate-600">备注<textarea className={inputClass} rows={2} value={form.notes} onChange={e => setForm({ ...form, notes: e.target.value })} /></label>
       <div className="flex justify-end gap-2 pt-2"><button className={`${buttonClass} border border-slate-200 text-slate-600`} onClick={() => setConnectionDialog(false)}>取消</button><button disabled={connectionMutation.isPending || !form.name.trim() || !form.provider} className={`${buttonClass} bg-blue-600 text-white`} onClick={() => connectionMutation.mutate()}>{connectionMutation.isPending ? '保存中…' : '保存连接'}</button></div>
     </div></div></div>}
-    {modelDialog && <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/40 p-4" role="dialog" aria-modal="true"><div className="w-full max-w-lg rounded-2xl bg-white p-6 shadow-2xl"><div className="flex items-center justify-between"><h2 className="text-lg font-semibold text-slate-800">{editingModel ? '编辑模型' : '添加模型'}</h2><button onClick={() => setModelDialog(false)} className="text-xl text-slate-400">×</button></div><div className="mt-5 grid gap-4">
+    {modelDialog && <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/40 p-4" role="dialog" aria-modal="true"><div className="max-h-[90vh] w-full max-w-2xl overflow-y-auto rounded-2xl bg-white p-6 shadow-2xl"><div className="flex items-center justify-between"><h2 className="text-lg font-semibold text-slate-800">{editingModel ? '编辑模型' : '添加模型'}</h2><button onClick={() => setModelDialog(false)} className="text-xl text-slate-400">×</button></div><div className="mt-5 grid gap-4">
       <label className="space-y-1 text-xs font-medium text-slate-600">模型名称<input className={inputClass} value={modelForm.model_name} onChange={e => setModelForm({ ...modelForm, model_name: e.target.value })} placeholder="例如：qwen-plus" /></label>
       <label className="space-y-1 text-xs font-medium text-slate-600">模型备注<input className={inputClass} value={modelForm.description} onChange={e => setModelForm({ ...modelForm, description: e.target.value })} placeholder="例如：通用对话模型" /></label>
       <label className="space-y-1 text-xs font-medium text-slate-600">能力标签（逗号分隔）<input className={inputClass} value={modelForm.capabilities} onChange={e => setModelForm({ ...modelForm, capabilities: e.target.value })} placeholder="text, vision, tool_calling" /></label>
+      <section className="rounded-xl border border-slate-200 bg-slate-50/70 p-4 space-y-3">
+        <div><h3 className="text-sm font-semibold text-slate-800">故障转移策略</h3><p className="mt-1 text-xs text-slate-500">当前模型调用失败时，按以下顺序尝试备用模型。备用模型不会继续展开自己的备用列表。</p></div>
+        {fallbackModels.length > 0 ? <ol className="space-y-2">{fallbackModels.map((m, index) => <li key={m.id} className="flex items-center gap-2 rounded-lg border border-slate-200 bg-white p-3">
+          <span className="grid h-6 w-6 shrink-0 place-items-center rounded-full bg-blue-50 text-xs font-semibold text-blue-700">{index + 1}</span>
+          <div className="min-w-0 flex-1"><div className="truncate text-sm font-medium text-slate-800">{m.model_name}</div><div className="truncate text-xs text-slate-500">{m.connection_name || '连接信息不可用'} · {(m.capabilities || []).join(', ')}</div></div>
+          <button type="button" disabled={index === 0} className="rounded px-2 py-1 text-xs text-slate-600 hover:bg-slate-100 disabled:opacity-30" onClick={() => moveFallbackModel(index, -1)} aria-label="上移">↑</button>
+          <button type="button" disabled={index === fallbackModels.length - 1} className="rounded px-2 py-1 text-xs text-slate-600 hover:bg-slate-100 disabled:opacity-30" onClick={() => moveFallbackModel(index, 1)} aria-label="下移">↓</button>
+          <button type="button" className="rounded px-2 py-1 text-xs text-rose-600 hover:bg-rose-50" onClick={() => removeFallbackModel(m.id)}>移除</button>
+        </li>)}</ol> : <div className="rounded-lg border border-dashed border-slate-300 bg-white px-3 py-4 text-center text-xs text-slate-500">尚未配置备用模型，主模型将按原方式运行。</div>}
+        <div className="grid gap-2 sm:grid-cols-[1fr_auto]">
+          <div className="space-y-2"><input className={inputClass} value={fallbackSearch} onChange={e => setFallbackSearch(e.target.value)} placeholder="搜索模型名称、连接名称或供应商…" />
+            <select className={inputClass} value={fallbackCandidate} onChange={e => setFallbackCandidate(e.target.value)}><option value="">选择一个启用的模型</option>{fallbackOptions.map(m => <option key={m.id} value={m.id}>{m.model_name} · {m.connection_name || m.provider || '未知连接'}</option>)}</select>
+          </div>
+          <button type="button" disabled={!fallbackCandidate} className={`${buttonClass} self-end bg-blue-600 text-white`} onClick={addFallbackModel}>添加备用模型</button>
+        </div>
+        {fallbackOptions.length === 0 && <p className="text-xs text-slate-400">没有可添加的模型。仅显示当前账号已启用、且未被选中的其他模型。</p>}
+      </section>
       <label className="flex items-center gap-2 text-sm text-slate-600"><input type="checkbox" checked={modelForm.enabled} onChange={e => setModelForm({ ...modelForm, enabled: e.target.checked })} />启用该模型</label>
       <div className="flex justify-end gap-2 pt-2"><button className={`${buttonClass} border border-slate-200 text-slate-600`} onClick={() => setModelDialog(false)}>取消</button><button disabled={modelMutation.isPending || !modelForm.model_name.trim()} className={`${buttonClass} bg-blue-600 text-white`} onClick={() => modelMutation.mutate()}>{modelMutation.isPending ? '保存中…' : '保存模型'}</button></div>
     </div></div></div>}
