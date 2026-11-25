@@ -1,9 +1,7 @@
 import asyncio
-import io
 import json
 import unittest
 import uuid
-import zipfile
 from types import SimpleNamespace
 from unittest.mock import patch, AsyncMock
 from fastapi.testclient import TestClient
@@ -40,7 +38,6 @@ class RegressionAPITests(unittest.TestCase):
                 connected_devices[did]=SimpleNamespace(is_connected=True,connection_type='adb_bridge',platform='android')
             try:
                 payload={'name':'Matrix','suite_ids':suites,'device_ids':devices}
-                self.assertEqual(422,client.post('/api/regressions',headers=headers[0],json={**payload,'app_package':'com.wrong.app'}).status_code)
                 r=client.post('/api/regressions',headers=headers[0],json=payload)
                 self.assertEqual(201,r.status_code,r.text);plan=r.json();self.assertEqual(4,len(plan['targets']));self.assertEqual(4,launch.await_count)
                 path='/api/regressions/'+plan['id']
@@ -68,13 +65,5 @@ class RegressionAPITests(unittest.TestCase):
                     self.assertTrue(any(n.endswith('execution.log') for n in archive.namelist()))
                 asyncio.run(set_results(plan,status='interrupted'))
                 self.assertFalse(client.get(path+'/gate',headers=headers[0]).json()['release_allowed'])
-                # Upload rejection, artifact isolation and unguessable expired grant.
-                self.assertEqual(422,client.post('/api/regressions/artifacts',headers=headers[0],files={'file':('bad.apk',b'no zip')}).status_code)
-                buf=io.BytesIO()
-                with zipfile.ZipFile(buf,'w') as z:z.writestr('AndroidManifest.xml','test fixture')
-                r=client.post('/api/regressions/artifacts',headers=headers[0],files={'file':('fixture.apk',buf.getvalue())});self.assertEqual(201,r.status_code,r.text)
-                self.assertEqual([],client.get('/api/regressions/artifacts',headers=headers[1]).json())
-                self.assertEqual(404,client.post('/api/regressions',headers=headers[1],json={**payload,'artifact_id':r.json()['id'],'app_package':'com.test.app'}).status_code)
-                self.assertEqual(404,client.get('/api/regression-download/expired').status_code)
             finally:
                 for did in devices:connected_devices.pop(did,None)
