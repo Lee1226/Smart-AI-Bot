@@ -57,6 +57,7 @@ class StartRunRequest(BaseModel):
     device_id: str
     provider: str = ""
     model: str = ""
+    model_id: str = ""
     max_steps: int = 20
     step_delay: float = 1.0
     max_retries: int = 0
@@ -73,6 +74,7 @@ class StartBatchRunRequest(BaseModel):
     device_id: str
     provider: str = ""
     model: str = ""
+    model_id: str = ""
     max_steps: int = 20
     base_path: str = ""          # the shared navigation prefix to enter once
     case_ids: List[str]          # the leaf cases to verify in one session
@@ -86,6 +88,7 @@ class QuickRunRequest(BaseModel):
     device_id: str
     provider: str = ""
     model: str = ""
+    model_id: str = ""
     max_steps: int = 20
     step_delay: float = 1.0
     max_retries: int = 0
@@ -254,7 +257,7 @@ async def create_run(req: StartRunRequest, request: Request, db: AsyncSession = 
         suite_id=req.suite_id,
         device_id=req.device_id,
         provider=req.provider or def_provider,
-        model=req.model or def_model,
+        model=req.model or def_model, model_id=req.model_id,
         status="pending",
         account_id=account_id,
         webhook_url=req.webhook_url,
@@ -307,7 +310,7 @@ async def create_batch_run(req: StartBatchRunRequest, request: Request, db: Asyn
     def_provider, def_model = await _default_provider_model(request.state.account_id)
     run = TestRun(
         suite_id=req.suite_id, device_id=req.device_id,
-        provider=req.provider or def_provider, model=req.model or def_model, status="pending",
+        provider=req.provider or def_provider, model=req.model or def_model, model_id=req.model_id, status="pending",
         account_id=request.state.account_id, webhook_url=req.webhook_url,
     )
     db.add(run)
@@ -412,7 +415,7 @@ async def quick_run(req: QuickRunRequest, request: Request, db: AsyncSession = D
         suite_id=suite.id,
         device_id=req.device_id,
         provider=req.provider or def_provider,
-        model=req.model or def_model,
+        model=req.model or def_model, model_id=req.model_id,
         status="pending",
         account_id=account_id,
         webhook_url=req.webhook_url,
@@ -444,7 +447,7 @@ async def create_tree_run(req: StartRunRequest, request: Request, db: AsyncSessi
         raise HTTPException(status_code=404, detail="Suite has no step-tree nodes")
     def_provider, def_model = await _default_provider_model(request.state.account_id)
     run = TestRun(suite_id=req.suite_id, device_id=req.device_id,
-                  provider=req.provider or def_provider, model=req.model or def_model, status="pending",
+                  provider=req.provider or def_provider, model=req.model or def_model, model_id=req.model_id, status="pending",
                   account_id=request.state.account_id, webhook_url=req.webhook_url)
     db.add(run); await db.flush()
     await _attach_test_account(db, run, req)
@@ -483,7 +486,7 @@ async def create_node_run(req: NodeRunRequest, request: Request, db: AsyncSessio
         raise HTTPException(status_code=404, detail="Node not found in this suite's step-tree")
     def_provider, def_model = await _default_provider_model(request.state.account_id)
     run = TestRun(suite_id=req.suite_id, device_id=req.device_id,
-                  provider=req.provider or def_provider, model=req.model or def_model, status="pending",
+                  provider=req.provider or def_provider, model=req.model or def_model, model_id=req.model_id, status="pending",
                   account_id=request.state.account_id, webhook_url=req.webhook_url)
     db.add(run); await db.flush()
     await _attach_test_account(db, run, req)
