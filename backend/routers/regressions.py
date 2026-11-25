@@ -1,34 +1,28 @@
 """Account-scoped multi-device regression plans and CI artifacts."""
 import asyncio
 import base64
-import hashlib
 import tempfile
-from pathlib import Path
 from starlette.background import BackgroundTask
 import json
-import time
-import uuid
 import zipfile
 from xml.etree import ElementTree as ET
 
-from fastapi import APIRouter, Depends, File, Form, HTTPException, Request, UploadFile
-from fastapi.responses import FileResponse, Response
+from fastapi import APIRouter, Depends, HTTPException, Request
+from fastapi.responses import Response
 from pydantic import BaseModel, Field
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from auth.access import require_device, require_suite
 from agent.ws_device import WebSocketDevice
-from core.regression import ARTIFACT_DIR, grants
 from core.test_runner import node_targets_for_suite, start_tree_run, cancel_run
 from db.database import AsyncSessionLocal
 from db.models import TestRun, TestResult, TestStepLog
-from db.regression_models import RegressionArtifact, RegressionPlan, RegressionTarget
+from db.regression_models import RegressionPlan, RegressionTarget
 from routers.testruns import _run_out, _validate_project_target
 from core.model_resolver import validate_model_selection
 
 router = APIRouter(prefix='/api/regressions', tags=['regressions'])
-download_router = APIRouter()
 TERMINAL = {'done', 'error', 'cancelled', 'interrupted'}
 
 
@@ -48,15 +42,9 @@ class PlanIn(BaseModel):
     name: str = Field(min_length=1, max_length=120)
     suite_ids: list[str] = Field(min_length=1, max_length=20)
     device_ids: list[str] = Field(min_length=1, max_length=20)
-    environment: str = Field(default='默认环境', max_length=120)
     test_accounts: dict[str, str] = Field(default_factory=dict)  # suite_id:device_id -> account ID, -=none
-    artifact_id: str = ''
-    app_package: str = ''
-    clear_data: bool = False
     model_id: str = Field(min_length=1, max_length=128)
     max_steps: int = Field(default=20, ge=1, le=100)
-    commit_sha: str = Field(default='', max_length=120)
-    build_url: str = Field(default='', max_length=1000)
 
 
 async def detail(plan, db, summary=False):
@@ -73,7 +61,7 @@ async def detail(plan, db, summary=False):
             TestResult.status.in_(['fail', 'error', 'skip'])))).scalars().all()
         out['problems'] = [{'status': r.status, 'reason': r.reason} for r in problems]
         out.update(run_id=run.id, suite_name=target.suite_name, device_name=target.device_name,
-                   preparation=json.loads(target.preparation_json), diagnostics=json.loads(target.diagnostics_json))
+                   diagnostics=json.loads(target.diagnostics_json))
         if summary:
             out['diagnostics'] = {k: v for k, v in out['diagnostics'].items() if k not in {'logcat', 'last_anr'}}
         rows.append(out)
@@ -86,63 +74,12 @@ async def detail(plan, db, summary=False):
             'gate': 'waiting' if active else 'passed' if passed else 'failed'}
 
 
-@router.post('/artifacts', status_code=201)
-async def upload_artifact(request: Request, file: UploadFile = File(...), version_label: str = Form(''), db: AsyncSession = Depends(get_db)):
-    if not (file.filename or '').lower().endswith('.apk'):
-        raise HTTPException(422, '当前仅支持 APK 安装包')
-    if len(version_label) > 120:
-        raise HTTPException(422, '版本标签过长')
-    ARTIFACT_DIR.mkdir(parents=True, exist_ok=True)
-    artifact_id = uuid.uuid4().hex
-    path = ARTIFACT_DIR / (artifact_id + '.apk')
-    digest, size = hashlib.sha256(), 0
-    try:
-        with path.open('wb') as output:
-            while chunk := await file.read(1024 * 1024):
-                size += len(chunk)
-                if size > 512 * 1024 * 1024:
-                    raise HTTPException(413, 'APK 大于 512 MB')
-                digest.update(chunk); output.write(chunk)
-        try:
-            with zipfile.ZipFile(path) as apk:
-                if 'AndroidManifest.xml' not in apk.namelist():
-                    raise ValueError()
-        except (ValueError, zipfile.BadZipFile):
-            raise HTTPException(422, '无效 APK 文件')
-        artifact = RegressionArtifact(id=artifact_id, account_id=request.state.account_id,
-            filename=(file.filename or '').replace('\\', '/').split('/')[-1],
-            version_label=version_label.strip(), sha256=digest.hexdigest())
-        db.add(artifact); await db.commit()
-    except BaseException:
-        path.unlink(missing_ok=True)
-        raise
-    return {'id': artifact.id, 'filename': artifact.filename, 'version_label': artifact.version_label, 'sha256': artifact.sha256}
-
-
-@router.get('/artifacts')
-async def list_artifacts(request: Request, db: AsyncSession = Depends(get_db)):
-    rows = (await db.execute(select(RegressionArtifact).where(RegressionArtifact.account_id == request.state.account_id).order_by(RegressionArtifact.created_at.desc()))).scalars().all()
-    return [{'id': r.id, 'filename': r.filename, 'version_label': r.version_label, 'sha256': r.sha256} for r in rows]
-
-
-@download_router.get('/api/regression-download/{grant}')
-async def download_artifact(grant: str):
-    item = grants.get(grant)
-    if not item or item[1] < time.monotonic():
-        grants.pop(grant, None)
-        raise HTTPException(404, 'Download grant expired')
-    return FileResponse(ARTIFACT_DIR / (item[0] + '.apk'), media_type='application/vnd.android.package-archive')
-
-
 @router.post('', status_code=201)
 async def create_plan(body: PlanIn, request: Request, db: AsyncSession = Depends(get_db)):
     if not body.name.strip() or len(body.suite_ids) != len(set(body.suite_ids)) or len(body.device_ids) != len(set(body.device_ids)):
         raise HTTPException(422, '请填写名称，设备和套件不能重复')
     if len(body.suite_ids) * len(body.device_ids) > 20:
         raise HTTPException(422, '一次计划最多 20 个设备与套件组合')
-    if (body.artifact_id or body.clear_data) and not body.app_package.strip():
-        raise HTTPException(422, '安装或清数据必须指定被测应用包名')
-    artifact = await owned(db, RegressionArtifact, body.artifact_id, request) if body.artifact_id else None
     devices, suites, versions, targets_by_suite, suite_apps = [], [], {}, {}, {}
     for sid in body.suite_ids:
         suite = await require_suite(request, db, sid)
@@ -156,8 +93,6 @@ async def create_plan(body: PlanIn, request: Request, db: AsyncSession = Depends
         transport = WebSocketDevice(did)
         if not transport.is_connected():
             raise HTTPException(422, '设备离线：' + device.name)
-        if (artifact or body.clear_data) and device.connection_type != 'adb_bridge':
-            raise HTTPException(422, '自动安装和清数据当前仅支持 Android ADB 桥接：' + device.name)
         for sid in body.suite_ids:
             await _validate_project_target(db, sid, did)
             from core.test_runner import _suite_app_package
@@ -170,10 +105,7 @@ async def create_plan(body: PlanIn, request: Request, db: AsyncSession = Depends
     config = body.model_dump()
     config.update(name=body.name.strip(), model_id=selected_model.id,
                   provider=selected_connection.provider, model=selected_model.model_name,
-                  app_package=body.app_package.strip(),
-                  artifact_sha256=artifact.sha256 if artifact else '', artifact_filename=artifact.filename if artifact else '',
-                  artifact_version_label=artifact.version_label if artifact else '',
-                  download_base=str(request.base_url).rstrip('/'), suite_snapshot=versions, suite_apps=suite_apps)
+                  suite_snapshot=versions, suite_apps=suite_apps)
     plan = RegressionPlan(account_id=request.state.account_id, name=body.name.strip(), config_json=json.dumps(config, ensure_ascii=False))
     db.add(plan); await db.flush()
     runs = []
