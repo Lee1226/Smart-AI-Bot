@@ -130,6 +130,10 @@ async def load_settings(account_id: str) -> dict:
             return dict(DEFAULT_SETTINGS)
     merged = dict(DEFAULT_SETTINGS)
     merged.update(data)
+    # Drop obsolete name-based Verifier settings from persisted account data.
+    # Verifier selection is now exclusively model-repository based.
+    merged.pop("verifier_provider", None)
+    merged.pop("verifier_model", None)
     return merged
 
 
