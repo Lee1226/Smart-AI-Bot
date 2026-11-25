@@ -295,8 +295,8 @@ async def execute_batch_run(run_id: str, state: "RunState", base_path: str,
         fallbacks = build_fallback_chain(settings, provider, model)
         language = resolve_language(settings)
         if _missing_key(provider, api_key):
-            await _mark_error(run_id, "当前账号未配置 API Key，请到设置页配置后再运行")
-            await emit("ERROR: 当前账号未配置 API Key，请到设置页配置后再运行")
+            await _mark_error(run_id, "当前执行模型未配置 API Key，请检查模型仓库中该模型所属连接的凭据")
+            await emit("ERROR: 当前执行模型未配置 API Key，请检查模型仓库中该模型所属连接的凭据")
             return
         if v_provider and _missing_key(v_provider, v_key):
             await _mark_error(run_id, "Verifier 模型未配置 API Key，请检查模型仓库中的连接凭据")
@@ -567,8 +567,8 @@ async def execute_tree_run(run_id: str, state: "RunState", max_steps: int = 20,
         fallbacks = build_fallback_chain(settings, provider, model)
         language = resolve_language(settings)
         if _missing_key(provider, api_key):
-            await _mark_error(run_id, "当前账号未配置 API Key，请到设置页配置后再运行")
-            await emit("ERROR: 当前账号未配置 API Key，请到设置页配置后再运行")
+            await _mark_error(run_id, "当前执行模型未配置 API Key，请检查模型仓库中该模型所属连接的凭据")
+            await emit("ERROR: 当前执行模型未配置 API Key，请检查模型仓库中该模型所属连接的凭据")
             return
         if v_provider and _missing_key(v_provider, v_key):
             await _mark_error(run_id, "Verifier 模型未配置 API Key，请检查模型仓库中的连接凭据")
@@ -886,8 +886,8 @@ async def execute_replay_run(
         fallbacks = build_fallback_chain(settings, provider, model)
         language = resolve_language(settings)
         if _missing_key(provider, api_key):
-            await _mark_error(run_id, "当前账号未配置 API Key，请到设置页配置后再运行")
-            await emit("ERROR: 当前账号未配置 API Key，请到设置页配置后再运行")
+            await _mark_error(run_id, "当前执行模型未配置 API Key，请检查模型仓库中该模型所属连接的凭据")
+            await emit("ERROR: 当前执行模型未配置 API Key，请检查模型仓库中该模型所属连接的凭据")
             return
         if v_provider and _missing_key(v_provider, v_key):
             await _mark_error(run_id, "Verifier 模型未配置 API Key，请检查模型仓库中的连接凭据")
@@ -1074,8 +1074,8 @@ async def execute_run(
         fallbacks = build_fallback_chain(settings, provider, model)
         language = resolve_language(settings)
         if _missing_key(provider, api_key):
-            await _mark_error(run_id, "当前账号未配置 API Key，请到设置页配置后再运行")
-            await emit("ERROR: 当前账号未配置 API Key，请到设置页配置后再运行")
+            await _mark_error(run_id, "当前执行模型未配置 API Key，请检查模型仓库中该模型所属连接的凭据")
+            await emit("ERROR: 当前执行模型未配置 API Key，请检查模型仓库中该模型所属连接的凭据")
             return
         if v_provider and _missing_key(v_provider, v_key):
             await _mark_error(run_id, "Verifier 模型未配置 API Key，请检查模型仓库中的连接凭据")
