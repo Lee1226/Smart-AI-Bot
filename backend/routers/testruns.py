@@ -411,8 +411,7 @@ async def quick_run(req: QuickRunRequest, request: Request, db: AsyncSession = D
     db.add(case)
     await db.flush()
 
-    def_provider, def_model = await _default_provider_model(account_id)
-    provider, model = await _selected_provider_model(db, account_id, req, def_provider, def_model)
+    provider, model = await _selected_provider_model(db, account_id, req.model_id)
     run = TestRun(
         suite_id=suite.id,
         device_id=req.device_id,
@@ -447,8 +446,7 @@ async def create_tree_run(req: StartRunRequest, request: Request, db: AsyncSessi
     targets = await node_targets_for_suite(db, req.suite_id)
     if not targets:
         raise HTTPException(status_code=404, detail="Suite has no step-tree nodes")
-    def_provider, def_model = await _default_provider_model(request.state.account_id)
-    provider, model = await _selected_provider_model(db, request.state.account_id, req, def_provider, def_model)
+    provider, model = await _selected_provider_model(db, request.state.account_id, req.model_id)
     run = TestRun(suite_id=req.suite_id, device_id=req.device_id,
                   provider=provider, model=model, model_id=req.model_id, status="pending",
                   account_id=request.state.account_id, webhook_url=req.webhook_url)
@@ -488,8 +486,7 @@ async def create_node_run(req: NodeRunRequest, request: Request, db: AsyncSessio
     targets = await node_targets_for_suite(db, req.suite_id, req.node_id)
     if not targets:
         raise HTTPException(status_code=404, detail="Node not found in this suite's step-tree")
-    def_provider, def_model = await _default_provider_model(request.state.account_id)
-    provider, model = await _selected_provider_model(db, request.state.account_id, req, def_provider, def_model)
+    provider, model = await _selected_provider_model(db, request.state.account_id, req.model_id)
     run = TestRun(suite_id=req.suite_id, device_id=req.device_id,
                   provider=provider, model=model, model_id=req.model_id, status="pending",
                   account_id=request.state.account_id, webhook_url=req.webhook_url)
