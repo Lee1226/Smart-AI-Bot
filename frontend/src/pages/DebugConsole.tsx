@@ -1,15 +1,13 @@
 import { useEffect, useState } from 'react'
 import { useMutation, useQuery } from '@tanstack/react-query'
-import { Device, fetchDevices, fetchSettings, startDebugSession, fetchDebugSession, stopDebugSession } from '../lib/api'
-import { PROVIDERS, PROVIDER_MODELS, DEFAULT_MODEL } from '../lib/providerConfig'
+import { Device, fetchDevices, startDebugSession, fetchDebugSession, stopDebugSession } from '../lib/api'
+import { ExecutionModelSelect, useExecutionModels } from '../components/ExecutionModelSelect'
 import LivePanel from '../components/LivePanel'
 
 export default function DebugConsole() {
   const { data: devices = [] } = useQuery({ queryKey: ['devices'], queryFn: fetchDevices, refetchInterval: 5000 })
-  const { data: settings } = useQuery({ queryKey: ['settings'], queryFn: fetchSettings })
   const [deviceId, setDeviceId] = useState('')
-  const [provider, setProvider] = useState('openai')
-  const [model, setModel] = useState('gpt-4o')
+  const [modelId, setModelId] = useState('')
   const [goal, setGoal] = useState('')
   const [expected, setExpected] = useState('')
   const [maxSteps, setMaxSteps] = useState(20)
@@ -17,6 +15,8 @@ export default function DebugConsole() {
   const [cursor, setCursor] = useState(0)
   const [logLines, setLogLines] = useState<string[]>([])
   const selectedDevice = devices.find(d => d.id === deviceId) || null
+  const { models } = useExecutionModels()
+  const selectedModel = models.find(item => item.id === modelId)
   const snapshot = useQuery({
     queryKey: ['debug-session', sessionId, cursor],
     queryFn: () => fetchDebugSession(sessionId, cursor),
@@ -38,19 +38,9 @@ export default function DebugConsole() {
     if (snapshot.data?.logs?.length) setLogLines(previous => [...previous, ...snapshot.data!.logs])
     if (snapshot.data) setCursor(snapshot.data.next)
   }, [snapshot.data?.next])
-  useEffect(() => {
-    if (settings) {
-      setProvider(settings.default_provider || 'openai')
-      setModel(settings.default_model || DEFAULT_MODEL[settings.default_provider || 'openai'] || '')
-    }
-  }, [settings])
   const logs = logLines
   const busy = !!sessionId && ['queued', 'running'].includes(snapshot.data?.status || 'queued')
-  const canStart = !!deviceId && !!goal.trim() && !!provider && !!model.trim() && !start.isPending && !busy
-  const changeProvider = (value: string) => {
-    setProvider(value)
-    setModel(value === settings?.default_provider && settings?.default_model ? settings.default_model : DEFAULT_MODEL[value] || '')
-  }
+  const canStart = !!deviceId && !!goal.trim() && !!selectedModel && !start.isPending && !busy
 
   const statusLabel = snapshot.data?.status === 'running' ? '正在执行' : snapshot.data?.status === 'queued' ? '等待设备' : snapshot.data?.status === 'done' ? '执行完成' : snapshot.data?.status === 'error' ? '执行异常' : snapshot.data?.status === 'cancelled' ? '已停止' : '未启动'
   const statusTone = busy ? 'bg-sky-50 text-sky-700' : snapshot.data?.status === 'error' ? 'bg-rose-50 text-rose-700' : snapshot.data?.status === 'done' ? 'bg-emerald-50 text-emerald-700' : 'bg-slate-100 text-slate-600'
@@ -94,16 +84,10 @@ export default function DebugConsole() {
                 {devices.map(d => <option key={d.id} value={d.id} disabled={d.status !== 'online'}>{d.name} · {d.status === 'online' ? '在线' : '离线'}</option>)}
               </select>
             </label>
-            <label className="block text-xs font-medium text-ink-mute">模型服务商
-              <select className="mt-1.5 w-full rounded-lg border border-hairline bg-white px-3 py-2.5 text-sm text-ink" value={provider} onChange={e => changeProvider(e.target.value)}>
-                {PROVIDERS.map(p => <option key={p} value={p}>{p}</option>)}
-              </select>
-            </label>
-            <label className="block text-xs font-medium text-ink-mute md:col-span-2">模型名称
-              <input className="mt-2 w-full rounded-xl border border-[#E5ECF7] bg-[#FBFDFF] px-4 py-3 text-sm text-[#243653] outline-none transition focus:border-blue-300 focus:bg-white focus:ring-4 focus:ring-blue-100/70" value={model} onChange={e => setModel(e.target.value)} list="debug-models" />
-              <datalist id="debug-models">{(PROVIDER_MODELS[provider] || []).map(m => <option key={m} value={m} />)}</datalist>
-              <span className="mt-1 block text-[11px] font-normal text-ink-mute">严格使用所选模型，不启用 fallback。</span>
-            </label>
+            <div className="md:col-span-2">
+              <ExecutionModelSelect value={modelId} onChange={setModelId} disabled={start.isPending || busy} />
+              <span className="mt-1 block text-[11px] font-normal text-ink-mute">调试会话使用模型仓库中所选模型及其连接凭据，不启用 fallback。</span>
+            </div>
           </div>
           <label className="mt-4 block text-xs font-medium text-ink-mute">执行指令
             <textarea rows={4} className="mt-2 w-full resize-y rounded-xl border border-[#E5ECF7] bg-[#FBFDFF] px-4 py-3 text-sm leading-6 text-[#243653] outline-none transition placeholder:text-slate-400 focus:border-blue-300 focus:bg-white focus:ring-4 focus:ring-blue-100/70" placeholder="例如：打开系统设置，进入 WLAN 页面，读取当前连接状态。" value={goal} onChange={e => setGoal(e.target.value)} />
@@ -117,7 +101,7 @@ export default function DebugConsole() {
             <div className="mt-1 flex justify-between text-[10px] text-ink-faint"><span>1 步</span><span>60 步</span></div>
           </div>
           <div className="mt-5 flex flex-wrap gap-3 border-t border-[#EDF1F8] pt-5">
-            <button disabled={!canStart} onClick={() => { setSessionId(''); setCursor(0); setLogLines([]); start.mutate({ device_id: deviceId, goal, expected: expected || '完成用户要求的操作，并说明执行结果', provider, model, max_steps: maxSteps }) }} className="rounded-xl bg-gradient-to-r from-blue-600 to-blue-500 px-6 py-3 text-sm font-semibold text-white shadow-lg shadow-blue-200/60 transition hover:-translate-y-0.5 hover:shadow-xl disabled:cursor-not-allowed disabled:opacity-40">{start.isPending ? '正在启动…' : '▶ 开始调试'}</button>
+            <button disabled={!canStart} onClick={() => { setSessionId(''); setCursor(0); setLogLines([]); start.mutate({ device_id: deviceId, goal, expected: expected || '完成用户要求的操作，并说明执行结果', model_id: modelId, max_steps: maxSteps }) }} className="rounded-xl bg-gradient-to-r from-blue-600 to-blue-500 px-6 py-3 text-sm font-semibold text-white shadow-lg shadow-blue-200/60 transition hover:-translate-y-0.5 hover:shadow-xl disabled:cursor-not-allowed disabled:opacity-40">{start.isPending ? '正在启动…' : '▶ 开始调试'}</button>
             <button disabled={!busy || stop.isPending} onClick={() => stop.mutate(sessionId)} className="rounded-xl border border-rose-200 bg-white px-5 py-3 text-sm font-semibold text-rose-600 transition hover:bg-rose-50 disabled:cursor-not-allowed disabled:opacity-40">■ 停止任务</button>
             <button onClick={() => { setSessionId(''); setCursor(0); setLogLines([]) }} className="rounded-xl border border-[#E2EAF5] bg-white px-5 py-3 text-sm font-semibold text-slate-500 transition hover:bg-slate-50">清空日志</button>
           </div>
