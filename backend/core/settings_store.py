@@ -45,6 +45,8 @@ DEFAULT_SETTINGS = {
     "default_provider": "openai",
     "default_model": "gpt-4o",
     "default_model_id": "",
+    "verifier_provider": "",
+    "verifier_model": "",
     "verifier_model_id": "",
     "webhook_url": "",
     "webhook_type": "",
@@ -168,6 +170,15 @@ def resolve_provider_model(settings: dict) -> tuple[str, str]:
         settings.get("default_provider") or "openai",
         settings.get("default_model") or "gpt-4o",
     )
+
+
+def resolve_verifier(settings: dict) -> tuple[str, str, str, str]:
+    """(verifier_provider, verifier_model, verifier_api_key, verifier_api_base)."""
+    v_provider = settings.get("verifier_provider", "") or ""
+    v_model = settings.get("verifier_model", "") or ""
+    v_key = resolve_api_key(settings, v_provider) if v_provider else ""
+    v_base = resolve_api_base(settings, v_provider) if v_provider else ""
+    return v_provider, v_model, v_key, v_base
 
 
 def resolve_language(settings: dict) -> str:
