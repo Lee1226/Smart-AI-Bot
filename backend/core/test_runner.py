@@ -381,7 +381,7 @@ async def execute_batch_run(run_id: str, state: "RunState", base_path: str,
                 language=language,
             )
             try:
-                lifecycle = json.loads(case.lifecycle_actions_json or "{}")
+                lifecycle = json.loads(case_row.lifecycle_actions_json or "{}")
                 if not isinstance(lifecycle, dict):
                     raise ValueError("用例执行前/后处理配置格式无效")
                 await run_lifecycle_actions(device, lifecycle.get("pre_actions", []), "执行前处理", emit)
@@ -397,7 +397,7 @@ async def execute_batch_run(run_id: str, state: "RunState", base_path: str,
                 case_result = CaseResult(status="error", reason=str(e), steps=0)
 
             try:
-                lifecycle = json.loads(case.lifecycle_actions_json or "{}")
+                lifecycle = json.loads(case_row.lifecycle_actions_json or "{}")
                 if isinstance(lifecycle, dict):
                     await run_lifecycle_actions(device, lifecycle.get("post_actions", []), "执行后处理", emit)
             except Exception as cleanup_error:
