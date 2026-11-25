@@ -38,6 +38,7 @@ from core.settings_store import (
     resolve_api_base,
     resolve_api_key,
     resolve_language,
+    resolve_verifier,
 )
 
 logger = logging.getLogger(__name__)
@@ -57,10 +58,11 @@ def _legacy_provider_kwargs(settings: dict, provider: str) -> dict:
 
 
 async def _resolve_verifier_model(account_id: str, settings: dict):
-    """Resolve the optional dedicated Verifier model; empty means inherit the run model."""
+    """Resolve the dedicated verifier model; an empty ID preserves legacy/same-agent behavior."""
     model_id = (settings.get("verifier_model_id") or "").strip()
     if not model_id:
-        return "", "", "", "", {}
+        legacy = resolve_verifier(settings)
+        return (*legacy, _legacy_provider_kwargs(settings, legacy[0]))
     from core.model_resolver import resolve_model_config
     async with AsyncSessionLocal() as session:
         config = await resolve_model_config(session, account_id, model_id)
