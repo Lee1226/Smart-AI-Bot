@@ -24,21 +24,6 @@ router = APIRouter(prefix="/api/settings", tags=["settings"])
 
 
 class Settings(BaseModel):
-    openai_api_key: Optional[str] = ""
-    anthropic_api_key: Optional[str] = ""
-    anthropic_base_url: Optional[str] = ""   # optional override (e.g. internal LiteLLM proxy URL)
-    gemini_api_key: Optional[str] = ""
-    zhipu_api_key: Optional[str] = ""
-    dashscope_api_key: Optional[str] = ""
-    dashscope_base_url: Optional[str] = "https://dashscope.aliyuncs.com/compatible-mode/v1"
-    groq_api_key: Optional[str] = ""
-    ollama_base_url: Optional[str] = "http://localhost:11434"
-    ark_api_key: Optional[str] = ""
-    ark_base_url: Optional[str] = "https://ark.cn-beijing.volces.com/api/v3"
-    # AWS Bedrock (provider = "bedrock"). Uses AWS credentials, not an API key.
-    aws_access_key_id: Optional[str] = ""
-    aws_secret_access_key: Optional[str] = ""
-    aws_region_name: Optional[str] = "us-east-1"
     default_model_id: Optional[str] = ""         # selected Agent model from the model repository
     # Verifier can use a separate (stronger) model for pass/fail judgment.
     # Leave empty to use the same model as the agent.
@@ -54,11 +39,7 @@ class Settings(BaseModel):
     configured_secrets: list[str] = Field(default_factory=list)
 
 
-SECRET_FIELDS = {
-    "openai_api_key", "anthropic_api_key", "gemini_api_key", "zhipu_api_key",
-    "groq_api_key", "ark_api_key", "dashscope_api_key", "aws_access_key_id", "aws_secret_access_key",
-    "webhook_url",
-}
+SECRET_FIELDS = {"webhook_url"}
 
 
 class SettingsUpdate(Settings):
@@ -231,8 +212,6 @@ class LLMProviderInput(BaseModel):
     default_base_url: str = ""
     auth_type: str = "api_key"
     enabled: bool = True
-    legacy_api_key_field: str = ""
-    legacy_base_url_field: str = ""
     model_presets: list[str] = Field(default_factory=list)
 
 
@@ -245,8 +224,7 @@ def _provider_dict(row: LLMProvider) -> dict:
         "id": row.id, "provider_id": row.provider_id, "name": row.name,
         "protocol_type": row.protocol_type, "adapter_id": row.adapter_id,
         "default_base_url": row.default_base_url, "auth_type": row.auth_type,
-        "enabled": bool(row.enabled), "legacy_api_key_field": row.legacy_api_key_field,
-        "legacy_base_url_field": row.legacy_base_url_field, "model_presets": presets,
+        "enabled": bool(row.enabled), "model_presets": presets,
         "created_at": row.created_at.isoformat() if row.created_at else None,
         "updated_at": row.updated_at.isoformat() if row.updated_at else None,
     }
@@ -293,8 +271,6 @@ async def create_llm_provider(payload: LLMProviderInput, request: Request, db: A
         name=payload.name.strip(), protocol_type=payload.protocol_type.strip(),
         adapter_id=payload.adapter_id, default_base_url=payload.default_base_url.strip(),
         auth_type=payload.auth_type.strip(), enabled=payload.enabled,
-        legacy_api_key_field=payload.legacy_api_key_field.strip(),
-        legacy_base_url_field=payload.legacy_base_url_field.strip(),
         model_presets_json=json.dumps(payload.model_presets, ensure_ascii=False))
     db.add(row)
     try:
@@ -328,8 +304,6 @@ async def update_llm_provider(provider_id: str, payload: LLMProviderInput, reque
     row.default_base_url = payload.default_base_url.strip()
     row.auth_type = payload.auth_type.strip()
     row.enabled = payload.enabled
-    row.legacy_api_key_field = payload.legacy_api_key_field.strip()
-    row.legacy_base_url_field = payload.legacy_base_url_field.strip()
     row.model_presets_json = json.dumps(payload.model_presets, ensure_ascii=False)
     row.updated_at = datetime.utcnow()
     try:
