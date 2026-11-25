@@ -222,9 +222,11 @@ function AppLayout() {
   const activeItem = NAV_GROUPS.flatMap(group => group.items.flatMap(item => [item, ...(item.children ?? [])])).find(item => item.paths.some(path => matchesPath(pathname, path)))
   const pageLabel = activeItem ? t(activeItem.label.zh, activeItem.label.en) : t('工作台', 'Workbench')
   const [resultsExpanded, setResultsExpanded] = useState(['/runs', '/recordings'].some(path => matchesPath(pathname, path)))
+  const [corpusExpanded, setCorpusExpanded] = useState(['/audio-corpus'].some(path => matchesPath(pathname, path)))
   const [openPlatformExpanded, setOpenPlatformExpanded] = useState(['/open-platform'].some(path => matchesPath(pathname, path)))
   useEffect(() => {
     if (['/runs', '/recordings'].some(path => matchesPath(pathname, path))) setResultsExpanded(true)
+    if (matchesPath(pathname, '/audio-corpus')) setCorpusExpanded(true)
     if (matchesPath(pathname, '/open-platform')) setOpenPlatformExpanded(true)
   }, [pathname])
 
@@ -268,8 +270,16 @@ function AppLayout() {
                 {group.items.map(({ to, label, icon, iconStyle, paths, children }) => {
                   const active = paths.some(path => matchesPath(pathname, path))
                   if (children) {
-                    const expanded = to === '/open-platform' ? openPlatformExpanded : resultsExpanded
-                    const setExpanded = to === '/open-platform' ? setOpenPlatformExpanded : setResultsExpanded
+                    const expanded = to === '/open-platform'
+                      ? openPlatformExpanded
+                      : to === '/audio-corpus'
+                        ? corpusExpanded
+                        : resultsExpanded
+                    const setExpanded = to === '/open-platform'
+                      ? setOpenPlatformExpanded
+                      : to === '/audio-corpus'
+                        ? setCorpusExpanded
+                        : setResultsExpanded
                     return <div key={to} className="space-y-1">
                     <button
                       type="button"
