@@ -46,8 +46,8 @@ logger = logging.getLogger(__name__)
 
 
 def _missing_key(provider: str, api_key: str) -> bool:
-    """True when a run would send an empty key (ollama is the only keyless provider)."""
-    return not api_key and (provider or "").lower() != "ollama"
+    """Check API-key requirements; Bedrock may authenticate through the AWS credential chain."""
+    return not api_key and (provider or "").lower() not in {"ollama", "bedrock"}
 
 
 async def _resolve_run_model(run_id: str, account_id: str, provider: str, model: str):
