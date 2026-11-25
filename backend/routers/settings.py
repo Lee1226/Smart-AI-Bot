@@ -342,7 +342,7 @@ async def _validate_fallback_models(
     if primary_model_id and primary_model_id in normalized:
         raise HTTPException(status_code=422, detail="主模型不能同时作为自己的备用模型")
     if not normalized:
-        return
+        return []
     rows = (await db.execute(
         select(LLMModel.id).join(LLMConnection, LLMConnection.id == LLMModel.connection_id).where(
             LLMModel.id.in_(normalized),
