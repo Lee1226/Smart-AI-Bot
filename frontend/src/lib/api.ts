@@ -124,8 +124,6 @@ export interface Settings {
   aws_access_key_id: string
   aws_secret_access_key: string
   aws_region_name: string
-  default_provider: string
-  default_model: string
   default_model_id: string
   verifier_model_id: string
   webhook_url: string
