@@ -12,7 +12,7 @@ class SettingsSecretTests(unittest.IsolatedAsyncioTestCase):
         return Request({"type": "http", "state": {"account_id": "test-account", "role": role}})
 
     async def test_delete_and_read_back_without_touching_other_settings(self):
-        stored = {"ark_api_key": "fake-ark", "openai_api_key": "fake-openai", "language": "en"}
+        stored = {"webhook_url": "https://example.invalid/hook", "language": "en"}
 
         async def read(account):
             self.assertEqual(account, "test-account")
@@ -24,27 +24,27 @@ class SettingsSecretTests(unittest.IsolatedAsyncioTestCase):
             stored.update(data)
 
         with patch.object(settings, "load_settings", side_effect=read), patch.object(settings, "save_settings", side_effect=write):
-            result = await settings.update_settings(settings.SettingsUpdate(clear_secrets=["ark_api_key"]), self.request())
+            result = await settings.update_settings(settings.SettingsUpdate(clear_secrets=["webhook_url"]), self.request())
             reread = await settings.get_settings(self.request())
-        self.assertEqual(stored["ark_api_key"], "")
-        self.assertEqual(stored["openai_api_key"], "fake-openai")
+        self.assertEqual(stored["webhook_url"], "")
         self.assertEqual(stored["language"], "en")
-        self.assertNotIn("ark_api_key", reread.configured_secrets)
-        self.assertIn("openai_api_key", reread.configured_secrets)
-        self.assertEqual(result.openai_api_key, "")
+        self.assertEqual(stored["language"], "en")
+        self.assertNotIn("webhook_url", reread.configured_secrets)
+        self.assertEqual(reread.webhook_url, "")
+        self.assertEqual(result.webhook_url, "")
 
     async def test_blank_keeps_key_and_deletion_wins_over_new_input(self):
-        with patch.object(settings, "load_settings", AsyncMock(return_value={"ark_api_key": "fake-old"})), patch.object(settings, "save_settings", AsyncMock()) as save:
-            await settings.update_settings(settings.SettingsUpdate(ark_api_key=""), self.request())
-            self.assertEqual(save.call_args.args[1]["ark_api_key"], "fake-old")
-            await settings.update_settings(settings.SettingsUpdate(ark_api_key="fake-new", clear_secrets=["ark_api_key"]), self.request())
-            self.assertEqual(save.call_args.args[1]["ark_api_key"], "")
+        with patch.object(settings, "load_settings", AsyncMock(return_value={"webhook_url": "https://example.invalid/old"})), patch.object(settings, "save_settings", AsyncMock()) as save:
+            await settings.update_settings(settings.SettingsUpdate(webhook_url=""), self.request())
+            self.assertEqual(save.call_args.args[1]["webhook_url"], "https://example.invalid/old")
+            await settings.update_settings(settings.SettingsUpdate(ark_api_key="https://example.invalid/new", clear_secrets=["ark_api_key"]), self.request())
+            self.assertEqual(save.call_args.args[1]["webhook_url"], "")
             self.assertNotIn("clear_secrets", save.call_args.args[1])
 
     async def test_reject_unknown_field_and_member_before_write(self):
         with patch.object(settings, "save_settings", AsyncMock()) as save:
             with self.assertRaises(HTTPException) as error:
-                await settings.update_settings(settings.SettingsUpdate(clear_secrets=["default_model"]), self.request())
+                await settings.update_settings(settings.SettingsUpdate(clear_secrets=["default_model_id"]), self.request())
             self.assertEqual(error.exception.status_code, 422)
             with self.assertRaises(HTTPException) as error:
                 await settings.update_settings(settings.SettingsUpdate(clear_secrets=["ark_api_key"]), self.request("member"))
