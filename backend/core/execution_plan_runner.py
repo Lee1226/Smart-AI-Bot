@@ -453,7 +453,7 @@ async def execute_execution_plan_run(
                         ai_result = await _execute_ai(
                             device, step, provider, model, api_key, api_base,
                             fallbacks, language, max_steps, emit, login_context, target_package,
-                        confirmed_knowledge, api_extra_kwargs,
+                            confirmed_knowledge, api_extra_kwargs,
                             v_provider, v_model, v_key, v_base, verifier_fallbacks, verifier_extra_kwargs,
                         )
                         step_tokens = ai_result.total_tokens
