@@ -2,7 +2,6 @@ import { useEffect, useMemo, useState } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { cancelRun, deleteRun, fetchDevices, fetchRunsPage, startRun, Run } from '../lib/api'
-import { ExecutionModelSelect } from '../components/ExecutionModelSelect'
 
 const ACTIVE = new Set(['queued', 'preparing', 'pending', 'running'])
 const TERMINAL = new Set(['done', 'error', 'cancelled', 'interrupted'])
@@ -40,7 +39,7 @@ function RunCard({ run, deviceName }: { run: Run; deviceName: string }) {
   const navigate = useNavigate()
   const qc = useQueryClient()
   const active = ACTIVE.has(run.status)
-  const [rerunModelId, setRerunModelId] = useState('')
+  const rerunModelId = (run.model_id || '').trim()
   const rerun = useMutation({
     mutationFn: () => startRun({ suite_id: run.suite_id, device_id: run.device_id, model_id: rerunModelId }),
     onSuccess: next => { qc.invalidateQueries({ queryKey: ['runs'] }); navigate(`/runs/${next.id}`) },
@@ -69,12 +68,14 @@ function RunCard({ run, deviceName }: { run: Run; deviceName: string }) {
         <Link to={`/runs/${run.id}`} className="rounded-xl border border-slate-200 px-3.5 py-2 text-xs font-semibold text-slate-600 transition hover:border-blue-200 hover:bg-blue-50 hover:text-blue-700">查看详情</Link>
         {active && <button disabled={cancel.isPending} onClick={() => { if (confirm('确定取消这次测试任务吗？')) cancel.mutate() }} className="rounded-xl border border-amber-200 bg-amber-50/70 px-3.5 py-2 text-xs font-semibold text-amber-700 transition hover:bg-amber-100 disabled:opacity-40">{cancel.isPending ? '取消中…' : '取消任务'}</button>}
         {TERMINAL.has(run.status) && (
-          <>
-            <div className="w-56">
-              <ExecutionModelSelect value={rerunModelId} onChange={setRerunModelId} disabled={rerun.isPending} />
-            </div>
-            <button disabled={rerun.isPending || !rerunModelId} title="选择当前模型仓库中的模型后重新运行" onClick={() => rerun.mutate()} className="rounded-xl border border-blue-200 bg-blue-50 px-3.5 py-2 text-xs font-semibold text-blue-700 transition hover:bg-blue-100 disabled:opacity-40">{rerun.isPending ? '启动中…' : '重新运行'}</button>
-          </>
+          <button
+            disabled={rerun.isPending || !rerunModelId}
+            title={rerunModelId ? '使用本次任务原模型重新运行' : '历史任务未能匹配模型仓库配置，无法直接重新运行'}
+            onClick={() => rerun.mutate()}
+            className="rounded-xl border border-blue-200 bg-blue-50 px-3.5 py-2 text-xs font-semibold text-blue-700 transition hover:bg-blue-100 disabled:opacity-40"
+          >
+            {rerun.isPending ? '启动中…' : '重新运行'}
+          </button>
         )}
         <button disabled={remove.isPending} title="删除整次运行记录及其用例结果" onClick={() => { if (confirm('删除整次运行记录？该次运行的所有用例结果和派生记忆都会一并删除。')) remove.mutate() }} className="rounded-xl border border-slate-200 px-3 py-2 text-xs font-semibold text-slate-500 transition hover:border-rose-200 hover:bg-rose-50 hover:text-rose-700 disabled:opacity-40">{remove.isPending ? '…' : '删除'}</button>
       </div>
