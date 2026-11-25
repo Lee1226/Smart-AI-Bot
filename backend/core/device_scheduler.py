@@ -71,7 +71,7 @@ async def enqueue(run_id, state, executor):
             from agent.ws_device import WebSocketDevice
             if not WebSocketDevice(device_id).is_connected():
                 raise RuntimeError('设备离线，未执行；请重新连接后重跑')
-            await state.emit('已获得设备独占权，开始环境准备')
+            await state.emit('已获得设备独占权，开始执行前校验')
             from core.regression import prepare_run
             await prepare_run(run_id, state.emit)
             await executor()
