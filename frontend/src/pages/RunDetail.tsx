@@ -100,8 +100,7 @@ export default function RunDetail() {
       provider: run!.provider,
       model: run!.model,
       // Preserve the exact repository model/connection when rerunning.
-      // Empty IDs are retained only for historical runs created before model_id existed.
-      model_id: run!.model_id || '',
+      model_id: run!.model_id!,
       max_steps: 20,
       test_account_id: run!.test_account_id || undefined,
     }),
@@ -175,7 +174,8 @@ export default function RunDetail() {
               <>
                 <button
                   className="ml-2 px-3 py-1 border border-gray-300 text-gray-700 text-xs rounded hover:bg-gray-100 disabled:opacity-50"
-                  disabled={rerunMut.isPending}
+                  disabled={rerunMut.isPending || !run.model_id}
+                  title={!run.model_id ? '该历史任务没有保存模型仓库 ID，请从套件页面重新选择模型后运行' : '使用本次任务的模型重新运行'}
                   onClick={() => rerunMut.mutate()}
                 >
                   {rerunMut.isPending ? 'Starting…' : '↩ Run Again'}
