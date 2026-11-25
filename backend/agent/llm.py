@@ -148,9 +148,12 @@ async def resilient_completion(
 
         for attempt in range(max_retries):
             try:
-                return await asyncio.wait_for(
+                response = await asyncio.wait_for(
                     litellm.acompletion(**kwargs), timeout=timeout
                 )
+                if t_idx > 0:
+                    await _emit(f"  ✓ Fallback model succeeded: {target.label()}")
+                return response
             except _TERMINAL_EXC as exc:
                 last_exc = exc
                 # Newer models may reject an optional sampling param (e.g. Opus 4.8:
