@@ -490,6 +490,27 @@ async def delete_llm_connection(connection_id: str, request: Request, db: AsyncS
     return {"ok": True}
 
 
+@router.get("/llm-models")
+async def list_enabled_llm_models(request: Request, db: AsyncSession = Depends(get_db)):
+    """List enabled account-owned models for execution model selection."""
+    require_role(request, "owner", "admin")
+    account_id = require_account_id(request)
+    rows = (await db.execute(
+        select(LLMModel, LLMConnection)
+        .join(LLMConnection, LLMConnection.id == LLMModel.connection_id)
+        .where(
+            LLMModel.account_id == account_id,
+            LLMModel.enabled.is_(True),
+            LLMConnection.account_id == account_id,
+        )
+        .order_by(LLMConnection.name, LLMModel.model_name)
+    )).all()
+    return [
+        {**_model_dict(model), "connection_name": connection.name, "provider": connection.provider}
+        for model, connection in rows
+    ]
+
+
 @router.get("/llm-connections/{connection_id}/models")
 async def list_llm_models(connection_id: str, request: Request, db: AsyncSession = Depends(get_db)):
     require_role(request, "owner", "admin")
