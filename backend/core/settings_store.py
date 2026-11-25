@@ -138,13 +138,3 @@ def resolve_language(settings: dict) -> str:
 
 def resolve_webhook(settings: dict) -> tuple[str, str]:
     return settings.get("webhook_url", "") or "", settings.get("webhook_type", "") or ""
-
-
-def build_fallback_chain(settings: dict, primary_provider: str, primary_model: str) -> list:
-    """Automatic provider switching is disabled.
-
-    A configured API key is not consent to use that provider as a backup.
-    If explicit per-run fallback configuration is introduced later, it must
-    resolve only user-selected model records rather than infer candidates.
-    """
-    return []
