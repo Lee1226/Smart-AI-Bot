@@ -51,6 +51,22 @@ async def _resolve_verifier_model(account_id: str, settings: dict):
     return config["provider"], config["model"], config["api_key"], config["api_base"], config.get("provider_kwargs", {})
 
 
+
+async def _resolve_run_fallbacks(account_id: str, model_config: dict, settings: dict):
+    """Resolve direct fallback chains for Agent and Verifier independently."""
+    from core.model_resolver import resolve_model_fallbacks
+
+    agent_model_id = model_config["model_id"]
+    verifier_model_id = (settings.get("verifier_model_id") or "").strip() or agent_model_id
+    async with AsyncSessionLocal() as session:
+        agent_fallbacks = await resolve_model_fallbacks(session, account_id, agent_model_id)
+        verifier_fallbacks = (
+            agent_fallbacks
+            if verifier_model_id == agent_model_id
+            else await resolve_model_fallbacks(session, account_id, verifier_model_id)
+        )
+    return agent_fallbacks, verifier_fallbacks
+
 def _missing_key(provider: str, api_key: str) -> bool:
     """Check API-key requirements; Bedrock may authenticate through the AWS credential chain."""
     return not api_key and (provider or "").lower() not in {"ollama", "bedrock"}
@@ -287,7 +303,7 @@ async def execute_batch_run(run_id: str, state: "RunState", base_path: str,
         api_key, api_base = model_config["api_key"], model_config["api_base"]
         api_extra_kwargs = model_config.get("provider_kwargs", {})
         v_provider, v_model, v_key, v_base, v_extra_kwargs = await _resolve_verifier_model(account_id, settings)
-        fallbacks = []
+        fallbacks, verifier_fallbacks = await _resolve_run_fallbacks(account_id, model_config, settings)
         language = resolve_language(settings)
         if _missing_key(provider, api_key):
             await _mark_error(run_id, "当前执行模型未配置 API Key，请检查模型仓库中该模型所属连接的凭据")
@@ -363,7 +379,7 @@ async def execute_batch_run(run_id: str, state: "RunState", base_path: str,
                 max_steps=max_steps, step_delay=1.0, log_callback=log_cb,
                 verifier_provider=v_provider, verifier_model=v_model,
                 verifier_api_key=v_key, verifier_api_base=v_base,
-                api_extra_kwargs=api_extra_kwargs, verifier_extra_kwargs=v_extra_kwargs, fallbacks=fallbacks,
+                api_extra_kwargs=api_extra_kwargs, verifier_extra_kwargs=v_extra_kwargs, fallbacks=fallbacks, verifier_fallbacks=verifier_fallbacks,
                 allow_subagents=False,
                 loop_task=case_row.loop_task,
                 reference_examples=reference_examples or None,
@@ -559,7 +575,7 @@ async def execute_tree_run(run_id: str, state: "RunState", max_steps: int = 20,
         api_key, api_base = model_config["api_key"], model_config["api_base"]
         api_extra_kwargs = model_config.get("provider_kwargs", {})
         v_provider, v_model, v_key, v_base, v_extra_kwargs = await _resolve_verifier_model(account_id, settings)
-        fallbacks = []
+        fallbacks, verifier_fallbacks = await _resolve_run_fallbacks(account_id, model_config, settings)
         language = resolve_language(settings)
         if _missing_key(provider, api_key):
             await _mark_error(run_id, "当前执行模型未配置 API Key，请检查模型仓库中该模型所属连接的凭据")
@@ -651,7 +667,7 @@ async def execute_tree_run(run_id: str, state: "RunState", max_steps: int = 20,
                 max_steps=max_steps, step_delay=1.0, log_callback=log_cb,
                 verifier_provider=v_provider, verifier_model=v_model,
                 verifier_api_key=v_key, verifier_api_base=v_base,
-                api_extra_kwargs=api_extra_kwargs, verifier_extra_kwargs=v_extra_kwargs, fallbacks=fallbacks,
+                api_extra_kwargs=api_extra_kwargs, verifier_extra_kwargs=v_extra_kwargs, fallbacks=fallbacks, verifier_fallbacks=verifier_fallbacks,
                 allow_subagents=False,
                 project_kb_roots=project_kb_roots, source_root=project_source_root,
                 kb_search_cmd=project_kb_search_cmd,
@@ -878,7 +894,7 @@ async def execute_replay_run(
         api_key, api_base = model_config["api_key"], model_config["api_base"]
         api_extra_kwargs = model_config.get("provider_kwargs", {})
         v_provider, v_model, v_key, v_base, v_extra_kwargs = await _resolve_verifier_model(account_id, settings)
-        fallbacks = []
+        fallbacks, verifier_fallbacks = await _resolve_run_fallbacks(account_id, model_config, settings)
         language = resolve_language(settings)
         if _missing_key(provider, api_key):
             await _mark_error(run_id, "当前执行模型未配置 API Key，请检查模型仓库中该模型所属连接的凭据")
@@ -897,7 +913,7 @@ async def execute_replay_run(
         if await recorder.start(device_id):
             await emit("Audio/video recording started (Scrcpy)")
 
-        verifier = LLMVerifier(v_provider, v_model, v_key, v_base, fallbacks=fallbacks, language=language)
+        verifier = LLMVerifier(v_provider, v_model, v_key, v_base, fallbacks=verifier_fallbacks, language=language)
 
         passed = failed = errored = skipped = 0
         for case in cases:
@@ -1066,7 +1082,7 @@ async def execute_run(
         api_key, api_base = model_config["api_key"], model_config["api_base"]
         api_extra_kwargs = model_config.get("provider_kwargs", {})
         v_provider, v_model, v_key, v_base, v_extra_kwargs = await _resolve_verifier_model(account_id, settings)
-        fallbacks = []
+        fallbacks, verifier_fallbacks = await _resolve_run_fallbacks(account_id, model_config, settings)
         language = resolve_language(settings)
         if _missing_key(provider, api_key):
             await _mark_error(run_id, "当前执行模型未配置 API Key，请检查模型仓库中该模型所属连接的凭据")
@@ -1220,6 +1236,7 @@ async def execute_run(
                 reference_examples=reference_examples or None,
                 lessons_learned=lessons or None,
                 fallbacks=fallbacks,
+                verifier_fallbacks=verifier_fallbacks,
                 project_kb_roots=project_kb_roots, source_root=project_source_root,
                 kb_search_cmd=project_kb_search_cmd,
                 target_package=project_app_package,
@@ -1275,6 +1292,7 @@ async def execute_run(
                         loop_task=case_row.loop_task,
                         reference_examples=reference_examples or None,
                         fallbacks=fallbacks,
+                verifier_fallbacks=verifier_fallbacks,
                         project_kb_roots=project_kb_roots, source_root=project_source_root,
                         kb_search_cmd=project_kb_search_cmd,
                         target_package=project_app_package,
