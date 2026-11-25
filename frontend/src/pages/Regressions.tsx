@@ -7,7 +7,7 @@ import { api, fetchDevices, fetchSuites } from '../lib/api'
 
 type Target = {problems?:{status:string;reason:string}[];run_id:string;suite_name:string;device_name:string;status:string;passed:number;total:number;failed:number;errored:number;skipped:number;diagnostics?:{status?:string;reason?:string}}
 type Plan = {id:string;name:string;gate:string;config:Record<string,unknown>;targets:Target[]}
-const labels:Record<string,string> = {queued:'排队中',preparing:'准备中',running:'运行中',pending:'待运行',done:'已结束',error:'执行错误',cancelled:'已取消',interrupted:'服务中断',waiting:'等待结果',passed:'通过 · 允许发布',failed:'未通过 · 阻止发布'}
+const labels:Record<string,string> = {queued:'排队中',preparing:'执行前检查',running:'运行中',pending:'待运行',done:'已结束',error:'执行错误',cancelled:'已取消',interrupted:'服务中断',waiting:'等待结果',passed:'通过 · 允许发布',failed:'未通过 · 阻止发布'}
 const box = 'mt-1 w-full rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-sm text-slate-700 outline-none transition focus:border-blue-400 focus:ring-4 focus:ring-blue-500/10'
 export default function Regressions() {
   const devices=useQuery({queryKey:['devices'],queryFn:fetchDevices,refetchInterval:3000})
@@ -32,7 +32,7 @@ export default function Regressions() {
       <div className="grid grid-cols-2 gap-4"><label className="text-sm">计划名称<input required aria-label="计划名称" className={box} value={name} onChange={e=>setName(e.target.value)}/></label><label className="text-sm">每用例最大步数<input type="number" min={1} max={100} className={box} value={steps} onChange={e=>setSteps(+e.target.value)}/></label></div>
       <div className="max-w-xl">
         <ExecutionModelSelect value={modelId} onChange={setModelId} disabled={busy}/>
-        <p className="mt-1 text-xs text-slate-500">所有设备与套件组合严格使用此模型，不自动切换到其他模型。</p>
+        <p className="mt-1 text-xs text-slate-500">使用所选主模型及其在模型仓库中配置的备用模型策略。</p>
       </div>
       <div className="grid grid-cols-2 gap-4">
         <fieldset className="rounded-xl border border-slate-200 bg-slate-50/60 p-4 max-h-52 overflow-auto"><legend className="text-sm px-1">用例套件</legend>{suites.data?.items.filter(s=>s.case_count>0).map(s=><label key={s.id} className="flex gap-2 text-sm py-1"><input type="checkbox" checked={suiteIds.includes(s.id)} onChange={()=>toggle(suiteIds,s.id,setSuiteIds)}/>{s.name}（{s.case_count}）</label>)}</fieldset>
