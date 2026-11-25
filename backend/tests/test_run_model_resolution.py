@@ -32,7 +32,7 @@ async def test_historical_run_without_model_id_is_rejected(monkeypatch):
     resolve = AsyncMock()
     monkeypatch.setattr("core.model_resolver.resolve_model_config", resolve)
 
-    with pytest.raises(RuntimeError, match="未关联模型仓库模型"):
+    with pytest.raises(RuntimeError, match="未能匹配模型仓库配置"):
         await test_runner._resolve_run_model("old-run", "account-1")
 
     resolve.assert_not_awaited()
