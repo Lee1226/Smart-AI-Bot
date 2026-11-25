@@ -4,7 +4,6 @@ Each account owns its own settings blob (isolated from other tenants and from
 the operator).  Reading/writing requires owner/admin of that account.
 """
 from pathlib import Path
-import os
 from typing import Optional
 import shutil
 
@@ -16,6 +15,8 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from auth.access import require_account_id, require_role
 from core.settings_store import load_settings, save_settings
+from core.llm_crypto import decrypt_secret, encrypt_secret
+from core.model_adapters import SUPPORTED_MODEL_ADAPTERS
 from core.run_recorder import recording_directory, cleanup_expired_recordings
 from db.database import AsyncSessionLocal
 from db.models import TestRun, LLMProvider, LLMProviderCatalogState
@@ -140,43 +141,10 @@ async def get_recording_storage(request: Request, db: AsyncSession = Depends(get
 # ── LLM connection repository ────────────────────────────────────────────────
 import json
 from datetime import datetime
-from cryptography.fernet import Fernet
 from sqlalchemy import func
 from db.models import LLMConnection, LLMModel
 
 
-def _llm_cipher() -> Fernet:
-    # Keep LLM credential encryption independent from JWT signing-key rotation.
-    # The key is local to this installation and persists beside the application DB.
-    configured = os.getenv("SAB_LLM_ENCRYPTION_KEY", "").strip()
-    if configured:
-        try:
-            return Fernet(configured.encode("ascii"))
-        except (ValueError, UnicodeEncodeError) as exc:
-            raise RuntimeError("SAB_LLM_ENCRYPTION_KEY must be a valid Fernet key") from exc
-
-    data_dir = Path(os.getenv("SAB_DATA_DIR", str(Path(__file__).resolve().parent.parent / "data")))
-    key_path = data_dir / ".llm_encryption_key"
-    data_dir.mkdir(parents=True, exist_ok=True)
-    try:
-        key = key_path.read_bytes()
-    except FileNotFoundError:
-        generated = Fernet.generate_key()
-        try:
-            fd = os.open(str(key_path), os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
-            with os.fdopen(fd, "wb") as handle:
-                handle.write(generated)
-            key = generated
-        except FileExistsError:
-            key = key_path.read_bytes()
-    try:
-        return Fernet(key.strip())
-    except ValueError as exc:
-        raise RuntimeError(f"Invalid LLM encryption key file: {key_path}") from exc
-
-
-def _encrypt_secret(value: str) -> str:
-    return _llm_cipher().encrypt(value.encode("utf-8")).decode("ascii") if value else ""
 
 
 def _connection_dict(row: LLMConnection, model_count: int = 0) -> dict:
@@ -264,8 +232,7 @@ async def create_llm_provider(payload: LLMProviderInput, request: Request, db: A
     if payload.auth_type not in {"api_key", "none", "aws"}:
         raise HTTPException(status_code=422, detail="不支持的认证方式")
     # adapter_id names an implemented protocol adapter, not a provider option.
-    supported_adapters = {"openai", "anthropic", "google", "dashscope", "ark", "zhipuai", "groq", "ollama", "bedrock", "openai-compatible"}
-    if payload.adapter_id not in supported_adapters:
+    if payload.adapter_id not in SUPPORTED_MODEL_ADAPTERS:
         raise HTTPException(status_code=422, detail="当前协议适配器尚未实现")
     row = LLMProvider(account_id=account_id, provider_id=payload.provider_id.strip().lower(),
         name=payload.name.strip(), protocol_type=payload.protocol_type.strip(),
@@ -395,7 +362,7 @@ async def create_llm_connection(payload: LLMConnectionCreate, request: Request, 
         raise HTTPException(status_code=422, detail="该供应商需要 AWS 凭据")
     row = LLMConnection(account_id=account_id, name=payload.name.strip(), provider=provider_row.adapter_id,
         provider_catalog_id=provider_row.id,
-        base_url=payload.base_url.strip() or provider_row.default_base_url, api_key_enc=_encrypt_secret(payload.api_key),
+        base_url=payload.base_url.strip() or provider_row.default_base_url, api_key_enc=encrypt_secret(payload.api_key),
         aws_access_key_id_enc=_encrypt_secret(payload.aws_access_key_id),
         aws_secret_access_key_enc=_encrypt_secret(payload.aws_secret_access_key),
         aws_region_name=payload.aws_region_name.strip() or "us-east-1", notes=payload.notes.strip())
@@ -565,10 +532,9 @@ async def test_llm_connection(connection_id: str, request: Request, model_id: Op
     if chosen is None:
         raise HTTPException(status_code=422, detail="Add an enabled model before testing this connection")
 
-    cipher = _llm_cipher()
-    api_key = cipher.decrypt(row.api_key_enc.encode()).decode() if row.api_key_enc else ""
-    aws_access = cipher.decrypt(row.aws_access_key_id_enc.encode()).decode() if row.aws_access_key_id_enc else ""
-    aws_secret = cipher.decrypt(row.aws_secret_access_key_enc.encode()).decode() if row.aws_secret_access_key_enc else ""
+    api_key = decrypt_secret(row.api_key_enc)
+    aws_access = decrypt_secret(row.aws_access_key_id_enc)
+    aws_secret = decrypt_secret(row.aws_secret_access_key_enc)
     try:
         from litellm import acompletion
         from agent.base import build_model_kwargs
