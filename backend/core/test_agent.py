@@ -574,18 +574,45 @@ class TestCaseAgent:
             ref_lines = [
                 f"[Reference: a previous successful run took {len(self._reference_examples)} steps]"
             ]
-            for r in self._reference_examples[:8]:  # cap at 8 steps
-                thought = r.get("thought", "")
+            rendered_reference_steps = 0
+            for index, record in enumerate(self._reference_examples[:8]):  # cap at 8 steps
+                # Historical action records may have been saved by older
+                # versions with incomplete fields. A malformed reference must
+                # never prevent the current test from running.
+                if not isinstance(record, dict):
+                    continue
+                fn_name = str(
+                    record.get("fn_name")
+                    or record.get("function_name")
+                    or record.get("tool_name")
+                    or record.get("name")
+                    or ""
+                ).strip()
+                if not fn_name:
+                    logger.warning(
+                        "Skipping malformed reference action at index %d: missing fn_name",
+                        index,
+                    )
+                    continue
+                step_number = record.get("step", index + 1)
+                thought = record.get("thought", "")
                 thought_part = f' 💭 "{thought}"' if thought else ""
                 # Redact free-text content (e.g. a generated joke) so the agent
                 # reuses the STRUCTURE of the step, not the exact text — otherwise
                 # it copies last run's input verbatim every time.
-                safe_args = _redact_reference_args(r.get("fn_name", ""), r.get("args", {}))
-                ref_lines.append(
-                    f"  Step {r['step']}:{thought_part} → {r['fn_name']}({safe_args}) → {r['result']}"
+                safe_args = _redact_reference_args(
+                    fn_name,
+                    record.get("args") if isinstance(record.get("args"), dict) else {},
                 )
+                result = record.get("result", "")
+                ref_lines.append(
+                    f"  Step {step_number}:{thought_part} → {fn_name}({safe_args}) → {result}"
+                )
+                rendered_reference_steps += 1
             if len(self._reference_examples) > 8:
                 ref_lines.append(f"  … ({len(self._reference_examples) - 8} more steps omitted)")
+            if rendered_reference_steps == 0:
+                ref_lines.append("  No usable structured actions in this historical reference; ignore it.")
             ref_lines.append(
                 "Use this as a soft guide — look for similar elements by text/id, "
                 "but adapt to the actual current UI. Do NOT copy indices blindly."
