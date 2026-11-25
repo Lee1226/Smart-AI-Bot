@@ -662,6 +662,7 @@ export interface LLMModel {
   id: string; connection_id: string; model_name: string; description: string
   connection_name?: string; provider?: string
   capabilities: string[]; enabled: boolean; created_at: string | null
+  fallback_model_ids: string[]
 }
 export const fetchEnabledLLMModels = () =>
   api.get<LLMModel[]>('/settings/llm-models').then(r => r.data)
@@ -676,10 +677,10 @@ export const deleteLLMConnection = (id: string) => api.delete(`/settings/llm-con
 export const fetchLLMModels = (connectionId: string) =>
   api.get<LLMModel[]>(`/settings/llm-connections/${connectionId}/models`).then(r => r.data)
 export const createLLMModel = (connectionId: string, data: {
-  model_name: string; description?: string; capabilities?: string[]; enabled?: boolean
+  model_name: string; description?: string; capabilities?: string[]; enabled?: boolean; fallback_model_ids?: string[]
 }) => api.post<LLMModel>(`/settings/llm-connections/${connectionId}/models`, data).then(r => r.data)
 export const updateLLMModel = (id: string, data: {
-  model_name: string; description?: string; capabilities?: string[]; enabled?: boolean
+  model_name: string; description?: string; capabilities?: string[]; enabled?: boolean; fallback_model_ids?: string[]
 }) => api.put<LLMModel>(`/settings/llm-models/${id}`, data).then(r => r.data)
 export const deleteLLMModel = (id: string) => api.delete(`/settings/llm-models/${id}`)
 export const testLLMConnection = (id: string, modelId?: string) =>
