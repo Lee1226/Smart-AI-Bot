@@ -292,9 +292,22 @@ async def execute_execution_plan_run(
             "[plan:%s] verifier model resolved: %s/%s",
             run_id, v_provider, v_model,
         )
+        verifier_extra_kwargs = {}
+        if v_provider == provider and v_model == model:
+            verifier_extra_kwargs = api_extra_kwargs
+        elif (v_provider or "").lower() == "bedrock":
+            verifier_extra_kwargs = {"aws_region_name": settings.get("aws_region_name") or "us-east-1"}
+            aws_access = settings.get("aws_access_key_id") or ""
+            aws_secret = settings.get("aws_secret_access_key") or ""
+            if aws_access and aws_secret:
+                verifier_extra_kwargs.update({
+                    "aws_access_key_id": aws_access,
+                    "aws_secret_access_key": aws_secret,
+                })
         verifier = LLMVerifier(
             v_provider, v_model, v_key, v_base,
             fallbacks=verifier_fallbacks, language=language,
+            provider_kwargs=verifier_extra_kwargs,
         )
 
         async with AsyncSessionLocal() as db:
