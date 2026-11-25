@@ -559,7 +559,7 @@ async def execute_tree_run(run_id: str, state: "RunState", max_steps: int = 20,
         api_key, api_base = model_config["api_key"], model_config["api_base"]
         api_extra_kwargs = model_config.get("provider_kwargs", {})
         v_provider, v_model, v_key, v_base, v_extra_kwargs = await _resolve_verifier_model(account_id, settings)
-        fallbacks = build_fallback_chain(settings, provider, model)
+        fallbacks = []
         language = resolve_language(settings)
         if _missing_key(provider, api_key):
             await _mark_error(run_id, "当前执行模型未配置 API Key，请检查模型仓库中该模型所属连接的凭据")
@@ -878,7 +878,7 @@ async def execute_replay_run(
         api_key, api_base = model_config["api_key"], model_config["api_base"]
         api_extra_kwargs = model_config.get("provider_kwargs", {})
         v_provider, v_model, v_key, v_base, v_extra_kwargs = await _resolve_verifier_model(account_id, settings)
-        fallbacks = build_fallback_chain(settings, provider, model)
+        fallbacks = []
         language = resolve_language(settings)
         if _missing_key(provider, api_key):
             await _mark_error(run_id, "当前执行模型未配置 API Key，请检查模型仓库中该模型所属连接的凭据")
@@ -1066,7 +1066,7 @@ async def execute_run(
         api_key, api_base = model_config["api_key"], model_config["api_base"]
         api_extra_kwargs = model_config.get("provider_kwargs", {})
         v_provider, v_model, v_key, v_base, v_extra_kwargs = await _resolve_verifier_model(account_id, settings)
-        fallbacks = build_fallback_chain(settings, provider, model)
+        fallbacks = []
         language = resolve_language(settings)
         if _missing_key(provider, api_key):
             await _mark_error(run_id, "当前执行模型未配置 API Key，请检查模型仓库中该模型所属连接的凭据")
