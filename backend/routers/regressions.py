@@ -24,7 +24,8 @@ from core.test_runner import node_targets_for_suite, start_tree_run, cancel_run
 from db.database import AsyncSessionLocal
 from db.models import TestRun, TestResult, TestStepLog
 from db.regression_models import RegressionArtifact, RegressionPlan, RegressionTarget
-from routers.testruns import _default_provider_model, _run_out, _validate_project_target
+from routers.testruns import _run_out, _validate_project_target
+from core.model_resolver import validate_model_selection
 
 router = APIRouter(prefix='/api/regressions', tags=['regressions'])
 download_router = APIRouter()
@@ -52,8 +53,7 @@ class PlanIn(BaseModel):
     artifact_id: str = ''
     app_package: str = ''
     clear_data: bool = False
-    provider: str = ''
-    model: str = ''
+    model_id: str = Field(min_length=1, max_length=128)
     max_steps: int = Field(default=20, ge=1, le=100)
     commit_sha: str = Field(default='', max_length=120)
     build_url: str = Field(default='', max_length=1000)
@@ -166,10 +166,11 @@ async def create_plan(body: PlanIn, request: Request, db: AsyncSession = Depends
             if body.app_package.strip() and package and body.app_package.strip() != package:
                 raise HTTPException(422, '准备应用包名与套件被测应用不一致，请为被测应用选择对应套件')
         devices.append(device)
-    default_provider, default_model = await _default_provider_model(request.state.account_id)
+    selected_model, selected_connection = await validate_model_selection(db, request.state.account_id, body.model_id)
     config = body.model_dump()
-    config.update(name=body.name.strip(), provider=body.provider or default_provider,
-                  model=body.model or default_model, app_package=body.app_package.strip(),
+    config.update(name=body.name.strip(), model_id=selected_model.id,
+                  provider=selected_connection.provider, model=selected_model.model_name,
+                  app_package=body.app_package.strip(),
                   artifact_sha256=artifact.sha256 if artifact else '', artifact_filename=artifact.filename if artifact else '',
                   artifact_version_label=artifact.version_label if artifact else '',
                   download_base=str(request.base_url).rstrip('/'), suite_snapshot=versions, suite_apps=suite_apps)
@@ -179,7 +180,7 @@ async def create_plan(body: PlanIn, request: Request, db: AsyncSession = Depends
     for device in devices:
         for suite in suites:
             run = TestRun(account_id=request.state.account_id, suite_id=suite.id, device_id=device.id,
-                          status='pending', provider=config['provider'], model=config['model'])
+                          status='pending', provider=config['provider'], model=config['model'], model_id=config['model_id'])
             db.add(run); await db.flush()
             from core.test_accounts import select_run_account
             await select_run_account(db, run, body.test_accounts.get(f'{suite.id}:{device.id}', ''),
@@ -224,6 +225,8 @@ async def retry_failed(plan_id: str, request: Request, db: AsyncSession = Depend
         raise HTTPException(422, '没有失败目标')
     # Retry each failing cell exactly; avoid expanding the Cartesian product.
     config = current['config']
+    if not config.get('model_id'):
+        raise HTTPException(422, '该历史回归计划未保存模型仓库 ID，请重新创建计划并选择模型')
     new = RegressionPlan(account_id=request.state.account_id, name=plan.name + ' · 失败重跑', config_json=plan.config_json)
     db.add(new); await db.flush(); runs = []
     for row in failed:
@@ -240,7 +243,7 @@ async def retry_failed(plan_id: str, request: Request, db: AsyncSession = Depend
         if not targets:
             raise HTTPException(422, '原套件已无可运行步骤')
         run = TestRun(account_id=request.state.account_id, suite_id=old.suite_id, device_id=old.device_id,
-                      status='pending', provider=config['provider'], model=config['model'])
+                      status='pending', provider=config['provider'], model=config['model'], model_id=config['model_id'])
         db.add(run); await db.flush()
         from core.test_accounts import select_run_account
         selected_account = old.test_account_id or config.get('test_accounts', {}).get(f'{old.suite_id}:{old.device_id}', '')
