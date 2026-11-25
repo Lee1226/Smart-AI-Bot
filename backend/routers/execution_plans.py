@@ -25,8 +25,7 @@ async def get_db():
 
 class ExecutionPlanRunRequest(BaseModel):
     device_id: str
-    provider: str = ""
-    model: str = ""
+    model_id: str = Field(min_length=1, max_length=128)
     max_steps: int = 8
 
 
@@ -368,14 +367,14 @@ async def run_execution_plan(
     device = WebSocketDevice(body.device_id)
     if not device.is_connected():
         raise HTTPException(status_code=400, detail=f"Device {body.device_id} is not connected")
-    from core.settings_store import resolve_provider_model, load_settings
-    settings = await load_settings(account_id)
-    default_provider, default_model = resolve_provider_model(settings)
+    from core.model_resolver import validate_model_selection
+    selected_model, selected_connection = await validate_model_selection(db, account_id, body.model_id)
     run = TestRun(
         suite_id=plan.suite_id,
         device_id=body.device_id,
-        provider=body.provider or default_provider,
-        model=body.model or default_model,
+        provider=selected_connection.provider,
+        model=selected_model.model_name,
+        model_id=selected_model.id,
         status="pending",
         account_id=account_id,
     )
