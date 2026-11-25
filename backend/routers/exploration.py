@@ -20,6 +20,7 @@ from db.database import AsyncSessionLocal
 from db.exploration_models import ExploreKnowledge, ExploreSession, ExploreStep
 from core.exploration_timeline import build_scene_timeline
 from db.models import Device, TestSuite, TestCase, ExecutionPlan
+from core.model_resolver import validate_model_selection
 
 router = APIRouter(prefix="/api/exploration", tags=["exploration"])
 
@@ -41,6 +42,7 @@ def _session_out(row: ExploreSession):
         "id": row.id, "title": row.title, "goal": row.goal,
         "expected_result": row.expected_result, "device_id": row.device_id,
         "platform": row.platform, "app_package": row.app_package,
+        "model_id": row.model_id,
         "status": row.status, "max_steps": row.max_steps,
         "timeout_seconds": row.timeout_seconds, "summary": row.summary,
         "error_message": row.error_message,
@@ -86,6 +88,7 @@ class SessionCreate(BaseModel):
     goal: str = Field(min_length=1, max_length=10000)
     expected_result: str = ""
     device_id: str
+    model_id: str = Field(min_length=1, max_length=128)
     platform: str = "android"
     app_package: str = ""
     max_steps: int = Field(default=20, ge=1, le=100)
@@ -180,11 +183,13 @@ async def create_session(body: SessionCreate, request: Request, db: AsyncSession
     ))).scalar_one_or_none()
     if not device:
         raise HTTPException(status_code=404, detail="Device not found")
+    await validate_model_selection(db, account_id, body.model_id)
     row = ExploreSession(
         account_id=account_id, title=body.title.strip() or body.goal[:80],
         goal=body.goal.strip(), expected_result=body.expected_result,
         device_id=body.device_id, platform=body.platform,
-        app_package=body.app_package, max_steps=body.max_steps,
+        app_package=body.app_package, model_id=body.model_id,
+        max_steps=body.max_steps,
         timeout_seconds=body.timeout_seconds, status="draft",
     )
     db.add(row)
@@ -289,6 +294,8 @@ async def start_session(session_id: str, request: Request, db: AsyncSession = De
         raise HTTPException(status_code=409, detail="探索任务已经在运行")
     if row.status not in {"draft", "failed", "cancelled"}:
         raise HTTPException(status_code=409, detail=f"当前状态不能启动探索：{row.status}")
+    if not (row.model_id or "").strip():
+        raise HTTPException(status_code=422, detail="该探索会话未关联模型，请重新创建会话并从模型仓库选择模型")
     row.status = "queued"
     row.error_message = ""
     row.summary = "等待设备空闲"

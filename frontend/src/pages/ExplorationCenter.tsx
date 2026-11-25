@@ -17,7 +17,7 @@ type SceneTimeline = {
 }
 type ExploreSession = {
   id: string; title: string; goal: string; expected_result: string; device_id: string
-  platform: string; status: string; summary: string; error_message: string; created_at: string
+  model_id: string; platform: string; status: string; summary: string; error_message: string; created_at: string
   steps?: ExploreStep[]
 }
 type ExploreKnowledge = {
@@ -300,6 +300,7 @@ export default function ExplorationCenter() {
   const [goal, setGoal] = useState('')
   const [expected, setExpected] = useState('')
   const [deviceId, setDeviceId] = useState('')
+  const [modelId, setModelId] = useState('')
   const [platform, setPlatform] = useState('android')
   const [appPackage, setAppPackage] = useState('')
   const [maxSteps, setMaxSteps] = useState(20)
@@ -332,7 +333,8 @@ export default function ExplorationCenter() {
   const createSession = useMutation({
     mutationFn: async () => (await api.post<ExploreSession>('/exploration/sessions', {
       title: goal.trim().slice(0, 80), goal, expected_result: expected, device_id: deviceId,
-      platform, app_package: appPackage, max_steps: maxSteps, timeout_seconds: timeoutSeconds,
+      model_id: modelId, platform, app_package: appPackage,
+      max_steps: maxSteps, timeout_seconds: timeoutSeconds,
     })).data,
     onSuccess: async row => {
       try {
@@ -406,13 +408,14 @@ export default function ExplorationCenter() {
             <div><label className="mb-1.5 block text-sm font-medium">探索设备 <span className="text-red-500">*</span></label><select value={deviceId} onChange={e => { setDeviceId(e.target.value); const d = onlineDevices.find((x: Device) => x.id === e.target.value); if (d?.platform) setPlatform(d.platform) }} className="w-full rounded-lg border border-hairline bg-white px-3 py-2.5 text-sm"><option value="">选择已连接设备</option>{onlineDevices.map((d: Device) => <option key={d.id} value={d.id}>{d.name} · {d.platform || d.connection_type}</option>)}</select><p className="mt-1 text-[11px] text-ink-faint">{selectedDevice ? `已选择：${selectedDevice.name}` : '仅显示当前账号下在线设备'}</p></div>
             <div><label className="mb-1.5 block text-sm font-medium">目标平台</label><select value={platform} onChange={e => setPlatform(e.target.value)} className="w-full rounded-lg border border-hairline bg-white px-3 py-2.5 text-sm"><option value="android">Android</option><option value="harmony">HarmonyOS</option><option value="ios">iOS</option></select></div>
           </div>
+          <div className="rounded-lg border border-hairline p-3"><ExecutionModelSelect value={modelId} onChange={setModelId} /></div>
           <div><label className="mb-1.5 block text-sm font-medium">目标应用包名（可选）</label><input value={appPackage} onChange={e => setAppPackage(e.target.value)} placeholder="com.example.app" className="w-full rounded-lg border border-hairline px-3 py-2.5 text-sm" /></div>
           <div className="grid gap-3 md:grid-cols-2">
             <div><label className="mb-1.5 block text-sm font-medium">最大探索步骤</label><input type="number" min={1} max={100} value={maxSteps} onChange={e => setMaxSteps(Math.max(1, Math.min(100, Number(e.target.value) || 1)))} className="w-full rounded-lg border border-hairline px-3 py-2.5 text-sm" /></div>
             <div><label className="mb-1.5 block text-sm font-medium">超时时间（秒）</label><input type="number" min={10} max={3600} value={timeoutSeconds} onChange={e => setTimeoutSeconds(Math.max(10, Math.min(3600, Number(e.target.value) || 10)))} className="w-full rounded-lg border border-hairline px-3 py-2.5 text-sm" /></div>
           </div>
           {createSession.isError && <div className="rounded-lg bg-red-50 p-3 text-xs text-red-700">{String((createSession.error as Error)?.message || createSession.error)}</div>}
-          <div className="flex justify-end gap-2 border-t border-hairline pt-4"><Link to="/exploration" className="rounded-lg border border-hairline px-4 py-2 text-sm">取消</Link><button disabled={!goal.trim() || !deviceId || createSession.isPending} onClick={() => createSession.mutate()} className="rounded-lg bg-primary px-5 py-2 text-sm font-medium text-white disabled:opacity-50">{createSession.isPending ? '保存中…' : '创建探索会话'}</button></div>
+          <div className="flex justify-end gap-2 border-t border-hairline pt-4"><Link to="/exploration" className="rounded-lg border border-hairline px-4 py-2 text-sm">取消</Link><button disabled={!goal.trim() || !deviceId || !modelId || createSession.isPending} onClick={() => createSession.mutate()} className="rounded-lg bg-primary px-5 py-2 text-sm font-medium text-white disabled:opacity-50">{createSession.isPending ? '保存中…' : '创建探索会话'}</button></div>
         </section>
         <aside className="space-y-3">
           <div className="rounded-xl border border-hairline bg-white p-4"><h3 className="text-sm font-semibold">探索流程</h3><ol className="mt-3 space-y-3 text-xs text-ink-mute"><li>01 · 观察设备页面与 UI 层级</li><li>02 · AI 规划并执行下一步操作</li><li>03 · 记录操作前后状态与证据</li><li>04 · 识别可复用的弹窗和异常处理经验</li><li>05 · 生成计划并进行确定性回放验证</li></ol></div>

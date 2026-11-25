@@ -27,6 +27,7 @@ class ExploreSession(Base):
     device_id: Mapped[str] = mapped_column(String, index=True)
     platform: Mapped[str] = mapped_column(String, default="android")
     app_package: Mapped[str] = mapped_column(String, default="")
+    model_id: Mapped[str] = mapped_column(String, default="")
     status: Mapped[str] = mapped_column(String, default="draft")
     max_steps: Mapped[int] = mapped_column(Integer, default=20)
     timeout_seconds: Mapped[int] = mapped_column(Integer, default=300)

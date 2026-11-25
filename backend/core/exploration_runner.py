@@ -15,10 +15,7 @@ from sqlalchemy import select
 
 from agent.ws_device import WebSocketDevice
 from core.device_scheduler import device_ownership
-from core.settings_store import (
-    apply_aws_env, build_fallback_chain, load_settings, resolve_api_base,
-    resolve_api_key, resolve_language, resolve_provider_model, resolve_verifier,
-)
+from core.settings_store import load_settings, resolve_language
 from core.test_agent import TestCaseAgent
 from core.test_parser import TestCaseData
 from db.database import AsyncSessionLocal
@@ -218,7 +215,8 @@ async def run_exploration(session_id: str, account_id: str) -> None:
             config = {
                 "device_id": row.device_id, "platform": row.platform, "goal": row.goal,
                 "expected_result": row.expected_result, "app_package": row.app_package,
-                "max_steps": row.max_steps, "timeout_seconds": row.timeout_seconds,
+                "model_id": row.model_id, "max_steps": row.max_steps,
+                "timeout_seconds": row.timeout_seconds,
             }
         async with device_ownership(config["device_id"], f"explore:{session_id}"):
             acquired = True
@@ -228,13 +226,30 @@ async def run_exploration(session_id: str, account_id: str) -> None:
             await _set_session(session_id, status="running", started_at=datetime.utcnow(),
                                error_message="", summary="已获得设备独占权，开始 AI 探索")
             settings = await load_settings(account_id)
-            apply_aws_env(settings)
-            provider, model = resolve_provider_model(settings)
-            api_key, api_base = resolve_api_key(settings, provider), resolve_api_base(settings, provider)
-            if not api_key and provider.lower() != "ollama":
-                raise RuntimeError(f"当前账号未配置 {provider} API Key")
-            verifier = resolve_verifier(settings)
-            fallbacks = build_fallback_chain(settings, provider, model)
+            from core.model_resolver import resolve_model_config
+            async with AsyncSessionLocal() as model_db:
+                model_config = await resolve_model_config(model_db, account_id, config["model_id"])
+                verifier_model_id = (settings.get("verifier_model_id") or "").strip()
+                verifier_config = (
+                    await resolve_model_config(model_db, account_id, verifier_model_id)
+                    if verifier_model_id else None
+                )
+            provider, model = model_config["provider"], model_config["model"]
+            api_key, api_base = model_config["api_key"], model_config["api_base"]
+            api_extra_kwargs = model_config.get("provider_kwargs", {})
+            if not api_key and provider.lower() not in {"ollama", "bedrock"}:
+                raise RuntimeError(f"模型仓库中所选连接未配置 {provider} API Key")
+            if verifier_config:
+                verifier = (
+                    verifier_config["provider"], verifier_config["model"],
+                    verifier_config["api_key"], verifier_config["api_base"],
+                )
+                verifier_extra_kwargs = verifier_config.get("provider_kwargs", {})
+                if not verifier[2] and verifier[0].lower() not in {"ollama", "bedrock"}:
+                    raise RuntimeError("Verifier 模型对应的连接未配置 API Key")
+            else:
+                verifier = ("", "", "", "")
+                verifier_extra_kwargs = {}
 
             async def emit(message: str) -> None:
                 logger.info("[exploration:%s] %s", session_id, message)
@@ -463,7 +478,8 @@ async def run_exploration(session_id: str, account_id: str) -> None:
                 api_base=api_base, max_steps=config["max_steps"], step_delay=0.8,
                 log_callback=emit, verifier_provider=verifier[0],
                 verifier_model=verifier[1], verifier_api_key=verifier[2],
-                verifier_api_base=verifier[3], fallbacks=fallbacks,
+                verifier_api_base=verifier[3], api_extra_kwargs=api_extra_kwargs,
+                verifier_extra_kwargs=verifier_extra_kwargs, fallbacks=[],
                 allow_subagents=False, language=resolve_language(settings),
                 target_package=config["app_package"],
                 action_observer=observe_action,
