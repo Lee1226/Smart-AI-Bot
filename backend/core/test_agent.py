@@ -310,7 +310,8 @@ class TestCaseAgent:
         verifier_api_base: str = "",
         reference_examples: Optional[list] = None,  # starred action records from past runs
         lessons_learned: Optional[list] = None,  # negative experiences from past runs
-        fallbacks: Optional[list] = None,  # list[ModelTarget] for resilient_completion
+        fallbacks: Optional[list] = None,  # Agent model fallback targets
+        verifier_fallbacks: Optional[list] = None,  # Dedicated verifier fallback targets
         allow_subagents: bool = True,  # decompose complex tasks into sub-agents
         loop_task: bool = False,  # inherently repetitive task (quiz/bulk) — skip L4 backstop
         project_kb_roots: Optional[list] = None,  # extra KB dirs from a Project Profile
@@ -362,6 +363,7 @@ class TestCaseAgent:
         self.allow_subagents = allow_subagents and not login_context
         self.loop_task = loop_task
         self.fallbacks: list = fallbacks or []
+        self.verifier_fallbacks: list = verifier_fallbacks if verifier_fallbacks is not None else self.fallbacks
         self._primary = ModelTarget(provider, model, api_key, api_base, api_extra_kwargs or {})
         # A configured verifier provider means its credentials are authoritative,
         # including intentionally empty API keys/base URLs (e.g. Ollama).
@@ -376,7 +378,7 @@ class TestCaseAgent:
             v_key = verifier_api_key or api_key
             v_base = verifier_api_base or api_base
         verifier_kwargs = verifier_extra_kwargs if verifier_provider else (api_extra_kwargs or {})
-        self._verifier = LLMVerifier(v_provider, v_model, v_key, v_base, fallbacks=self.fallbacks, language=self.language, provider_kwargs=verifier_kwargs or {})
+        self._verifier = LLMVerifier(v_provider, v_model, v_key, v_base, fallbacks=self.verifier_fallbacks, language=self.language, provider_kwargs=verifier_kwargs or {})
         self._reference_examples: list = reference_examples or []
         self._lessons_learned: list = lessons_learned or []
 
