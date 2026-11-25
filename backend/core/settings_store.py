@@ -136,6 +136,10 @@ def resolve_language(settings: dict) -> str:
     return "en" if lang == "en" else "zh"
 
 
+def resolve_webhook(settings: dict) -> tuple[str, str]:
+    return settings.get("webhook_url", "") or "", settings.get("webhook_type", "") or ""
+
+
 def build_fallback_chain(settings: dict, primary_provider: str, primary_model: str) -> list:
     """Automatic provider switching is disabled.
 
