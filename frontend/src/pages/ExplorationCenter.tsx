@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from 'react'
 import { Link, useLocation, useNavigate, useSearchParams } from 'react-router-dom'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { api, fetchDevices, fetchSuites, fetchSuiteCases, fetchExecutionPlans, runExecutionPlan, fetchRun, fetchResults, type Device } from '../lib/api'
+import { ExecutionModelSelect, useExecutionModels } from '../components/ExecutionModelSelect'
 import { useT } from '../lib/i18n'
 
 type ExploreStep = { id: string; sequence: number; event_type: string; title: string; detail: string; action: string; status: string; duration_ms: number; evidence: Record<string, string>; page_before: { ui_text?: string; elements?: unknown[] }; page_after: { ui_text?: string; elements?: unknown[]; change_summary?: { label?: string; has_changes?: boolean; added_count?: number; removed_count?: number; changed_count?: number; added?: unknown[]; removed?: unknown[]; changed?: unknown[]; added_ui_lines?: string[]; removed_ui_lines?: string[] } }; action_args: Record<string, unknown> }
@@ -116,7 +117,10 @@ function PlanReviewWorkspace() {
   const qc = useQueryClient()
   const [searchParams, setSearchParams] = useSearchParams()
   const [deviceId, setDeviceId] = useState('')
+  const [modelId, setModelId] = useState('')
   const [activeRunId, setActiveRunId] = useState('')
+  const { models } = useExecutionModels()
+  const selectedModel = models.find(item => item.id === modelId)
   const requestedSuiteId = searchParams.get('suite') || ''
   const { data: suitesPage, isLoading: suitesLoading } = useQuery({
     queryKey: ['exploration-plan-suites'],
@@ -158,7 +162,8 @@ function PlanReviewWorkspace() {
   const runMut = useMutation({
     mutationFn: async () => {
       if (!selectedPlan || !selectedDevice) throw new Error('请先选择在线测试设备')
-      return runExecutionPlan(selectedPlan.id, { device_id: selectedDevice.id, max_steps: 8 })
+      if (!selectedModel) throw new Error('请先从模型仓库选择一个可用模型')
+      return runExecutionPlan(selectedPlan.id, { device_id: selectedDevice.id, model_id: modelId, max_steps: 8 })
     },
     onSuccess: result => {
       setActiveRunId(result.id)
@@ -263,7 +268,10 @@ function PlanReviewWorkspace() {
               <option value="">选择在线设备</option>{onlineDevices.map(device => <option key={device.id} value={device.id}>{device.name} · {device.platform} · {device.connection_type}</option>)}
             </select>
           </label>
-          <button disabled={!selectedDevice || !selectedPlan || blockers.length > 0 || runMut.isPending || runPending} onClick={() => runMut.mutate()} className="rounded-lg bg-primary px-4 py-2.5 text-sm font-medium text-white disabled:cursor-not-allowed disabled:opacity-40">{runMut.isPending ? '正在启动…' : runPending ? '回放运行中…' : '开始真机回放验证'}</button>
+          <div className="min-w-[240px] flex-1">
+            <ExecutionModelSelect value={modelId} onChange={setModelId} disabled={runMut.isPending || runPending} />
+          </div>
+          <button disabled={!selectedDevice || !selectedModel || !selectedPlan || blockers.length > 0 || runMut.isPending || runPending} onClick={() => runMut.mutate()} className="rounded-lg bg-primary px-4 py-2.5 text-sm font-medium text-white disabled:cursor-not-allowed disabled:opacity-40">{runMut.isPending ? '正在启动…' : runPending ? '回放运行中…' : '开始真机回放验证'}</button>
         </div>
         {blockers.length > 0 && <p className="mt-2 text-xs text-amber-700">请先补齐上述必需项；当前计划不能启动验证。</p>}
         {runMut.isError && <p className="mt-2 text-xs text-red-600">{String((runMut.error as Error)?.message || runMut.error)}</p>}
