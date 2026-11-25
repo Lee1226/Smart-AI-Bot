@@ -52,3 +52,55 @@ async def resolve_model_config(db, account_id: str, model_id: str) -> dict:
             else {}
         ),
     }
+
+
+async def resolve_model_fallbacks(db, account_id: str, model_id: str):
+    """Resolve only the selected model's direct fallback list (never recursively)."""
+    import json
+    import logging
+
+    from agent.llm import ModelTarget
+
+    logger = logging.getLogger(__name__)
+    model, _ = await validate_model_selection(db, account_id, model_id)
+    try:
+        fallback_ids = json.loads(model.fallback_model_ids_json or "[]")
+    except (TypeError, ValueError):
+        logger.warning("Ignoring malformed fallback model list for model %s", model_id)
+        return []
+    if not isinstance(fallback_ids, list):
+        logger.warning("Ignoring non-list fallback model config for model %s", model_id)
+        return []
+
+    targets = []
+    seen = {model_id}
+    for fallback_id in fallback_ids:
+        if not isinstance(fallback_id, str) or not fallback_id or fallback_id in seen:
+            continue
+        seen.add(fallback_id)
+        try:
+            fallback_model, connection = await validate_model_selection(
+                db, account_id, fallback_id
+            )
+        except HTTPException:
+            logger.warning(
+                "Skipping unavailable fallback model %s configured by %s",
+                fallback_id, model_id,
+            )
+            continue
+        provider_kwargs = {}
+        if (connection.provider or "").lower() == "bedrock":
+            if connection.aws_access_key_id_enc and connection.aws_secret_access_key_enc:
+                provider_kwargs.update({
+                    "aws_access_key_id": decrypt_secret(connection.aws_access_key_id_enc),
+                    "aws_secret_access_key": decrypt_secret(connection.aws_secret_access_key_enc),
+                })
+            provider_kwargs["aws_region_name"] = connection.aws_region_name or "us-east-1"
+        targets.append(ModelTarget(
+            provider=connection.provider,
+            model=fallback_model.model_name,
+            api_key=decrypt_secret(connection.api_key_enc),
+            api_base=connection.base_url or "",
+            provider_kwargs=provider_kwargs,
+        ))
+    return targets
