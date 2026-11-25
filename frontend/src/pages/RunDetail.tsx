@@ -99,6 +99,9 @@ export default function RunDetail() {
       device_id: run!.device_id,
       provider: run!.provider,
       model: run!.model,
+      // Preserve the exact repository model/connection when rerunning.
+      // Empty IDs are retained only for historical runs created before model_id existed.
+      model_id: run!.model_id || '',
       max_steps: 20,
       test_account_id: run!.test_account_id || undefined,
     }),
