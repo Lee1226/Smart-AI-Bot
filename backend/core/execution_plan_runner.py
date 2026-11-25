@@ -159,6 +159,12 @@ async def _execute_ai(
     target_package: str = "",
     exploration_knowledge: Optional[list] = None,
     api_extra_kwargs: Optional[dict] = None,
+    verifier_provider: str = "",
+    verifier_model: str = "",
+    verifier_api_key: str = "",
+    verifier_api_base: str = "",
+    verifier_fallbacks: Optional[list] = None,
+    verifier_extra_kwargs: Optional[dict] = None,
 ):
     intent = step.get("intent") if isinstance(step.get("intent"), dict) else {}
     description = str(intent.get("description") or "").strip()
@@ -188,6 +194,11 @@ async def _execute_ai(
         max_steps=max(1, min(int(max_steps), 20)),
         step_delay=0.4,
         log_callback=emit,
+        verifier_provider=verifier_provider,
+        verifier_model=verifier_model,
+        verifier_api_key=verifier_api_key,
+        verifier_api_base=verifier_api_base,
+        verifier_extra_kwargs=verifier_extra_kwargs or {},
         fallbacks=fallbacks,
         verifier_fallbacks=verifier_fallbacks,
         allow_subagents=False,
@@ -419,6 +430,7 @@ async def execute_execution_plan_run(
                         device, step, provider, model, api_key, api_base,
                         fallbacks, language, max_steps, emit, login_context, target_package,
                         confirmed_knowledge, api_extra_kwargs,
+                        v_provider, v_model, v_key, v_base, verifier_fallbacks, verifier_extra_kwargs,
                     )
                     step_tokens = ai_result.total_tokens
                     step_result = ai_result.reason
@@ -442,6 +454,7 @@ async def execute_execution_plan_run(
                             device, step, provider, model, api_key, api_base,
                             fallbacks, language, max_steps, emit, login_context, target_package,
                         confirmed_knowledge, api_extra_kwargs,
+                            v_provider, v_model, v_key, v_base, verifier_fallbacks, verifier_extra_kwargs,
                         )
                         step_tokens = ai_result.total_tokens
                         step_result = f"AI 恢复：{ai_result.reason}"
