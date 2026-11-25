@@ -244,6 +244,7 @@ export default function SuiteDetail() {
   })
   const onRunNode = (nodeId: string) => {
     if (!deviceId) { alert(t('请先在右侧选择设备', 'Please select a device on the right first')); return }
+    if (!selectedModel) { alert(t('请先选择模型仓库中的执行模型', 'Please select an execution model first')); return }
     nodeRunMut.mutate(nodeId)
   }
 
@@ -324,7 +325,7 @@ export default function SuiteDetail() {
 
             <div className="mb-3"><TestAccountSelect projectId={suite?.project_id} value={testAccountId} onChange={setTestAccountId} platform={devices.find(d => d.id === deviceId)?.platform} /></div>
             <div className="mb-3">
-              <ExecutionModelSelect value={modelId} onChange={setModelId} disabled={treeRunMut.isPending || replayRunMut.isPending} />
+              <ExecutionModelSelect value={modelId} onChange={setModelId} disabled={treeRunMut.isPending || replayRunMut.isPending || nodeRunMut.isPending} />
             </div>
 
             <label className="block text-sm font-medium mb-1">{t('每条用例最大步数', 'Max steps per case')}</label>
