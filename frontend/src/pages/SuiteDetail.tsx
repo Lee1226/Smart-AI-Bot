@@ -1,8 +1,8 @@
-import { useState, useEffect, useRef } from 'react'
+import { useState, useEffect } from 'react'
 import { useParams, useNavigate, Link } from 'react-router-dom'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import {
-  fetchSuite, fetchDevices, fetchSettings, fetchTrends, runTree, runNode, startRun,
+  fetchSuite, fetchDevices, fetchTrends, runTree, runNode, startRun,
   TrendPoint, fetchRuns, deleteRun, Run, setSuiteAppPackage, fetchProjects, setSuiteProject,
 } from '../lib/api'
 import TestAccountSelect from '../components/TestAccountSelect'
@@ -10,7 +10,7 @@ import StepTreeEditor from '../components/StepTreeEditor'
 import ExecutionPlanManager from '../components/ExecutionPlanManager'
 import AISuiteImport, { SuiteOrganizationInfo } from '../components/AISuiteImport'
 import { useT } from '../lib/i18n'
-import { PROVIDERS, DEFAULT_MODEL } from '../lib/providerConfig'
+import { ExecutionModelSelect, useExecutionModels } from '../components/ExecutionModelSelect'
 
 function SuiteProject({ suiteId, value, legacyPackage }: { suiteId: string; value: string; legacyPackage: string }) {
   const t = useT()
@@ -209,24 +209,17 @@ export default function SuiteDetail() {
 
   const [deviceId, setDeviceId] = useState('')
   const [testAccountId, setTestAccountId] = useState('')
-  const [provider, setProvider] = useState('openai')
-  const [model, setModel] = useState('gpt-4o')
+  const [modelId, setModelId] = useState('')
   const [maxSteps, setMaxSteps] = useState(20)
   const [mode, setMode] = useState<'ai' | 'replay'>('ai')
-  const settingsInitialized = useRef(false)
-
   const { data: suite } = useQuery({ queryKey: ['suite', suiteId], queryFn: () => fetchSuite(suiteId!) })
   const { data: devices = [] } = useQuery({ queryKey: ['devices'], queryFn: fetchDevices, refetchInterval: 5000 })
-  const { data: settings } = useQuery({ queryKey: ['settings'], queryFn: fetchSettings })
+  const { models } = useExecutionModels()
+  const selectedModel = models.find(item => item.id === modelId)
 
-  // Only apply saved defaults once on first load; don't overwrite user's manual changes
   useEffect(() => {
-    if (settings && !settingsInitialized.current) {
-      settingsInitialized.current = true
-      if (settings.default_provider) setProvider(settings.default_provider)
-      if (settings.default_model) setModel(settings.default_model)
-    }
-  }, [settings])
+    if (!modelId && models.length > 0) setModelId(models[0].id)
+  }, [models, modelId])
 
   const { data: trends = [] } = useQuery({
     queryKey: ['trends', suiteId],
@@ -236,17 +229,8 @@ export default function SuiteDetail() {
 
   const onlineDevices = devices.filter(d => d.status === 'online')
 
-  function handleProviderChange(p: string) {
-    setProvider(p)
-    if (settings && p === settings.default_provider && settings.default_model) {
-      setModel(settings.default_model)
-    } else {
-      setModel(DEFAULT_MODEL[p] || '')
-    }
-  }
-
-  const treeRunMut = useMutation({
-    mutationFn: () => runTree({ suite_id: suiteId!, device_id: deviceId, provider, model, max_steps: maxSteps, test_account_id: testAccountId }),
+   const treeRunMut = useMutation({
+    mutationFn: () => runTree({ suite_id: suiteId!, device_id: deviceId, provider: selectedModel?.provider || '', model: selectedModel?.model_name || '', model_id: modelId, max_steps: maxSteps, test_account_id: testAccountId }),
     onSuccess: run => navigate(`/runs/${run.id}`),
     onError: (e: unknown) => {
       const msg = (e as { response?: { data?: { detail?: string } } })?.response?.data?.detail || String(e)
@@ -255,7 +239,7 @@ export default function SuiteDetail() {
   })
 
   const nodeRunMut = useMutation({
-    mutationFn: (nodeId: string) => runNode({ suite_id: suiteId!, device_id: deviceId, node_id: nodeId, provider, model, max_steps: maxSteps, test_account_id: testAccountId }),
+    mutationFn: (nodeId: string) => runNode({ suite_id: suiteId!, device_id: deviceId, node_id: nodeId, provider: selectedModel?.provider || '', model: selectedModel?.model_name || '', model_id: modelId, max_steps: maxSteps, test_account_id: testAccountId }),
     onSuccess: run => navigate(`/runs/${run.id}`),
     onError: (e: unknown) => {
       const msg = (e as { response?: { data?: { detail?: string } } })?.response?.data?.detail || String(e)
@@ -269,7 +253,7 @@ export default function SuiteDetail() {
 
   // Deterministic replay run — executes recorded actions verbatim (no per-step AI).
   const replayRunMut = useMutation({
-    mutationFn: () => startRun({ suite_id: suiteId!, device_id: deviceId, provider, model, max_steps: maxSteps, mode: 'replay' }),
+    mutationFn: () => startRun({ suite_id: suiteId!, device_id: deviceId, provider: selectedModel?.provider || '', model: selectedModel?.model_name || '', model_id: modelId, max_steps: maxSteps, mode: 'replay' }),
     onSuccess: run => navigate(`/runs/${run.id}`),
     onError: (e: unknown) => {
       const msg = (e as { response?: { data?: { detail?: string } } })?.response?.data?.detail || String(e)
@@ -343,21 +327,9 @@ export default function SuiteDetail() {
             )}
 
             <div className="mb-3"><TestAccountSelect projectId={suite?.project_id} value={testAccountId} onChange={setTestAccountId} platform={devices.find(d => d.id === deviceId)?.platform} /></div>
-            <label className="block text-sm font-medium mb-1">Provider</label>
-            <select
-              className="mb-3 w-full rounded-xl border border-slate-200 bg-slate-50/60 px-3 py-2.5 text-sm text-slate-700 outline-none transition focus:border-blue-400 focus:bg-white focus:ring-4 focus:ring-blue-500/10"
-              value={provider}
-              onChange={e => handleProviderChange(e.target.value)}
-            >
-              {PROVIDERS.map(p => <option key={p}>{p}</option>)}
-            </select>
-
-            <label className="block text-sm font-medium mb-1">Model</label>
-            <input
-              className="mb-3 w-full rounded-xl border border-slate-200 bg-slate-50/60 px-3 py-2.5 font-mono text-sm text-slate-700 outline-none transition focus:border-blue-400 focus:bg-white focus:ring-4 focus:ring-blue-500/10"
-              value={model}
-              onChange={e => setModel(e.target.value)}
-            />
+            <div className="mb-3">
+              <ExecutionModelSelect value={modelId} onChange={setModelId} disabled={treeRunMut.isPending || replayRunMut.isPending} />
+            </div>
 
             <label className="block text-sm font-medium mb-1">{t('每条用例最大步数', 'Max steps per case')}</label>
             <input
@@ -400,7 +372,7 @@ export default function SuiteDetail() {
             {suite?.source_format === 'recorded' && mode === 'replay' ? (
               <button
                 className="w-full rounded-xl bg-gradient-to-r from-blue-600 to-blue-500 py-3 text-sm font-semibold text-white shadow-lg shadow-blue-500/20 transition hover:-translate-y-0.5 disabled:cursor-not-allowed disabled:opacity-50"
-                disabled={!deviceId || replayRunMut.isPending}
+                disabled={!deviceId || !selectedModel || replayRunMut.isPending}
                 onClick={() => replayRunMut.mutate()}
               >
                 {replayRunMut.isPending ? t('启动中…', 'Starting…') : t('▶ 回放', '▶ Replay')}
@@ -408,7 +380,7 @@ export default function SuiteDetail() {
             ) : (
               <button
                 className="w-full rounded-xl bg-gradient-to-r from-blue-600 to-blue-500 py-3 text-sm font-semibold text-white shadow-lg shadow-blue-500/20 transition hover:-translate-y-0.5 disabled:cursor-not-allowed disabled:opacity-50"
-                disabled={!deviceId || treeRunMut.isPending}
+                disabled={!deviceId || !selectedModel || treeRunMut.isPending}
                 onClick={() => treeRunMut.mutate()}
                 title={t('按步骤树做一次深度优先遍历，逐个叶子用例运行；共享前缀只导航一次', 'Run a depth-first traversal of the step tree, running each leaf case one by one; shared prefixes are navigated only once')}
               >
