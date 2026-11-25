@@ -48,19 +48,14 @@ async def backfill_legacy_run_model_ids(session) -> int:
         if not account_id:
             continue
 
-        # If the historical value is a shared adapter ID (for example,
-        # openai-compatible), do not use it as a provider fallback.
-        shared_adapter = await session.scalar(
-            select(LLMProvider.id).where(
-                LLMProvider.account_id == account_id,
-                LLMProvider.adapter_id == provider,
-                LLMProvider.provider_id != provider,
-            ).limit(1)
+        # A stored provider may be either a catalog provider ID or a
+        # shared runtime adapter ID. In the latter case, model-name matching
+        # can still identify a model when exactly one account-owned candidate
+        # exists across all connections using that adapter.
+        provider_match = (
+            (LLMProvider.provider_id == provider)
+            | (LLMConnection.provider == provider)
         )
-
-        provider_match = [LLMProvider.provider_id == provider]
-        if not shared_adapter:
-            provider_match.append(LLMConnection.provider == provider)
 
         candidates = (await session.execute(
             select(LLMModel.id)
@@ -70,7 +65,7 @@ async def backfill_legacy_run_model_ids(session) -> int:
                 LLMModel.account_id == account_id,
                 LLMConnection.account_id == account_id,
                 LLMModel.model_name == model_name,
-                or_(*provider_match),
+                provider_match,
             )
             .distinct()
         )).scalars().all()
