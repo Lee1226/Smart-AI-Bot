@@ -163,6 +163,7 @@ async def _execute_ai(
     login_context=None,
     target_package: str = "",
     exploration_knowledge: Optional[list] = None,
+    api_extra_kwargs: Optional[dict] = None,
 ):
     intent = step.get("intent") if isinstance(step.get("intent"), dict) else {}
     description = str(intent.get("description") or "").strip()
@@ -188,6 +189,7 @@ async def _execute_ai(
         model=model,
         api_key=api_key,
         api_base=api_base,
+        api_extra_kwargs=api_extra_kwargs or {},
         max_steps=max(1, min(int(max_steps), 20)),
         step_delay=0.4,
         log_callback=emit,
@@ -235,7 +237,7 @@ async def execute_execution_plan_run(
             plan_metadata = json.loads(plan.metadata_json or "{}")
             lifecycle_post_actions = plan_metadata.get("post_actions", []) if isinstance(plan_metadata, dict) else []
             lifecycle_pre_actions = plan_metadata.get("pre_actions", []) if isinstance(plan_metadata, dict) else []
-            device_id, provider, model, account_id = run.device_id, run.provider, run.model, run.account_id
+            device_id, provider, model, model_id, account_id = run.device_id, run.provider, run.model, run.model_id, run.account_id
 
         if not steps:
             raise RuntimeError("执行计划没有步骤")
@@ -245,9 +247,14 @@ async def execute_execution_plan_run(
             raise RuntimeError(f"设备 {device_id} 未连接")
 
         settings = await load_settings(account_id)
-        apply_aws_env(settings)
-        api_key = resolve_api_key(settings, provider)
-        api_base = resolve_api_base(settings, provider)
+        from core.model_resolver import resolve_model_config
+        async with AsyncSessionLocal() as model_db:
+            model_config = await resolve_model_config(model_db, account_id, model_id)
+        provider = model_config["provider"]
+        model = model_config["model"]
+        api_key = model_config["api_key"]
+        api_base = model_config["api_base"]
+        api_extra_kwargs = model_config.get("provider_kwargs", {})
         v_provider, v_model, v_key, v_base = resolve_verifier(settings)
         # Match TestCaseAgent: an unset verifier inherits the run's primary model.
         # Resolve fallbacks against the verifier target, not the execution target.
@@ -259,7 +266,7 @@ async def execute_execution_plan_run(
         verifier_fallbacks = build_fallback_chain(settings, v_provider, v_model)
         fallbacks = build_fallback_chain(settings, provider, model)
         language = resolve_language(settings)
-        if not api_key and (provider or "").lower() != "ollama":
+        if not api_key and (provider or "").lower() not in {"ollama", "bedrock"}:
             raise RuntimeError("当前账号未配置模型 API Key")
         from core.test_accounts import context_for_run
         login_context = await context_for_run(run_id)
@@ -408,7 +415,7 @@ async def execute_execution_plan_run(
                     ai_result = await _execute_ai(
                         device, step, provider, model, api_key, api_base,
                         fallbacks, language, max_steps, emit, login_context, target_package,
-                        confirmed_knowledge,
+                        confirmed_knowledge, api_extra_kwargs,
                     )
                     step_tokens = ai_result.total_tokens
                     step_result = ai_result.reason
@@ -431,7 +438,7 @@ async def execute_execution_plan_run(
                         ai_result = await _execute_ai(
                             device, step, provider, model, api_key, api_base,
                             fallbacks, language, max_steps, emit, login_context, target_package,
-                        confirmed_knowledge,
+                        confirmed_knowledge, api_extra_kwargs,
                         )
                         step_tokens = ai_result.total_tokens
                         step_result = f"AI 恢复：{ai_result.reason}"
