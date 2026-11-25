@@ -128,6 +128,7 @@ export interface Settings {
   default_model: string
   verifier_provider: string
   verifier_model: string
+  verifier_model_id: string
   webhook_url: string
   webhook_type: string
   language: string
