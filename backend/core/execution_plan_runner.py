@@ -189,6 +189,7 @@ async def _execute_ai(
         step_delay=0.4,
         log_callback=emit,
         fallbacks=fallbacks,
+        verifier_fallbacks=verifier_fallbacks,
         allow_subagents=False,
         language=language,
         login_context=login_context,
@@ -262,8 +263,8 @@ async def execute_execution_plan_run(
             v_base = api_base
         if not verifier_extra_kwargs and v_provider == provider and v_model == model:
             verifier_extra_kwargs = api_extra_kwargs
-        verifier_fallbacks = []
-        fallbacks = []
+        from core.test_runner import _resolve_run_fallbacks
+        fallbacks, verifier_fallbacks = await _resolve_run_fallbacks(account_id, model_config, settings)
         language = resolve_language(settings)
         if not api_key and (provider or "").lower() not in {"ollama", "bedrock"}:
             raise RuntimeError("当前执行模型未配置 API Key，请检查模型仓库中的连接凭据")
