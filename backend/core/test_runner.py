@@ -60,8 +60,9 @@ def _missing_key(provider: str, api_key: str) -> bool:
 async def _resolve_run_model(run_id: str, account_id: str) -> dict:
     """Resolve every run exclusively through its model-repository model_id.
 
-    Historical runs without model_id remain readable, but cannot be executed
-    directly. They must be re-created with a currently enabled repository model.
+    Historical runs are backfilled during database initialization when their
+    provider/model identity maps to exactly one repository model. Unmatched
+    historical runs remain readable but cannot be executed directly.
     """
     from core.model_resolver import resolve_model_config
     async with AsyncSessionLocal() as session:
