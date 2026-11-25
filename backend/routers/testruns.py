@@ -44,6 +44,15 @@ async def _default_provider_model(account_id: str) -> tuple[str, str]:
     return resolve_provider_model(settings)
 
 
+async def _selected_provider_model(db: AsyncSession, account_id: str, req, default_provider: str, default_model: str) -> tuple[str, str]:
+    """Resolve submitted model IDs server-side; never trust client provider/model labels."""
+    if getattr(req, "model_id", ""):
+        from core.model_resolver import validate_model_selection
+        model, connection = await validate_model_selection(db, account_id, req.model_id)
+        return connection.provider, model.model_name
+    return req.provider or default_provider, req.model or default_model
+
+
 async def get_db():
     async with AsyncSessionLocal() as session:
         yield session
@@ -255,11 +264,12 @@ async def create_run(req: StartRunRequest, request: Request, db: AsyncSession = 
     # Create run row
     account_id = request.state.account_id
     def_provider, def_model = await _default_provider_model(account_id)
+    provider, model = await _selected_provider_model(db, account_id, req, def_provider, def_model)
     run = TestRun(
         suite_id=req.suite_id,
         device_id=req.device_id,
-        provider=req.provider or def_provider,
-        model=req.model or def_model, model_id=req.model_id,
+        provider=provider,
+        model=model, model_id=req.model_id,
         status="pending",
         account_id=account_id,
         webhook_url=req.webhook_url,
@@ -310,9 +320,10 @@ async def create_batch_run(req: StartBatchRunRequest, request: Request, db: Asyn
         raise HTTPException(status_code=404, detail="None of the selected cases were found")
 
     def_provider, def_model = await _default_provider_model(request.state.account_id)
+    provider, model = await _selected_provider_model(db, request.state.account_id, req, def_provider, def_model)
     run = TestRun(
         suite_id=req.suite_id, device_id=req.device_id,
-        provider=req.provider or def_provider, model=req.model or def_model, model_id=req.model_id, status="pending",
+        provider=provider, model=model, model_id=req.model_id, status="pending",
         account_id=request.state.account_id, webhook_url=req.webhook_url,
     )
     db.add(run)
@@ -416,8 +427,8 @@ async def quick_run(req: QuickRunRequest, request: Request, db: AsyncSession = D
     run = TestRun(
         suite_id=suite.id,
         device_id=req.device_id,
-        provider=req.provider or def_provider,
-        model=req.model or def_model, model_id=req.model_id,
+        provider=provider,
+        model=model, model_id=req.model_id,
         status="pending",
         account_id=account_id,
         webhook_url=req.webhook_url,
@@ -448,8 +459,9 @@ async def create_tree_run(req: StartRunRequest, request: Request, db: AsyncSessi
     if not targets:
         raise HTTPException(status_code=404, detail="Suite has no step-tree nodes")
     def_provider, def_model = await _default_provider_model(request.state.account_id)
+    provider, model = await _selected_provider_model(db, request.state.account_id, req, def_provider, def_model)
     run = TestRun(suite_id=req.suite_id, device_id=req.device_id,
-                  provider=req.provider or def_provider, model=req.model or def_model, model_id=req.model_id, status="pending",
+                  provider=provider, model=model, model_id=req.model_id, status="pending",
                   account_id=request.state.account_id, webhook_url=req.webhook_url)
     db.add(run); await db.flush()
     await _attach_test_account(db, run, req)
@@ -488,8 +500,9 @@ async def create_node_run(req: NodeRunRequest, request: Request, db: AsyncSessio
     if not targets:
         raise HTTPException(status_code=404, detail="Node not found in this suite's step-tree")
     def_provider, def_model = await _default_provider_model(request.state.account_id)
+    provider, model = await _selected_provider_model(db, request.state.account_id, req, def_provider, def_model)
     run = TestRun(suite_id=req.suite_id, device_id=req.device_id,
-                  provider=req.provider or def_provider, model=req.model or def_model, model_id=req.model_id, status="pending",
+                  provider=provider, model=model, model_id=req.model_id, status="pending",
                   account_id=request.state.account_id, webhook_url=req.webhook_url)
     db.add(run); await db.flush()
     await _attach_test_account(db, run, req)
