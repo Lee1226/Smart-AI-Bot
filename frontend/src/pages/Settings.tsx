@@ -326,13 +326,22 @@ export default function Settings() {
                   verifier_model: '',
                 }))}
               >
-                <option value="">{t('与本次任务的 Agent 模型相同', 'Use the Agent model selected for this run')}</option>
+                <option value="">
+                  {form.verifier_provider || form.verifier_model
+                    ? t('保留旧版 Verifier 配置（选择此项会改为同 Agent）', 'Keep legacy Verifier config (selecting this changes to Agent)')
+                    : t('与本次任务的 Agent 模型相同', 'Use the Agent model selected for this run')}
+                </option>
                 {executionModels.map(model => (
                   <option key={model.id} value={model.id}>
                     {model.connection_name || '未命名连接'} · {model.provider || 'provider'} · {model.model_name}
                   </option>
                 ))}
               </select>
+              {!form.verifier_model_id && (form.verifier_provider || form.verifier_model) && (
+                <p className="mt-1 text-xs text-amber-600">
+                  {t('当前账号仍有旧版 Verifier 配置正在生效。选择其他模型或明确选择“同 Agent”并保存后，将切换到模型仓库配置。', 'A legacy Verifier setting is still active. Choose a repository model or explicitly switch to Agent and save to migrate.')}
+                </p>
+              )}
               {modelsError && <p className="mt-1 text-xs text-red-600">{t('模型列表加载失败，请刷新页面重试。', 'Failed to load models. Refresh and try again.')}</p>}
               {!modelsLoading && !modelsError && executionModels.length === 0 && (
                 <p className="mt-1 text-xs text-gray-400">{t('模型仓库中暂无已启用模型。', 'No enabled models in the model repository.')}</p>
