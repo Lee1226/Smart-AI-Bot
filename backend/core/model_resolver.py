@@ -61,19 +61,19 @@ async def resolve_model_config(db, account_id: str, model_id: str) -> dict:
         "aws_region_name": connection.aws_region_name or "us-east-1",
         "model_id": model.id,
         "connection_id": connection.id,
+        "provider_kwargs": (
+            {
+                **(
+                    {
+                        "aws_access_key_id": _decrypt(connection.aws_access_key_id_enc),
+                        "aws_secret_access_key": _decrypt(connection.aws_secret_access_key_enc),
+                    }
+                    if connection.aws_access_key_id_enc and connection.aws_secret_access_key_enc
+                    else {}
+                ),
+                "aws_region_name": connection.aws_region_name or "us-east-1",
+            }
+            if (connection.provider or "").lower() == "bedrock"
+            else {}
+        ),
     }
-
-
-def apply_model_credentials(config: dict) -> None:
-    """Apply Bedrock credentials for LiteLLM's boto3-based provider."""
-    if config.get("provider") != "bedrock":
-        return
-    access = config.get("aws_access_key_id") or ""
-    secret = config.get("aws_secret_access_key") or ""
-    region = config.get("aws_region_name") or "us-east-1"
-    if access and secret:
-        os.environ["AWS_ACCESS_KEY_ID"] = access
-        os.environ["AWS_SECRET_ACCESS_KEY"] = secret
-    os.environ["AWS_REGION_NAME"] = region
-    os.environ["AWS_DEFAULT_REGION"] = region
-    os.environ["AWS_REGION"] = region
