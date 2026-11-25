@@ -1,7 +1,7 @@
 """Per-account settings store — replaces the legacy global settings.json.
 
-Each account owns its own settings blob (LLM keys, default provider/model,
-language, webhook).  Reads/writes go through the ``account_settings`` table.
+Each account owns its own settings blob (model selections, language, and
+webhook settings). Reads/writes go through the ``account_settings`` table.
 
 The legacy ``settings.json`` is only used once as a seed: on first boot the
 operator account (see ``auth.access.operator_account_id``) inherits it.  Other
@@ -13,7 +13,6 @@ import json
 import logging
 from datetime import datetime
 from pathlib import Path
-from typing import Optional
 
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -27,21 +26,9 @@ logger = logging.getLogger(__name__)
 # live per-account data lives in the DB.
 LEGACY_SETTINGS_PATH = Path(__file__).resolve().parent.parent / "data" / "settings.json"
 
-# Defaults for an account that has never configured anything.  Key fields are
-# blank — a key-less account cannot run AI tests until it configures its own key.
+# Defaults for account-level preferences. Model credentials live exclusively
+# in encrypted model-repository connections.
 DEFAULT_SETTINGS = {
-    "openai_api_key": "",
-    "anthropic_api_key": "",
-    "anthropic_base_url": "",
-    "gemini_api_key": "",
-    "zhipu_api_key": "",
-    "dashscope_api_key": "",
-    "dashscope_base_url": "https://dashscope.aliyuncs.com/compatible-mode/v1",
-    "groq_api_key": "",
-    "ollama_base_url": "http://localhost:11434",
-    "aws_access_key_id": "",
-    "aws_secret_access_key": "",
-    "aws_region_name": "us-east-1",
     "default_model_id": "",
     "verifier_model_id": "",
     "webhook_url": "",
@@ -50,31 +37,7 @@ DEFAULT_SETTINGS = {
     "recording_auto_enabled": True,
     "recording_storage_dir": str(Path(__file__).resolve().parent.parent / "data" / "recordings"),
     "recording_retention_days": 30,
-    "ark_api_key": "",
-    "ark_base_url": "https://ark.cn-beijing.volces.com/api/v3",
 }
-
-# Provider → settings key field for the API key.
-_KEY_MAP = {
-    "openai": "openai_api_key",
-    "anthropic": "anthropic_api_key",
-    "google": "gemini_api_key",
-    "gemini": "gemini_api_key",
-    "zhipuai": "zhipu_api_key",
-    "zhipu": "zhipu_api_key",
-    "dashscope": "dashscope_api_key",
-    "groq": "groq_api_key",
-    "ark": "ark_api_key",
-    "ollama": "",  # no key needed
-}
-
-_BASE_MAP = {
-    "anthropic": "anthropic_base_url",
-    "ark": "ark_base_url",
-    "dashscope": "dashscope_base_url",
-    "ollama": "ollama_base_url",
-}
-
 
 async def operator_account_id(db: AsyncSession) -> str:
     """Resolve the operator account id (env pin → is_operator flag → oldest)."""
@@ -101,6 +64,15 @@ async def _seed_operator_from_legacy() -> None:
         existing = await db.get(AccountSettings, op)
         if existing is not None:
             return
+        legacy_model_keys = {
+            "openai_api_key", "anthropic_api_key", "anthropic_base_url",
+            "gemini_api_key", "zhipu_api_key", "dashscope_api_key",
+            "dashscope_base_url", "groq_api_key", "ollama_base_url",
+            "ark_api_key", "ark_base_url", "aws_access_key_id",
+            "aws_secret_access_key", "aws_region_name",
+            "default_provider", "default_model", "verifier_provider", "verifier_model",
+        }
+        legacy = {key: value for key, value in legacy.items() if key not in legacy_model_keys}
         db.add(AccountSettings(account_id=op, data=json.dumps(legacy, ensure_ascii=False)))
         await db.commit()
         logger.info("Seeded operator settings for account %s", op)
@@ -128,9 +100,17 @@ async def load_settings(account_id: str) -> dict:
             return dict(DEFAULT_SETTINGS)
     merged = dict(DEFAULT_SETTINGS)
     merged.update(data)
-    # Model selection is exclusively model-repository based.
-    for obsolete_key in ("default_provider", "default_model", "verifier_provider", "verifier_model"):
-        merged.pop(obsolete_key, None)
+    # Model credentials and selection are exclusively model-repository based.
+    obsolete_model_keys = {
+        "openai_api_key", "anthropic_api_key", "anthropic_base_url",
+        "gemini_api_key", "zhipu_api_key", "dashscope_api_key",
+        "dashscope_base_url", "groq_api_key", "ollama_base_url",
+        "ark_api_key", "ark_base_url", "aws_access_key_id",
+        "aws_secret_access_key", "aws_region_name",
+        "default_provider", "default_model", "verifier_provider", "verifier_model",
+    }
+    for key in obsolete_model_keys:
+        merged.pop(key, None)
     return merged
 
 
@@ -149,43 +129,11 @@ async def save_settings(account_id: str, data: dict) -> None:
         await db.commit()
 
 
-# ── Resolution helpers (pure functions over a settings dict) ─────────────────
-# These replace the file-reading helpers that used to live in test_runner.py,
-# knowledge.py, webhook.py and testruns.py, so every consumer shares one source
-# of truth instead of re-parsing settings.json with subtly different maps.
-
-def resolve_api_key(settings: dict, provider: str) -> str:
-    field = _KEY_MAP.get((provider or "").lower(), f"{(provider or '').lower()}_api_key")
-    return settings.get(field, "") if field else ""
-
-
-def resolve_api_base(settings: dict, provider: str) -> str:
-    field = _BASE_MAP.get((provider or "").lower(), "")
-    return settings.get(field, "") if field else ""
-
+# ── Account preference helpers ───────────────────────────────────────────────
 
 def resolve_language(settings: dict) -> str:
     lang = (settings.get("language") or "").strip()
     return "en" if lang == "en" else "zh"
-
-
-def resolve_webhook(settings: dict) -> tuple[str, str]:
-    return settings.get("webhook_url", "") or "", settings.get("webhook_type", "") or ""
-
-
-def apply_aws_env(settings: dict) -> None:
-    """Export AWS Bedrock creds into the process env (litellm/boto3 read them)."""
-    import os
-
-    ak = settings.get("aws_access_key_id", "") or ""
-    sk = settings.get("aws_secret_access_key", "") or ""
-    region = settings.get("aws_region_name", "") or "us-east-1"
-    if ak and sk:
-        os.environ["AWS_ACCESS_KEY_ID"] = ak
-        os.environ["AWS_SECRET_ACCESS_KEY"] = sk
-        os.environ["AWS_REGION_NAME"] = region
-        os.environ["AWS_DEFAULT_REGION"] = region
-        os.environ["AWS_REGION"] = region
 
 
 def build_fallback_chain(settings: dict, primary_provider: str, primary_model: str) -> list:
