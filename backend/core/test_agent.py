@@ -361,11 +361,15 @@ class TestCaseAgent:
         self.loop_task = loop_task
         self.fallbacks: list = fallbacks or []
         self._primary = ModelTarget(provider, model, api_key, api_base)
-        # Verifier uses its own model if configured, otherwise falls back to the agent model.
-        v_provider = verifier_provider or provider
-        v_model = verifier_model or model
-        v_key = verifier_api_key or api_key
-        v_base = verifier_api_base or api_base
+        # A configured verifier provider means its credentials are authoritative,
+        # including intentionally empty API keys/base URLs (e.g. Ollama).
+        if verifier_provider:
+            v_provider = verifier_provider
+            v_model = verifier_model or model
+            v_key = verifier_api_key
+            v_base = verifier_api_base
+        else:
+            v_provider, v_model, v_key, v_base = provider, model, api_key, api_base
         self._verifier = LLMVerifier(v_provider, v_model, v_key, v_base, fallbacks=self.fallbacks, language=self.language)
         self._reference_examples: list = reference_examples or []
         self._lessons_learned: list = lessons_learned or []
