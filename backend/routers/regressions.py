@@ -1,4 +1,4 @@
-"""Account-scoped multi-device regression plans and CI artifacts."""
+"""Account-scoped multi-device regression plans."""
 import asyncio
 import base64
 import tempfile
