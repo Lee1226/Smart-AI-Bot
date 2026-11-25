@@ -1,3 +1,4 @@
+import logging
 import os
 from pathlib import Path
 from sqlalchemy import text
@@ -7,6 +8,7 @@ from sqlalchemy.orm import DeclarativeBase
 _DEFAULT_DATA_DIR = Path(__file__).parent.parent / "data"
 DB_PATH = Path(os.getenv("SAB_DB_PATH", str(Path(os.getenv("SAB_DATA_DIR", str(_DEFAULT_DATA_DIR))) / "db.sqlite3")))
 DB_PATH.parent.mkdir(exist_ok=True)
+logger = logging.getLogger(__name__)
 
 engine = create_async_engine(f"sqlite+aiosqlite:///{DB_PATH}", echo=False)
 AsyncSessionLocal = async_sessionmaker(engine, expire_on_commit=False)
@@ -205,7 +207,9 @@ async def init_db():
     # Backfill historical task model IDs only after provider identities have
     # been normalized and linked to the provider catalog.
     async with AsyncSessionLocal() as run_session:
-        await backfill_legacy_run_model_ids(run_session)
+        backfilled_runs = await backfill_legacy_run_model_ids(run_session)
+    if backfilled_runs:
+        logger.info("Backfilled model IDs for %d historical test runs", backfilled_runs)
 
     from sqlalchemy import select as _select
     # ── Migrate legacy per-device app metadata into shared catalog tables ──
