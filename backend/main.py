@@ -122,7 +122,6 @@ app.include_router(projects.router)
 app.include_router(knowledge.router)
 app.include_router(automation.router)
 app.include_router(regressions.router)
-app.include_router(regressions.download_router)
 app.include_router(open_api.router)
 
 # Portal reverse WebSocket
