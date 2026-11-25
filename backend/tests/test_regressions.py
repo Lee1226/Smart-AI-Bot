@@ -40,6 +40,8 @@ class RegressionAPITests(unittest.TestCase):
                 connected_devices[did]=SimpleNamespace(is_connected=True,connection_type='adb_bridge',platform='android')
             try:
                 payload={'name':'Matrix','suite_ids':suites,'device_ids':devices}
+                self.assertEqual(404,client.get('/api/regressions/artifacts',headers=headers[0]).status_code)
+                self.assertEqual(404,client.get('/api/regression-download/expired').status_code)
                 r=client.post('/api/regressions',headers=headers[0],json=payload)
                 self.assertEqual(201,r.status_code,r.text);plan=r.json();self.assertEqual(4,len(plan['targets']));self.assertEqual(4,launch.await_count)
                 path='/api/regressions/'+plan['id']
