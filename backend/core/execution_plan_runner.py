@@ -20,7 +20,6 @@ from agent.verifier import LLMVerifier
 from core.run_recorder import RunRecorder
 from core.lifecycle_actions import run_lifecycle_actions
 from core.settings_store import (
-    build_fallback_chain,
     load_settings,
     resolve_language,
 )
@@ -263,8 +262,8 @@ async def execute_execution_plan_run(
             v_base = api_base
         if not verifier_extra_kwargs and v_provider == provider and v_model == model:
             verifier_extra_kwargs = api_extra_kwargs
-        verifier_fallbacks = build_fallback_chain(settings, v_provider, v_model)
-        fallbacks = build_fallback_chain(settings, provider, model)
+        verifier_fallbacks = []
+        fallbacks = []
         language = resolve_language(settings)
         if not api_key and (provider or "").lower() not in {"ollama", "bedrock"}:
             raise RuntimeError("当前执行模型未配置 API Key，请检查模型仓库中的连接凭据")
