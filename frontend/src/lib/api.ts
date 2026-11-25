@@ -1026,7 +1026,6 @@ export const updateExecutionPlan = (planId: string, body: {
 
 export const runExecutionPlan = (planId: string, body: {
   device_id: string
-  provider?: string
-  model?: string
+  model_id: string
   max_steps?: number
 }) => api.post<Run>(`/execution-plans/${planId}/run`, body).then(r => r.data)
