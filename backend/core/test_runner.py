@@ -281,8 +281,15 @@ async def execute_batch_run(run_id: str, state: "RunState", base_path: str,
         device = WebSocketDevice(device_id)
         settings = await load_settings(account_id)
         apply_aws_env(settings)
-        api_key = resolve_api_key(settings, provider)
-        api_base = resolve_api_base(settings, provider)
+        resolved_provider, resolved_model, model_config = await _resolve_run_model(
+            run_id, account_id, provider, model
+        )
+        if model_config:
+            provider, model = resolved_provider, resolved_model
+            api_key, api_base = model_config["api_key"], model_config["api_base"]
+        else:
+            api_key = resolve_api_key(settings, provider)
+            api_base = resolve_api_base(settings, provider)
         v_provider, v_model, v_key, v_base = resolve_verifier(settings)
         fallbacks = build_fallback_chain(settings, provider, model)
         language = resolve_language(settings)
@@ -547,8 +554,15 @@ async def execute_tree_run(run_id: str, state: "RunState", max_steps: int = 20,
         device = WebSocketDevice(device_id)
         settings = await load_settings(account_id)
         apply_aws_env(settings)
-        api_key = resolve_api_key(settings, provider)
-        api_base = resolve_api_base(settings, provider)
+        resolved_provider, resolved_model, model_config = await _resolve_run_model(
+            run_id, account_id, provider, model
+        )
+        if model_config:
+            provider, model = resolved_provider, resolved_model
+            api_key, api_base = model_config["api_key"], model_config["api_base"]
+        else:
+            api_key = resolve_api_key(settings, provider)
+            api_base = resolve_api_base(settings, provider)
         v_provider, v_model, v_key, v_base = resolve_verifier(settings)
         fallbacks = build_fallback_chain(settings, provider, model)
         language = resolve_language(settings)
@@ -860,8 +874,15 @@ async def execute_replay_run(
         device = WebSocketDevice(device_id)
         settings = await load_settings(account_id)
         apply_aws_env(settings)
-        api_key = resolve_api_key(settings, provider)
-        api_base = resolve_api_base(settings, provider)
+        resolved_provider, resolved_model, model_config = await _resolve_run_model(
+            run_id, account_id, provider, model
+        )
+        if model_config:
+            provider, model = resolved_provider, resolved_model
+            api_key, api_base = model_config["api_key"], model_config["api_base"]
+        else:
+            api_key = resolve_api_key(settings, provider)
+            api_base = resolve_api_base(settings, provider)
         v_provider, v_model, v_key, v_base = resolve_verifier(settings)
         fallbacks = build_fallback_chain(settings, provider, model)
         language = resolve_language(settings)
