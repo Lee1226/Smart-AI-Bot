@@ -897,7 +897,7 @@ export interface DebugSessionSnapshot {
   next: number
 }
 export const startDebugSession = (body: {
-  device_id: string; goal: string; expected?: string; provider: string; model: string; max_steps: number
+  device_id: string; goal: string; expected?: string; model_id: string; max_steps: number
 }) => api.post<DebugSessionStart>('/debug/sessions', body).then(r => r.data)
 export const fetchDebugSession = (id: string, after = 0) =>
   api.get<DebugSessionSnapshot>(`/debug/sessions/${id}`, { params: { after } }).then(r => r.data)
