@@ -50,6 +50,23 @@ def _missing_key(provider: str, api_key: str) -> bool:
     return not api_key and (provider or "").lower() != "ollama"
 
 
+async def _resolve_run_model(run_id: str, account_id: str, provider: str, model: str):
+    """Use the selected model-repository record when the run carries model_id.
+
+    Legacy runs without model_id continue to use AccountSettings until the UI
+    has been migrated to submit model IDs.
+    """
+    from core.model_resolver import resolve_model_config, apply_model_credentials
+    async with AsyncSessionLocal() as session:
+        run_row = await session.get(TestRun, run_id)
+        model_id = (run_row.model_id or "") if run_row else ""
+        if not model_id:
+            return provider, model, None
+        config = await resolve_model_config(session, account_id, model_id)
+    apply_model_credentials(config)
+    return config["provider"], config["model"], config
+
+
 async def _mark_error(run_id: str, reason: str) -> None:
     async with AsyncSessionLocal() as session:
         await session.execute(
