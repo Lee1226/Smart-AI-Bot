@@ -46,6 +46,7 @@ DEFAULT_SETTINGS = {
     "default_model": "gpt-4o",
     "verifier_provider": "",
     "verifier_model": "",
+    "verifier_model_id": "",
     "webhook_url": "",
     "webhook_type": "",
     "language": "zh",
