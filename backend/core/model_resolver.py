@@ -5,9 +5,6 @@ from sqlalchemy import select
 
 from db.models import LLMConnection, LLMModel
 
-
-
-
 async def validate_model_selection(db, account_id: str, model_id: str):
     """Return an enabled model and its account-owned connection, or reject it."""
     result = await db.execute(
@@ -43,8 +40,8 @@ async def resolve_model_config(db, account_id: str, model_id: str) -> dict:
             {
                 **(
                     {
-                        "aws_access_key_id": _decrypt(connection.aws_access_key_id_enc),
-                        "aws_secret_access_key": _decrypt(connection.aws_secret_access_key_enc),
+                        "aws_access_key_id": decrypt_secret(connection.aws_access_key_id_enc),
+                        "aws_secret_access_key": decrypt_secret(connection.aws_secret_access_key_enc),
                     }
                     if connection.aws_access_key_id_enc and connection.aws_secret_access_key_enc
                     else {}
