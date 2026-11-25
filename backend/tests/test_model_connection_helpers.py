@@ -2,6 +2,7 @@
 
 import os
 import tempfile
+from pathlib import Path
 import unittest
 from unittest.mock import patch
 
@@ -22,7 +23,7 @@ class ModelCredentialCryptoTests(unittest.TestCase):
             self.assertEqual(decrypt_secret(encrypted), "test-secret")
             key_path = os.path.join(data_dir, ".llm_encryption_key")
             self.assertTrue(os.path.isfile(key_path))
-            self.assertEqual(len(open(key_path, "rb").read().strip()), 44)
+            self.assertEqual(len(Path(key_path).read_bytes().strip()), 44)
 
     def test_empty_credentials_remain_empty(self):
         self.assertEqual(encrypt_secret(""), "")
