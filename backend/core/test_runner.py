@@ -33,7 +33,6 @@ from agent.verifier import LLMVerifier
 from db.database import AsyncSessionLocal
 from db.models import StepNode, TestCase, TestResult, TestRun, TestStepLog
 from core.settings_store import (
-    build_fallback_chain,
     load_settings,
     resolve_language,
 )
@@ -288,7 +287,7 @@ async def execute_batch_run(run_id: str, state: "RunState", base_path: str,
         api_key, api_base = model_config["api_key"], model_config["api_base"]
         api_extra_kwargs = model_config.get("provider_kwargs", {})
         v_provider, v_model, v_key, v_base, v_extra_kwargs = await _resolve_verifier_model(account_id, settings)
-        fallbacks = build_fallback_chain(settings, provider, model)
+        fallbacks = []
         language = resolve_language(settings)
         if _missing_key(provider, api_key):
             await _mark_error(run_id, "当前执行模型未配置 API Key，请检查模型仓库中该模型所属连接的凭据")
@@ -1077,8 +1076,6 @@ async def execute_run(
             await _mark_error(run_id, "Verifier 模型未配置 API Key，请检查模型仓库中的连接凭据")
             await emit("ERROR: Verifier 模型未配置 API Key，请检查模型仓库中的连接凭据")
             return
-        if fallbacks:
-            await emit(f"Fallback models: {', '.join(t.label() for t in fallbacks)}")
         from core.test_accounts import context_for_run
         login_context = await context_for_run(run_id)
         if login_context:
