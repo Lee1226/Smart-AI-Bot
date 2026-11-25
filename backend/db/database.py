@@ -104,7 +104,7 @@ async def init_db():
         await _ensure_columns("test_suites", {"tag": "VARCHAR DEFAULT ''"})
         await _ensure_columns("test_cases", {"account_id": "VARCHAR"})
         await _ensure_columns("step_nodes", {"account_id": "VARCHAR"})
-        await _ensure_columns("test_runs", {"account_id": "VARCHAR"})
+        await _ensure_columns("test_runs", {"account_id": "VARCHAR", "model_id": "VARCHAR DEFAULT ''"})
         await _ensure_columns("test_runs", {"webhook_url": "VARCHAR DEFAULT ''",
             "test_account_id": "VARCHAR DEFAULT ''", "test_account_name": "VARCHAR DEFAULT ''"})
         await _ensure_columns("test_results", {"account_id": "VARCHAR"})
