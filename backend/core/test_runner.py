@@ -33,7 +33,6 @@ from agent.verifier import LLMVerifier
 from db.database import AsyncSessionLocal
 from db.models import StepNode, TestCase, TestResult, TestRun, TestStepLog
 from core.settings_store import (
-    apply_aws_env,
     build_fallback_chain,
     load_settings,
     resolve_api_base,
@@ -45,11 +44,25 @@ from core.settings_store import (
 logger = logging.getLogger(__name__)
 
 
+def _legacy_provider_kwargs(settings: dict, provider: str) -> dict:
+    """Build request-scoped credentials for legacy Bedrock settings."""
+    if (provider or "").lower() != "bedrock":
+        return {}
+    kwargs = {"aws_region_name": settings.get("aws_region_name") or "us-east-1"}
+    access = settings.get("aws_access_key_id") or ""
+    secret = settings.get("aws_secret_access_key") or ""
+    if access and secret:
+        kwargs["aws_access_key_id"] = access
+        kwargs["aws_secret_access_key"] = secret
+    return kwargs
+
+
 async def _resolve_verifier_model(account_id: str, settings: dict):
     """Resolve the dedicated verifier model; an empty ID preserves legacy/same-agent behavior."""
     model_id = (settings.get("verifier_model_id") or "").strip()
     if not model_id:
-        return (*resolve_verifier(settings), {})
+        legacy = resolve_verifier(settings)
+        return (*legacy, _legacy_provider_kwargs(settings, legacy[0]))
     from core.model_resolver import resolve_model_config
     async with AsyncSessionLocal() as session:
         config = await resolve_model_config(session, account_id, model_id)
@@ -290,7 +303,6 @@ async def execute_batch_run(run_id: str, state: "RunState", base_path: str,
             await emit(f"ERROR: Device {device_id} is not connected"); return
         device = WebSocketDevice(device_id)
         settings = await load_settings(account_id)
-        apply_aws_env(settings)
         resolved_provider, resolved_model, model_config = await _resolve_run_model(
             run_id, account_id, provider, model
         )
@@ -301,7 +313,7 @@ async def execute_batch_run(run_id: str, state: "RunState", base_path: str,
         else:
             api_key = resolve_api_key(settings, provider)
             api_base = resolve_api_base(settings, provider)
-            api_extra_kwargs = {}
+            api_extra_kwargs = _legacy_provider_kwargs(settings, provider)
         v_provider, v_model, v_key, v_base, v_extra_kwargs = await _resolve_verifier_model(account_id, settings)
         fallbacks = build_fallback_chain(settings, provider, model)
         language = resolve_language(settings)
@@ -566,7 +578,6 @@ async def execute_tree_run(run_id: str, state: "RunState", max_steps: int = 20,
             await emit(f"ERROR: Device {device_id} is not connected"); return
         device = WebSocketDevice(device_id)
         settings = await load_settings(account_id)
-        apply_aws_env(settings)
         resolved_provider, resolved_model, model_config = await _resolve_run_model(
             run_id, account_id, provider, model
         )
@@ -577,7 +588,7 @@ async def execute_tree_run(run_id: str, state: "RunState", max_steps: int = 20,
         else:
             api_key = resolve_api_key(settings, provider)
             api_base = resolve_api_base(settings, provider)
-            api_extra_kwargs = {}
+            api_extra_kwargs = _legacy_provider_kwargs(settings, provider)
         v_provider, v_model, v_key, v_base, v_extra_kwargs = await _resolve_verifier_model(account_id, settings)
         fallbacks = build_fallback_chain(settings, provider, model)
         language = resolve_language(settings)
@@ -889,7 +900,6 @@ async def execute_replay_run(
 
         device = WebSocketDevice(device_id)
         settings = await load_settings(account_id)
-        apply_aws_env(settings)
         resolved_provider, resolved_model, model_config = await _resolve_run_model(
             run_id, account_id, provider, model
         )
@@ -900,7 +910,7 @@ async def execute_replay_run(
         else:
             api_key = resolve_api_key(settings, provider)
             api_base = resolve_api_base(settings, provider)
-            api_extra_kwargs = {}
+            api_extra_kwargs = _legacy_provider_kwargs(settings, provider)
         v_provider, v_model, v_key, v_base, v_extra_kwargs = await _resolve_verifier_model(account_id, settings)
         fallbacks = build_fallback_chain(settings, provider, model)
         language = resolve_language(settings)
@@ -1081,7 +1091,6 @@ async def execute_run(
 
         device = WebSocketDevice(device_id)
         settings = await load_settings(account_id)
-        apply_aws_env(settings)  # legacy credentials for legacy runs
         resolved_provider, resolved_model, model_config = await _resolve_run_model(
             run_id, account_id, provider, model
         )
@@ -1092,7 +1101,7 @@ async def execute_run(
         else:
             api_key = resolve_api_key(settings, provider)
             api_base = resolve_api_base(settings, provider)
-            api_extra_kwargs = {}
+            api_extra_kwargs = _legacy_provider_kwargs(settings, provider)
         v_provider, v_model, v_key, v_base, v_extra_kwargs = await _resolve_verifier_model(account_id, settings)
         fallbacks = build_fallback_chain(settings, provider, model)
         language = resolve_language(settings)
