@@ -1292,7 +1292,7 @@ async def execute_run(
                         loop_task=case_row.loop_task,
                         reference_examples=reference_examples or None,
                         fallbacks=fallbacks,
-                verifier_fallbacks=verifier_fallbacks,
+                        verifier_fallbacks=verifier_fallbacks,
                         project_kb_roots=project_kb_roots, source_root=project_source_root,
                         kb_search_cmd=project_kb_search_cmd,
                         target_package=project_app_package,
