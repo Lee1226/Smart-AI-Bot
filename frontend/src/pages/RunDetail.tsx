@@ -137,12 +137,6 @@ export default function RunDetail() {
       {label}
     </span>
   )
-  const resultStatusBadge = (result: TestResult) => {
-    const isVerifierError = result.status === 'error'
-      && (result.reason || '').includes('验证服务调用失败，无法判定用例结果')
-    return statusBadge(result.status, isVerifierError ? '验证服务异常' : result.status)
-  }
-
   const isRunning = run?.status === 'running' || run?.status === 'pending'
   const totalTokens = results.reduce((sum, r) => sum + (r.total_tokens || 0), 0)
 
@@ -259,7 +253,7 @@ export default function RunDetail() {
               {/* Case meta */}
               <div className="bg-white border rounded-lg px-4 py-3 shadow-sm mb-3 space-y-1">
                 <div className="flex items-center gap-2">
-                  {resultStatusBadge(selected)}
+                  {statusBadge(selected.status)}
                   <button
                     title={selected.is_starred ? t('取消参考标记', 'Unmark reference') : t('标记为参考案例', 'Mark as reference case')}
                     className={`text-base leading-none transition-colors ${
