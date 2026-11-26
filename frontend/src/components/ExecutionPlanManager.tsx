@@ -369,7 +369,7 @@ export default function ExecutionPlanManager({ suiteId, sourceFormat, platform, 
             <>
               <span className="flex-1 text-xs text-gray-500">{t('该套件尚未创建执行流程。', 'This suite does not have an execution flow yet.')}</span>
               <button className="rounded-md bg-blue-600 px-3 py-2 text-xs font-medium text-white hover:bg-blue-700 disabled:opacity-50"
-                disabled={createMut.isPending || (sourceFormat === 'recorded' && cases.length === 0)} onClick={() => createMut.mutate()}>
+                disabled={createMut.isPending} onClick={() => createMut.mutate()}>
                 {createMut.isPending ? t('创建中…', 'Creating…') : t('创建执行流程', 'Create flow')}
               </button>
               {sourceFormat === 'recorded' && activeCaseId && (
@@ -395,9 +395,9 @@ export default function ExecutionPlanManager({ suiteId, sourceFormat, platform, 
                     <p className="mt-1 text-[11px] text-gray-500">执行计划严格使用所选模型及其连接凭据，不启用隐式模型切换。</p>
                   </div>
                   <button className="rounded-md bg-blue-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-blue-700 disabled:cursor-not-allowed disabled:opacity-50"
-                    disabled={!device || !selectedModel || runMut.isPending || selectedPlan.steps.some(step => ['ai', 'hybrid'].includes(step.executor) && (step.intent?.status !== 'confirmed' || !step.intent?.description?.trim() || !step.intent?.expected_result?.trim()))}
+                    disabled={!device || !selectedModel || runMut.isPending || selectedPlan.steps.length === 0 || selectedPlan.steps.some(step => ['ai', 'hybrid'].includes(step.executor) && (step.intent?.status !== 'confirmed' || !step.intent?.description?.trim() || !step.intent?.expected_result?.trim()))}
                     onClick={() => runMut.mutate()}>
-                    {runMut.isPending ? t('启动中…', 'Starting…') : t('运行执行计划', 'Run plan')}
+                    {runMut.isPending ? t('启动中…', 'Starting…') : t('运行执行流程', 'Run flow')}
                   </button>
                   <button className="rounded-md border border-gray-200 bg-white px-3 py-1.5 text-xs hover:bg-gray-50" onClick={beginEdit}>{t('编辑步骤', 'Edit steps')}</button>
                 </div>}
@@ -462,7 +462,7 @@ export default function ExecutionPlanManager({ suiteId, sourceFormat, platform, 
                     <p className="mt-1 text-xs text-gray-600">{String(step.intent?.description || t('尚未填写操作意图', 'No operation intent defined'))}</p>
                     <p className="mt-1 truncate text-[11px] text-gray-400">{String(step.locator?.text || step.locator?.resource_id || step.args?.text || step.args?.package_name || step.args?.package || t('尚未设置目标控件或参数', 'Target or arguments not configured'))}</p>
                     {step.intent?.status !== 'confirmed' && <span className="mt-1 inline-block rounded bg-amber-50 px-1.5 py-0.5 text-[10px] text-amber-700">{t('操作意图待确认', 'Intent needs confirmation')}</span>}
-                    <button type="button" disabled={!device || executingStep !== null || step.executor === 'ai' || step.executor === 'hybrid' || step.action === 'audio_play'} onClick={() => void executeDeviceStep(step, i)} title={step.action === 'audio_play' ? '音频播放请通过运行整份计划执行，以便逐轮等待并保存截图证据' : step.executor === 'ai' || step.executor === 'hybrid' ? t('AI / 混合策略请通过“运行执行计划”执行，单步调试暂不支持', 'Run the full plan for AI / hybrid steps; single-step debug does not support these strategies yet') : undefined} className="mt-2 rounded-md border border-blue-200 bg-blue-50 px-2.5 py-1.5 text-[11px] font-medium text-blue-700 disabled:opacity-40">{step.action === 'audio_play' || step.executor === 'ai' || step.executor === 'hybrid' ? t('请运行整份计划', 'Run full plan') : executingStep === i ? '执行中…' : '单步执行'}</button>
+                    <button type="button" disabled={!device || executingStep !== null || step.executor === 'ai' || step.executor === 'hybrid' || step.action === 'audio_play'} onClick={() => void executeDeviceStep(step, i)} title={step.action === 'audio_play' ? '音频播放请通过运行整份计划执行，以便逐轮等待并保存截图证据' : step.executor === 'ai' || step.executor === 'hybrid' ? t('AI / 混合策略请通过“运行执行计划”执行，单步调试暂不支持', 'Run the full plan for AI / hybrid steps; single-step debug does not support these strategies yet') : undefined} className="mt-2 rounded-md border border-blue-200 bg-blue-50 px-2.5 py-1.5 text-[11px] font-medium text-blue-700 disabled:opacity-40">{step.action === 'audio_play' || step.executor === 'ai' || step.executor === 'hybrid' ? t('请运行整份流程', 'Run full flow') : executingStep === i ? '执行中…' : '单步执行'}</button>
                   </div>
                 </div>
               ))}
@@ -475,7 +475,7 @@ export default function ExecutionPlanManager({ suiteId, sourceFormat, platform, 
             <div className="flex flex-wrap items-center justify-between gap-2">
               <div>
                 <div className="text-sm font-semibold text-gray-800">{t('步骤编辑器', 'Step editor')}</div>
-                <p className="text-xs text-gray-500">{t('修改步骤属性、调整顺序或增删步骤，保存后直接更新当前执行计划。', 'Edit step settings, reorder, add, or remove steps. Save updates this execution plan directly.')}</p>
+                <p className="text-xs text-gray-500">{t('修改操作步骤、执行方式和参数；保存后更新当前执行流程。', 'Edit actions, execution strategies, and parameters, then save the flow.')}</p>
               </div>
               <button className="rounded-md border border-blue-200 bg-blue-50 px-3 py-2 text-xs font-medium text-blue-700 hover:bg-blue-100" onClick={addStep}>＋ {t('新增步骤', 'Add step')}</button>
             </div>
@@ -699,7 +699,7 @@ export default function ExecutionPlanManager({ suiteId, sourceFormat, platform, 
         )}
 
         <div className="rounded-lg border border-slate-200 bg-slate-50 px-3 py-2.5 text-xs leading-5 text-gray-500">
-          <strong className="text-gray-700">{t('说明：', 'Note: ')}</strong>{t('操作意图会随执行计划保存；AI / 混合步骤必须先确认操作意图和预期结果。运行整份计划时，系统按步骤分发确定性、AI、混合或系统执行器；混合步骤优先执行确定性操作；执行失败、验证不通过或未配置可判定的验证条件时，才调用 AI 检查并恢复。', 'Step intent is saved with the execution plan. AI / hybrid steps require a confirmed intent and expected result. Full-plan runs dispatch deterministic, AI, hybrid, and system steps through the shared runner; hybrid steps try deterministic execution first, then invoke AI to inspect and recover only on execution failure, failed verification, or missing verification conditions.')}
+          <strong className="text-gray-700">{t('说明：', 'Note: ')}</strong>{t('操作意图会随执行流程保存；AI / 混合步骤必须先确认操作意图和预期结果。运行时按步骤分发确定性、AI、混合或系统执行器。', 'Step intent is saved with the execution flow. AI / hybrid steps require a confirmed intent and expected result. The runner dispatches each step to the selected executor.')}
         </div>
       </div>
     </section>
