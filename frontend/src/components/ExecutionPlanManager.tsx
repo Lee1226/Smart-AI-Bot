@@ -443,7 +443,7 @@ export default function ExecutionPlanManager({ suiteId, sourceFormat, platform, 
                 </ul>
               </div>
             )}
-            {selectedPlan.metadata?.expected && <div className="rounded-lg border border-blue-100 bg-blue-50/50 px-3 py-2.5 text-xs"><span className="font-semibold text-gray-700">{t('最终预期结果：', 'Final expected result: ')}</span><span className="text-gray-600">{String(selectedPlan.metadata.expected)}</span></div>}
+            {(selectedPlan.metadata?.expected || selectedCase?.expected) && <div className="rounded-lg border border-blue-100 bg-blue-50/50 px-3 py-2.5 text-xs"><span className="font-semibold text-gray-700">{t('最终预期结果：', 'Final expected result: ')}</span><span className="text-gray-600">{String(selectedPlan.metadata?.expected || selectedCase?.expected)}</span></div>}
             <div className="grid grid-cols-1 gap-3 xl:grid-cols-2">
               {(['pre_actions', 'post_actions'] as const).map((phase) => {
                 const actions = Array.isArray(selectedPlan.metadata?.[phase]) ? selectedPlan.metadata[phase] as LifecycleAction[] : []
