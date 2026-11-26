@@ -259,7 +259,8 @@ async def execute_execution_plan_run(
             lifecycle_result_id = result.id
             steps = snapshot.get("steps") if isinstance(snapshot.get("steps"), list) else []
             plan_metadata = snapshot.get("metadata") if isinstance(snapshot.get("metadata"), dict) else {}
-            expected = (case.expected or "") if case else str(plan_metadata.get("expected") or "")
+            # Prefer the immutable plan snapshot; fall back to the linked case for older plans.
+            expected = str(plan_metadata.get("expected") or (case.expected if case else "") or "")
             plan_version = snapshot.get("version") or 1
             plan_app_package = str(snapshot.get("app_package") or "")
             lifecycle_post_actions = plan_metadata.get("post_actions", [])
