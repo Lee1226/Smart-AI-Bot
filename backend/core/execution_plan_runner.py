@@ -26,7 +26,7 @@ from core.settings_store import (
 from core.test_agent import TestCaseAgent
 from core.test_parser import TestCaseData
 from db.database import AsyncSessionLocal
-from db.models import ExecutionPlan, TestCase, TestResult, TestRun, TestStepLog
+from db.models import ExecutionPlan, TestResult, TestRun, TestStepLog
 
 logger = logging.getLogger(__name__)
 
@@ -249,8 +249,6 @@ async def execute_execution_plan_run(
                 }
             if snapshot.get("suite_id") != run.suite_id:
                 raise RuntimeError("执行计划与测试运行所属套件不一致")
-            case_id = snapshot.get("test_case_id")
-            case = await db.get(TestCase, case_id) if case_id else None
             result = (await db.execute(select(TestResult).where(
                 TestResult.run_id == run_id
             ))).scalars().first()
@@ -259,8 +257,8 @@ async def execute_execution_plan_run(
             lifecycle_result_id = result.id
             steps = snapshot.get("steps") if isinstance(snapshot.get("steps"), list) else []
             plan_metadata = snapshot.get("metadata") if isinstance(snapshot.get("metadata"), dict) else {}
-            # Prefer the immutable plan snapshot; fall back to the linked case for older plans.
-            expected = str(plan_metadata.get("expected") or (case.expected if case else "") or "")
+            # The execution flow is the sole source of its final expected result.
+            expected = str(plan_metadata.get("expected") or "")
             plan_version = snapshot.get("version") or 1
             plan_app_package = str(snapshot.get("app_package") or "")
             lifecycle_post_actions = plan_metadata.get("post_actions", [])
