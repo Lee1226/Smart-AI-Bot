@@ -702,13 +702,16 @@ async def list_nodes(suite_id: str, request: Request, db: AsyncSession = Depends
             .order_by(StepNode.order)
         )).scalars().all()
 
+    suite = await db.get(TestSuite, suite_id)
     rows = await _load()
-    if not rows:
-        # Self-heal: a suite created/imported after startup (the init_db migration
-        # only ran over suites that existed then). Migrate its legacy cases now.
+    if (suite and suite.source_format == "recorded") or not rows:
+        # Recorded suites keep executable actions in replay_steps; their title
+        # must not be materialized as a step-tree node. The migration helper also
+        # removes the exact one-node artifact created by the older migration.
+        # For other suites, self-heal cases added after startup.
         from db.migrate_step_tree import migrate_suite_to_step_tree
-        if await migrate_suite_to_step_tree(db, suite_id):
-            rows = await _load()
+        await migrate_suite_to_step_tree(db, suite_id)
+        rows = await _load()
     # For live-link nodes, resolve the source's path (cross-suite) for display.
     ref_paths: dict = {}
     link_targets = [r.ref_id for r in rows if r.ref_id]

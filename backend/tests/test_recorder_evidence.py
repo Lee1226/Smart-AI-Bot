@@ -151,3 +151,25 @@ async def test_recorded_case_title_is_not_migrated_into_step_tree():
         nodes = (await session.execute(select(StepNode).where(StepNode.suite_id == suite.id))).scalars().all()
         assert nodes == []
     await engine.dispose()
+
+@pytest.mark.asyncio
+async def test_recorded_case_title_legacy_tree_artifact_is_removed():
+    engine = create_async_engine("sqlite+aiosqlite:///:memory:")
+    async with engine.begin() as conn:
+        await conn.run_sync(Base.metadata.create_all)
+    maker = async_sessionmaker(engine, expire_on_commit=False)
+    async with maker() as session:
+        suite = TestSuite(name="recorded", source_format="recorded", account_id="acct")
+        session.add(suite)
+        await session.flush()
+        case = TestCase(suite_id=suite.id, path="录制用例标题", expected="进入首页", account_id="acct")
+        session.add(case)
+        await session.flush()
+        node = StepNode(suite_id=suite.id, parent_id=None, action=case.path, expected=case.expected, order=0)
+        session.add(node)
+        await session.commit()
+        assert await migrate_suite_to_step_tree(session, suite.id) == 0
+        nodes = (await session.execute(select(StepNode).where(StepNode.suite_id == suite.id))).scalars().all()
+        assert nodes == []
+    await engine.dispose()
+
