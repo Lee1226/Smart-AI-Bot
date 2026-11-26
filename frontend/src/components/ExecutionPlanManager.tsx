@@ -4,7 +4,7 @@ import { api, type Device } from '../lib/api'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import {
   updateExecutionPlan, ExecutionPlanStep, ExecutionPlanIntent,
-  fetchAppCatalog, fetchExecutionPlans, fetchSuiteCases, importLegacyExecutionPlan, runExecutionPlan,
+  createSuiteExecutionPlan, fetchAppCatalog, fetchSuiteExecutionPlan, fetchSuiteCases, importLegacyExecutionPlan, runExecutionPlan,
 } from '../lib/api'
 import { useT } from '../lib/i18n'
 import LifecycleActionEditor, { type LifecycleAction } from './LifecycleActionEditor'
@@ -52,7 +52,7 @@ function hasValidSwipeCoordinates(step: ExecutionPlanStep): boolean {
   })
 }
 
-export default function ExecutionPlanManager({ suiteId, platform, device }: { suiteId: string; platform: string; device: Device | null }) {
+export default function ExecutionPlanManager({ suiteId, sourceFormat, platform, device }: { suiteId: string; sourceFormat: string; platform: string; device: Device | null }) {
   const t = useT()
   const qc = useQueryClient()
   const [caseId, setCaseId] = useState('')
@@ -72,13 +72,14 @@ export default function ExecutionPlanManager({ suiteId, platform, device }: { su
   const { data: cases = [], isLoading: casesLoading } = useQuery({
     queryKey: ['suite-cases', suiteId],
     queryFn: () => fetchSuiteCases(suiteId),
+    enabled: sourceFormat === 'recorded',
   })
   const selectedCase = cases.find(c => c.id === caseId) || cases[0]
   const activeCaseId = selectedCase?.id || ''
   const { data: plans = [], isLoading: plansLoading } = useQuery({
-    queryKey: ['execution-plans', activeCaseId],
-    queryFn: () => fetchExecutionPlans(activeCaseId),
-    enabled: !!activeCaseId,
+    queryKey: ['suite-execution-plan', suiteId],
+    queryFn: () => fetchSuiteExecutionPlan(suiteId),
+    enabled: !!suiteId,
   })
   const selectedPlan = plans.find(p => p.id === planId) || plans[0]
   const { data: testApps = [], isLoading: appsLoading, isError: appsError } = useQuery({
@@ -92,10 +93,28 @@ export default function ExecutionPlanManager({ suiteId, platform, device }: { su
   })
   const selectableTestApps = testApps.filter(app => app.is_test_app)
   const invalidate = async () => {
-    await qc.invalidateQueries({ queryKey: ['execution-plans', activeCaseId] })
+    await qc.invalidateQueries({ queryKey: ['suite-execution-plan', suiteId] })
   }
+  const createMut = useMutation({
+    mutationFn: () => createSuiteExecutionPlan(suiteId, platform),
+    onSuccess: async plan => {
+      setPlanId(plan.id)
+      setDraftSteps([])
+      setDraftPreActions([])
+      setDraftPostActions([])
+      setEditing(true)
+      await invalidate()
+    },
+    onError: (e: unknown) => {
+      const msg = (e as { response?: { data?: { detail?: string } } })?.response?.data?.detail || String(e)
+      alert(t(`创建执行流程失败：${msg}`, `Failed to create execution flow: ${msg}`))
+    },
+  })
   const importMut = useMutation({
-    mutationFn: () => importLegacyExecutionPlan(activeCaseId, platform),
+    mutationFn: () => {
+      if (!activeCaseId) throw new Error('该录制套件没有可导入的录制用例')
+      return importLegacyExecutionPlan(activeCaseId, platform)
+    },
     onSuccess: async plan => {
       setPlanId(plan.id)
       setEditing(false)
@@ -332,30 +351,35 @@ export default function ExecutionPlanManager({ suiteId, platform, device }: { su
     })
   }
 
-  if (casesLoading) return <div className="mt-6 text-sm text-gray-400">{t('加载执行计划…', 'Loading execution plans…')}</div>
-  if (cases.length === 0) return null
+  if ((sourceFormat === 'recorded' && casesLoading) || plansLoading) return <div className="mt-6 text-sm text-gray-400">{t('加载执行流程…', 'Loading execution flow…')}</div>
 
   return (
     <section className="mt-6 overflow-hidden rounded-2xl border border-slate-200/80 bg-white shadow-[0_10px_32px_rgba(31,75,135,0.06)]">
       <div className="flex flex-wrap items-center justify-between gap-3 border-b border-slate-100 bg-slate-50/80 px-5 py-4">
         <div>
-          <h2 className="text-sm font-semibold text-gray-800">{t('执行计划', 'Execution plans')}</h2>
-          <p className="mt-0.5 text-xs text-gray-500">{t('检查和调整自动化步骤，无需编辑 JSON。', 'Review and adjust automation steps without editing JSON.')}</p>
+          <h2 className="text-sm font-semibold text-gray-800">{t('执行流程', 'Execution flow')}</h2>
+          <p className="mt-0.5 text-xs text-gray-500">{t('独立于步骤树，按配置的操作步骤、执行方式和验证条件运行。', 'An editable action sequence, independent of the AI step tree.')}</p>
         </div>
         <span className="rounded-full bg-blue-50 px-2.5 py-1 text-[11px] text-blue-700">{t('可视化编辑', 'Visual editor')}</span>
       </div>
       <div className="space-y-5 p-5">
         <div className="flex flex-wrap items-center gap-2">
-          <label className="text-xs font-medium text-gray-500">{t('录制用例', 'Recorded case')}</label>
-          <select className="min-w-[220px] flex-1 rounded-xl border border-slate-200 bg-slate-50/60 px-3 py-2.5 text-sm outline-none transition focus:border-blue-400 focus:bg-white focus:ring-4 focus:ring-blue-500/10"
-            value={activeCaseId} onChange={e => { setCaseId(e.target.value); setPlanId(''); setEditing(false) }}>
-            {cases.map(c => <option key={c.id} value={c.id}>{c.path || `#${c.order}`}</option>)}
-          </select>
-          {!selectedPlan && (
-            <button className="rounded-md bg-blue-600 px-3 py-2 text-xs font-medium text-white hover:bg-blue-700 disabled:opacity-50"
-              disabled={!activeCaseId || importMut.isPending} onClick={() => importMut.mutate()}>
-              {importMut.isPending ? t('生成中…', 'Generating…') : t('生成执行计划', 'Generate plan')}
-            </button>
+          {selectedPlan ? (
+            <span className="text-xs text-gray-500">{selectedPlan.source === 'legacy_import' ? t('来源：录制数据导入', 'Source: recording import') : t('来源：手动编排', 'Source: manual authoring')}</span>
+          ) : (
+            <>
+              <span className="flex-1 text-xs text-gray-500">{t('该套件尚未创建执行流程。', 'This suite does not have an execution flow yet.')}</span>
+              <button className="rounded-md bg-blue-600 px-3 py-2 text-xs font-medium text-white hover:bg-blue-700 disabled:opacity-50"
+                disabled={createMut.isPending || (sourceFormat === 'recorded' && cases.length === 0)} onClick={() => createMut.mutate()}>
+                {createMut.isPending ? t('创建中…', 'Creating…') : t('创建执行流程', 'Create flow')}
+              </button>
+              {sourceFormat === 'recorded' && activeCaseId && (
+                <button className="rounded-md border border-blue-200 bg-blue-50 px-3 py-2 text-xs font-medium text-blue-700 hover:bg-blue-100 disabled:opacity-50"
+                  disabled={importMut.isPending} onClick={() => importMut.mutate()}>
+                  {importMut.isPending ? t('导入中…', 'Importing…') : t('从录制数据生成', 'Import recording')}
+                </button>
+              )}
+            </>
           )}
         </div>
 
@@ -363,7 +387,7 @@ export default function ExecutionPlanManager({ suiteId, platform, device }: { su
           <>
             {plans.length > 0 && selectedPlan && (
               <div className="flex flex-wrap items-center gap-2 rounded-xl border border-blue-100 bg-blue-50/50 p-4">
-                <span className="text-xs font-medium text-gray-700">{t('当前执行计划', 'Current execution plan')}</span>
+                <span className="text-xs font-medium text-gray-700">{t('当前执行流程', 'Current execution flow')}</span>
                 <span className={`rounded-full px-2 py-1 text-[11px] ${STATUS_STYLE[selectedPlan.status] || 'bg-gray-100 text-gray-600'}`}>{selectedPlan.status}</span>
                 <span className="text-xs text-gray-400">{selectedPlan.steps.length} {t('个步骤', 'steps')}</span>
                 {!editing && <div className="ml-auto flex items-center gap-2">
@@ -383,9 +407,8 @@ export default function ExecutionPlanManager({ suiteId, platform, device }: { su
 
             {!selectedPlan && !plansLoading && (
               <div className="rounded-2xl border border-dashed border-slate-200 bg-slate-50/70 px-4 py-8 text-center">
-                <div className="text-sm font-medium text-gray-700">{t('还没有执行计划', 'No execution plan yet')}</div>
-                <p className="mt-1 text-xs text-gray-500">{t('可以从该用例已有的 Replay 操作记录生成一份草稿计划。', 'Generate a draft plan from this case’s existing Replay actions.')}</p>
-                {!importMut.isPending && <button className="mt-3 rounded-md bg-blue-600 px-4 py-2 text-xs font-medium text-white hover:bg-blue-700" onClick={() => importMut.mutate()}>{t('生成执行计划', 'Generate plan')}</button>}
+                <div className="text-sm font-medium text-gray-700">{t('还没有执行流程', 'No execution flow yet')}</div>
+                <p className="mt-1 text-xs text-gray-500">{t('可以手动编排步骤；录制套件也可以从录制数据导入。', 'Create steps manually, or import recorded actions for a recorded suite.')}</p>
               </div>
             )}
           </>

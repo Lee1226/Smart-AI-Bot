@@ -972,7 +972,7 @@ export interface ExecutionPlanStep {
 
 export interface ExecutionPlan {
   id: string
-  test_case_id: string
+  test_case_id?: string | null
   suite_id: string
   version: number
   status: 'draft' | 'validated' | 'deprecated' | string
@@ -990,6 +990,10 @@ export interface ExecutionPlan {
 
 export const fetchSuiteCases = (suiteId: string) =>
   api.get<SuiteCase[]>(`/suites/${suiteId}/cases`).then(r => r.data)
+export const fetchSuiteExecutionPlan = (suiteId: string) =>
+  api.get<ExecutionPlan[]>(`/execution-plans/suites/${suiteId}`).then(r => r.data)
+export const createSuiteExecutionPlan = (suiteId: string, platform: string) =>
+  api.post<ExecutionPlan>(`/execution-plans/suites/${suiteId}`, { platform }).then(r => r.data)
 export const fetchExecutionPlans = (caseId: string) =>
   api.get<ExecutionPlan[]>(`/execution-plans/cases/${caseId}`).then(r => r.data)
 export const importLegacyExecutionPlan = (caseId: string, platform: string) =>
