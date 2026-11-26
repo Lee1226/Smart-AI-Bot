@@ -55,7 +55,6 @@ function hasValidSwipeCoordinates(step: ExecutionPlanStep): boolean {
 export default function ExecutionPlanManager({ suiteId, sourceFormat, platform, device }: { suiteId: string; sourceFormat: string; platform: string; device: Device | null }) {
   const t = useT()
   const qc = useQueryClient()
-  const [caseId, setCaseId] = useState('')
   const [planId, setPlanId] = useState('')
   const [editing, setEditing] = useState(false)
   const [draftSteps, setDraftSteps] = useState<ExecutionPlanStep[]>([])
@@ -74,7 +73,7 @@ export default function ExecutionPlanManager({ suiteId, sourceFormat, platform, 
     queryFn: () => fetchSuiteCases(suiteId),
     enabled: sourceFormat === 'recorded',
   })
-  const selectedCase = cases.find(c => c.id === caseId) || cases[0]
+  const selectedCase = cases[0]
   const activeCaseId = selectedCase?.id || ''
   const { data: plans = [], isLoading: plansLoading } = useQuery({
     queryKey: ['suite-execution-plan', suiteId],
@@ -136,7 +135,7 @@ export default function ExecutionPlanManager({ suiteId, sourceFormat, platform, 
     },
     onError: (e: unknown) => {
       const msg = (e as { response?: { data?: { detail?: string } } })?.response?.data?.detail || String(e)
-      alert(t(`保存执行计划失败：${msg}`, `Failed to save execution plan: ${msg}`))
+      alert(t(`保存执行流程失败：${msg}`, `Failed to save execution flow: ${msg}`))
     },
   })
 
@@ -152,7 +151,7 @@ export default function ExecutionPlanManager({ suiteId, sourceFormat, platform, 
     },
     onError: (e: unknown) => {
       const msg = (e as { response?: { data?: { detail?: string } } })?.response?.data?.detail || String(e)
-      alert(t(`执行计划启动失败：${msg}`, `Failed to start execution plan: ${msg}`))
+      alert(t(`执行流程启动失败：${msg}`, `Failed to start execution flow: ${msg}`))
     },
   })
 
@@ -383,7 +382,7 @@ export default function ExecutionPlanManager({ suiteId, sourceFormat, platform, 
           )}
         </div>
 
-        {plansLoading ? <div className="text-sm text-gray-400">{t('读取执行计划…', 'Loading execution plan…')}</div> : (
+        {plansLoading ? <div className="text-sm text-gray-400">{t('读取执行流程…', 'Loading execution flow…')}</div> : (
           <>
             {plans.length > 0 && selectedPlan && (
               <div className="flex flex-wrap items-center gap-2 rounded-xl border border-blue-100 bg-blue-50/50 p-4">

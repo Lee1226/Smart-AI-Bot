@@ -493,6 +493,12 @@ async def import_legacy_replay(
         raise HTTPException(status_code=422, detail=str(exc))
 
     account_id = require_account_id(request)
+    existing_suite_plan = (await db.execute(select(ExecutionPlan.id).where(
+        ExecutionPlan.suite_id == suite.id,
+        ExecutionPlan.account_id == account_id,
+    ).limit(1))).scalar_one_or_none()
+    if existing_suite_plan:
+        raise HTTPException(status_code=409, detail="该套件已存在执行流程，请先编辑现有流程")
     try:
         lifecycle_metadata = json.loads(case.lifecycle_actions_json or "{}")
     except (TypeError, json.JSONDecodeError) as exc:
