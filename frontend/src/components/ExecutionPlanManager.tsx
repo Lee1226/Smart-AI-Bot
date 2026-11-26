@@ -60,6 +60,7 @@ export default function ExecutionPlanManager({ suiteId, sourceFormat, platform, 
   const [draftSteps, setDraftSteps] = useState<ExecutionPlanStep[]>([])
   const [draftPreActions, setDraftPreActions] = useState<LifecycleAction[]>([])
   const [draftPostActions, setDraftPostActions] = useState<LifecycleAction[]>([])
+  const [draftExpected, setDraftExpected] = useState('')
   const [editError, setEditError] = useState('')
   const [targetStepIndex, setTargetStepIndex] = useState(0)
   const [executingStep, setExecutingStep] = useState<number | null>(null)
@@ -101,6 +102,7 @@ export default function ExecutionPlanManager({ suiteId, sourceFormat, platform, 
       setDraftSteps([])
       setDraftPreActions([])
       setDraftPostActions([])
+      setDraftExpected('')
       setEditing(true)
       await invalidate()
     },
@@ -159,6 +161,7 @@ export default function ExecutionPlanManager({ suiteId, sourceFormat, platform, 
     if (!selectedPlan) return
     setDraftPreActions(Array.isArray(selectedPlan.metadata?.pre_actions) ? selectedPlan.metadata.pre_actions as LifecycleAction[] : [])
     setDraftPostActions(Array.isArray(selectedPlan.metadata?.post_actions) ? selectedPlan.metadata.post_actions as LifecycleAction[] : [])
+    setDraftExpected(String(selectedPlan.metadata?.expected || selectedCase?.expected || ''))
     setDraftSteps(selectedPlan.steps.map(step => ({
       ...step,
       args: { ...(step.args || {}) },
@@ -344,7 +347,7 @@ export default function ExecutionPlanManager({ suiteId, sourceFormat, platform, 
     setEditError('')
     saveMut.mutate({
       steps: draftSteps.map((step, i) => ({ ...step, sequence: i + 1 })),
-      metadata: { ...(selectedPlan?.metadata || {}), pre_actions: draftPreActions, post_actions: draftPostActions },
+      metadata: { ...(selectedPlan?.metadata || {}), expected: draftExpected.trim(), pre_actions: draftPreActions, post_actions: draftPostActions },
       warnings: selectedPlan?.warnings || [],
       platform: selectedPlan?.platform || platform,
     })
@@ -440,6 +443,7 @@ export default function ExecutionPlanManager({ suiteId, sourceFormat, platform, 
                 </ul>
               </div>
             )}
+            {selectedPlan.metadata?.expected && <div className="rounded-lg border border-blue-100 bg-blue-50/50 px-3 py-2.5 text-xs"><span className="font-semibold text-gray-700">{t('最终预期结果：', 'Final expected result: ')}</span><span className="text-gray-600">{String(selectedPlan.metadata.expected)}</span></div>}
             <div className="grid grid-cols-1 gap-3 xl:grid-cols-2">
               {(['pre_actions', 'post_actions'] as const).map((phase) => {
                 const actions = Array.isArray(selectedPlan.metadata?.[phase]) ? selectedPlan.metadata[phase] as LifecycleAction[] : []
@@ -480,6 +484,11 @@ export default function ExecutionPlanManager({ suiteId, sourceFormat, platform, 
               <button className="rounded-md border border-blue-200 bg-blue-50 px-3 py-2 text-xs font-medium text-blue-700 hover:bg-blue-100" onClick={addStep}>＋ {t('新增步骤', 'Add step')}</button>
             </div>
 
+            <div className="rounded-xl border border-blue-100 bg-blue-50/40 p-4">
+              <label className={labelClass}>{t('流程级最终预期结果', 'Final expected result for this flow')}</label>
+              <textarea rows={2} className={fieldClass} value={draftExpected} onChange={e => setDraftExpected(e.target.value)} placeholder={t('描述全部步骤执行完成后，设备最终应达到的状态或呈现的结果', 'Describe the final device state or outcome expected after all steps finish')} />
+              <p className="mt-1 text-[11px] text-gray-500">{t('录制用例会自动带入保存时填写的期望结果；手动创建的流程可在这里填写。运行结束后由最终验证器统一判断。', 'Recorded cases carry over the expected result entered when saving; enter it here for manually created flows. The final verifier evaluates it after all steps finish.')}</p>
+            </div>
             <div className="grid grid-cols-1 gap-3 xl:grid-cols-2">
               <LifecycleActionEditor
                 title="执行前处理（可选）"
