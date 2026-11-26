@@ -4,9 +4,11 @@ import json
 from routers.recorder import RecordedStep, SaveRequest, _to_replay_steps
 from core.recorder_engine import sanitize_events_for_storage
 import pytest
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 from db.database import Base
-from db.models import TestCase, TestSuite
+from db.models import StepNode, TestCase, TestSuite
+from db.migrate_step_tree import migrate_suite_to_step_tree
 
 
 def test_save_request_keeps_legacy_clients_compatible():
@@ -127,3 +129,25 @@ def test_replay_locator_prefers_clickable_ancestor_target():
     replay = json.loads(_to_replay_steps(steps, events))
     assert replay[0]["locator"]["text"] == "打开设置"
     assert replay[0]["locator"]["resource_id"] == "app:id/settings_row"
+
+
+@pytest.mark.asyncio
+async def test_recorded_case_title_is_not_migrated_into_step_tree():
+    engine = create_async_engine("sqlite+aiosqlite:///:memory:")
+    async with engine.begin() as conn:
+        await conn.run_sync(Base.metadata.create_all)
+    maker = async_sessionmaker(engine, expire_on_commit=False)
+    async with maker() as session:
+        suite = TestSuite(name="recorded", source_format="recorded", account_id="acct")
+        session.add(suite)
+        await session.flush()
+        case = TestCase(
+            suite_id=suite.id, path="录制用例标题", expected="进入首页",
+            account_id="acct", replay_steps='[{"kind":"tap","x":1,"y":2}]',
+        )
+        session.add(case)
+        await session.commit()
+        assert await migrate_suite_to_step_tree(session, suite.id) == 0
+        nodes = (await session.execute(select(StepNode).where(StepNode.suite_id == suite.id))).scalars().all()
+        assert nodes == []
+    await engine.dispose()

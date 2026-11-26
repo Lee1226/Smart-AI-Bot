@@ -9,7 +9,7 @@ from sqlalchemy import select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from core.step_tree import BuiltNode, LegacyCase, build_tree_from_cases
-from db.models import StepNode, TestCase, TestResult
+from db.models import StepNode, TestCase, TestResult, TestSuite
 
 
 def _checkpoints(raw: str) -> list[tuple]:
@@ -34,15 +34,34 @@ async def migrate_suite_to_step_tree(session: AsyncSession, suite_id: str) -> in
 
     No-op (returns 0) if the suite already has StepNode rows.
     """
+    suite = await session.get(TestSuite, suite_id)
+    cases = (await session.execute(
+        select(TestCase).where(TestCase.suite_id == suite_id).order_by(TestCase.order)
+    )).scalars().all()
+
+    # A recorder suite stores its executable actions in replay_steps. Its case
+    # title is metadata, not a step-tree action; never synthesize tree nodes.
+    if suite and suite.source_format == "recorded":
+        existing_nodes = (await session.execute(
+            select(StepNode).where(StepNode.suite_id == suite_id)
+        )).scalars().all()
+        # Clean up only the exact one-node legacy artifact created by the old
+        # flat-case migration. Preserve any nontrivial, user-authored tree.
+        if len(existing_nodes) == 1 and len(cases) == 1:
+            node, case = existing_nodes[0], cases[0]
+            if node.parent_id is None and node.action == case.path and (node.expected or "") == (case.expected or ""):
+                await session.execute(
+                    update(TestResult).where(TestResult.case_id == node.id).values(case_id=case.id)
+                )
+                await session.delete(node)
+                await session.commit()
+        return 0
+
     existing = (await session.execute(
         select(StepNode.id).where(StepNode.suite_id == suite_id).limit(1)
     )).first()
     if existing is not None:
         return 0
-
-    cases = (await session.execute(
-        select(TestCase).where(TestCase.suite_id == suite_id).order_by(TestCase.order)
-    )).scalars().all()
     if not cases:
         return 0
 
