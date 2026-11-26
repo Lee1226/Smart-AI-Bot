@@ -137,7 +137,7 @@ export default function ExecutionPlanStudio() {
       </section>
 
       {selectedSuite && (
-        <ExecutionPlanManager key={selectedSuite.id} suiteId={selectedSuite.id} platform={platform} device={selectedDevice} />
+        <ExecutionPlanManager key={selectedSuite.id} suiteId={selectedSuite.id} sourceFormat={selectedSuite.source_format} platform={platform} device={selectedDevice} />
       )}
     </div>
   )
