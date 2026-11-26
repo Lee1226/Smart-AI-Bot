@@ -612,7 +612,11 @@ async def execute_execution_plan_run(
             try:
                 async with AsyncSessionLocal() as db:
                     await db.execute(update(ExecutionPlan).where(
-                        ExecutionPlan.id == plan_id
+                        ExecutionPlan.id == plan_id,
+                        # Do not validate a plan that was edited after this run
+                        # was queued; the run validates its immutable snapshot.
+                        ExecutionPlan.steps_json == json.dumps(steps, ensure_ascii=False),
+                        ExecutionPlan.metadata_json == json.dumps(plan_metadata, ensure_ascii=False),
                     ).values(
                         status="validated",
                         validated_run_id=run_id,
