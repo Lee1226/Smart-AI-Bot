@@ -33,6 +33,10 @@ class LegacyImportRequest(BaseModel):
     platform: str = ""
 
 
+class SuitePlanCreateRequest(BaseModel):
+    platform: str = ""
+
+
 class PlanVersionRequest(BaseModel):
     steps: List[Dict[str, Any]]
     metadata: Dict[str, Any] = Field(default_factory=dict)
@@ -42,7 +46,7 @@ class PlanVersionRequest(BaseModel):
 
 class ExecutionPlanOut(BaseModel):
     id: str
-    test_case_id: str
+    test_case_id: Optional[str] = None
     suite_id: str
     version: int
     status: str
@@ -136,6 +140,63 @@ async def _owned_case(db: AsyncSession, request: Request, case_id: str):
     return row[0], row[1]
 
 
+@router.get("/suites/{suite_id}", response_model=List[ExecutionPlanOut])
+async def list_suite_plans(suite_id: str, request: Request, db: AsyncSession = Depends(get_db)):
+    account_id = require_account_id(request)
+    suite = (await db.execute(select(TestSuite).where(
+        TestSuite.id == suite_id, TestSuite.account_id == account_id
+    ))).scalar_one_or_none()
+    if not suite:
+        raise HTTPException(status_code=404, detail="Test suite not found")
+    # A suite has one current execution flow. Return its newest saved revision;
+    # older plans remain available through their existing plan IDs/run records.
+    plan = (await db.execute(
+        select(ExecutionPlan).where(
+            ExecutionPlan.suite_id == suite_id,
+            ExecutionPlan.account_id == account_id,
+        ).order_by(ExecutionPlan.updated_at.desc(), ExecutionPlan.version.desc()).limit(1)
+    )).scalar_one_or_none()
+    return [_out(plan)] if plan else []
+
+
+@router.post("/suites/{suite_id}", response_model=ExecutionPlanOut, status_code=201)
+async def create_suite_plan(
+    suite_id: str,
+    body: SuitePlanCreateRequest,
+    request: Request,
+    db: AsyncSession = Depends(get_db),
+):
+    account_id = require_account_id(request)
+    suite = (await db.execute(select(TestSuite).where(
+        TestSuite.id == suite_id, TestSuite.account_id == account_id
+    ))).scalar_one_or_none()
+    if not suite:
+        raise HTTPException(status_code=404, detail="Test suite not found")
+    existing = (await db.execute(select(ExecutionPlan.id).where(
+        ExecutionPlan.suite_id == suite_id,
+        ExecutionPlan.account_id == account_id,
+    ).limit(1))).scalar_one_or_none()
+    if existing:
+        raise HTTPException(status_code=409, detail="该套件已存在执行流程")
+    plan = ExecutionPlan(
+        test_case_id=None,
+        suite_id=suite_id,
+        version=1,
+        status="draft",
+        source="manual",
+        platform=body.platform.strip(),
+        app_package=suite.app_package or "",
+        metadata_json="{}",
+        steps_json="[]",
+        warnings_json="[]",
+        account_id=account_id,
+    )
+    db.add(plan)
+    await db.commit()
+    await db.refresh(plan)
+    return _out(plan)
+
+
 @router.get("/cases/{case_id}", response_model=List[ExecutionPlanOut])
 async def list_case_plans(case_id: str, request: Request, db: AsyncSession = Depends(get_db)):
     await _owned_case(db, request, case_id)
@@ -217,7 +278,7 @@ async def update_execution_plan(
     plan.steps_json = json.dumps(body.steps, ensure_ascii=False)
     plan.metadata_json = json.dumps(body.metadata, ensure_ascii=False)
     plan.warnings_json = json.dumps(body.warnings, ensure_ascii=False)
-    case = await db.get(TestCase, plan.test_case_id)
+    case = await db.get(TestCase, plan.test_case_id) if plan.test_case_id else None
     if case:
         case.lifecycle_actions_json = json.dumps({
             "pre_actions": body.metadata.get("pre_actions", []),
@@ -288,11 +349,11 @@ async def create_plan_version(
 
     latest_version = await db.scalar(
         select(func.max(ExecutionPlan.version)).where(
-            ExecutionPlan.test_case_id == source.test_case_id,
+            ExecutionPlan.suite_id == source.suite_id,
             ExecutionPlan.account_id == account_id,
         )
     )
-    source_case = await db.get(TestCase, source.test_case_id)
+    source_case = await db.get(TestCase, source.test_case_id) if source.test_case_id else None
     if source_case:
         source_case.lifecycle_actions_json = json.dumps({
             "pre_actions": body.metadata.get("pre_actions", []),
@@ -336,12 +397,14 @@ async def run_execution_plan(
     ))).scalar_one_or_none()
     if not plan:
         raise HTTPException(status_code=404, detail="Execution plan not found")
-    case = (await db.execute(select(TestCase).where(
-        TestCase.id == plan.test_case_id,
-        TestCase.suite_id == plan.suite_id,
-    ))).scalar_one_or_none()
-    if not case:
-        raise HTTPException(status_code=404, detail="Execution plan case not found")
+    case = None
+    if plan.test_case_id:
+        case = (await db.execute(select(TestCase).where(
+            TestCase.id == plan.test_case_id,
+            TestCase.suite_id == plan.suite_id,
+        ))).scalar_one_or_none()
+        if not case:
+            raise HTTPException(status_code=404, detail="Execution plan source case not found")
     metadata = json.loads(plan.metadata_json or "{}")
     _validate_lifecycle_actions(metadata)
     steps = json.loads(plan.steps_json or "[]")
@@ -369,6 +432,16 @@ async def run_execution_plan(
         raise HTTPException(status_code=400, detail=f"Device {body.device_id} is not connected")
     from core.model_resolver import validate_model_selection
     selected_model, selected_connection = await validate_model_selection(db, account_id, body.model_id)
+    plan_snapshot = {
+        "id": plan.id,
+        "suite_id": plan.suite_id,
+        "test_case_id": plan.test_case_id,
+        "version": plan.version,
+        "platform": plan.platform or "",
+        "app_package": plan.app_package or "",
+        "metadata": json.loads(plan.metadata_json or "{}"),
+        "steps": steps,
+    }
     run = TestRun(
         suite_id=plan.suite_id,
         device_id=body.device_id,
@@ -377,10 +450,13 @@ async def run_execution_plan(
         model_id=selected_model.id,
         status="pending",
         account_id=account_id,
+        execution_plan_id=plan.id,
+        execution_plan_version=plan.version,
+        execution_plan_snapshot_json=json.dumps(plan_snapshot, ensure_ascii=False),
     )
     db.add(run)
     await db.flush()
-    db.add(TestResult(run_id=run.id, case_id=case.id, status="pending", account_id=account_id))
+    db.add(TestResult(run_id=run.id, case_id=case.id if case else None, status="pending", account_id=account_id))
     plan.status = "draft"
     plan.validated_run_id = ""
     plan.updated_at = datetime.utcnow()
@@ -426,15 +502,15 @@ async def import_legacy_replay(
     _validate_lifecycle_actions(lifecycle_metadata)
     latest_version = await db.scalar(
         select(func.max(ExecutionPlan.version)).where(
-            ExecutionPlan.test_case_id == case.id,
+            ExecutionPlan.suite_id == suite.id,
             ExecutionPlan.account_id == account_id,
         )
     )
     latest = (await db.execute(
         select(ExecutionPlan).where(
-            ExecutionPlan.test_case_id == case.id,
+            ExecutionPlan.suite_id == suite.id,
             ExecutionPlan.account_id == account_id,
-        ).order_by(ExecutionPlan.version.desc()).limit(1)
+        ).order_by(ExecutionPlan.version.desc(), ExecutionPlan.updated_at.desc()).limit(1)
     )).scalar_one_or_none()
 
     plan = ExecutionPlan(

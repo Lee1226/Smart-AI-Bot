@@ -181,6 +181,10 @@ class TestRun(Base):
     webhook_url: Mapped[str] = mapped_column(String, default="")
     test_account_id: Mapped[str] = mapped_column(String, default="")
     test_account_name: Mapped[str] = mapped_column(String, default="")
+    # Execution-plan runs keep the exact plan revision that was queued.
+    execution_plan_id: Mapped[Optional[str]] = mapped_column(String, nullable=True, index=True)
+    execution_plan_version: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
+    execution_plan_snapshot_json: Mapped[str] = mapped_column(Text, default="{}")
 
     suite: Mapped["TestSuite"] = relationship(back_populates="runs")
     results: Mapped[list["TestResult"]] = relationship(back_populates="run", cascade="all, delete-orphan")
@@ -192,7 +196,8 @@ class TestResult(Base):
 
     id: Mapped[str] = mapped_column(String, primary_key=True, default=_uuid)
     run_id: Mapped[str] = mapped_column(ForeignKey("test_runs.id"))
-    case_id: Mapped[str] = mapped_column(ForeignKey("test_cases.id"))
+    # Null for suite-level execution-plan runs; tree/case runs keep their target ID.
+    case_id: Mapped[Optional[str]] = mapped_column(ForeignKey("test_cases.id"), nullable=True)
     status: Mapped[str] = mapped_column(String, default="pending")  # pending/pass/fail/error/skip
     reason: Mapped[str] = mapped_column(Text, default="")
     steps: Mapped[int] = mapped_column(Integer, default=0)
@@ -352,7 +357,8 @@ class ExecutionPlan(Base):
     )
 
     id: Mapped[str] = mapped_column(String, primary_key=True, default=_uuid)
-    test_case_id: Mapped[str] = mapped_column(ForeignKey("test_cases.id"), index=True)
+    # Optional provenance only. Execution plans belong to suites, not test cases.
+    test_case_id: Mapped[Optional[str]] = mapped_column(ForeignKey("test_cases.id"), nullable=True, index=True)
     suite_id: Mapped[str] = mapped_column(ForeignKey("test_suites.id"), index=True)
     version: Mapped[int] = mapped_column(Integer, default=1)
     status: Mapped[str] = mapped_column(String, default="draft")  # draft/validated/deprecated

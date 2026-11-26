@@ -107,10 +107,49 @@ async def init_db():
         await _ensure_columns("test_cases", {"account_id": "VARCHAR"})
         await _ensure_columns("step_nodes", {"account_id": "VARCHAR"})
         await _ensure_columns("test_runs", {"account_id": "VARCHAR", "model_id": "VARCHAR DEFAULT ''"})
+        await _ensure_columns("test_runs", {
+            "execution_plan_id": "VARCHAR",
+            "execution_plan_version": "INTEGER",
+            "execution_plan_snapshot_json": "TEXT DEFAULT '{}'",
+        })
         await _ensure_columns("test_runs", {"webhook_url": "VARCHAR DEFAULT ''",
             "test_account_id": "VARCHAR DEFAULT ''", "test_account_name": "VARCHAR DEFAULT ''"})
         await _ensure_columns("test_results", {"account_id": "VARCHAR"})
         await _ensure_columns("test_step_logs", {"account_id": "VARCHAR"})
+
+    # SQLite cannot change NOT NULL in place. Rebuild only the two tables whose
+    # nullable target columns are needed by suite-level execution plans.
+    from sqlalchemy.schema import CreateTable, CreateIndex
+    from db.models import ExecutionPlan, TestResult
+    async with engine.connect() as conn:
+        await conn.exec_driver_sql("PRAGMA foreign_keys=OFF")
+        await conn.commit()
+        async with conn.begin():
+            async def _make_nullable(model, table_name: str, column_name: str):
+                info = (await conn.execute(text(f"PRAGMA table_info({table_name})"))).fetchall()
+                column = next((row for row in info if row[1] == column_name), None)
+                if column is None or not column[3]:
+                    return
+                temporary = f"{table_name}_nullable_migration"
+                await conn.exec_driver_sql(f'DROP TABLE IF EXISTS "{temporary}"')
+                ddl = str(CreateTable(model.__table__).compile(dialect=conn.dialect))
+                ddl = ddl.replace(f"CREATE TABLE {table_name}", f'CREATE TABLE "{temporary}"', 1)
+                ddl = ddl.replace(f'"{column_name}" VARCHAR NOT NULL', f'"{column_name}" VARCHAR', 1)
+                ddl = ddl.replace(f"{column_name} VARCHAR NOT NULL", f"{column_name} VARCHAR", 1)
+                await conn.exec_driver_sql(ddl)
+                names = [row[1] for row in info]
+                quoted = ", ".join(f'"{name}"' for name in names)
+                await conn.exec_driver_sql(
+                    f'INSERT INTO "{temporary}" ({quoted}) SELECT {quoted} FROM "{table_name}"'
+                )
+                await conn.exec_driver_sql(f'DROP TABLE "{table_name}"')
+                await conn.exec_driver_sql(f'ALTER TABLE "{temporary}" RENAME TO "{table_name}"')
+                for index in model.__table__.indexes:
+                    await conn.execute(CreateIndex(index))
+            await _make_nullable(ExecutionPlan, "execution_plans", "test_case_id")
+            await _make_nullable(TestResult, "test_results", "case_id")
+        await conn.exec_driver_sql("PRAGMA foreign_keys=ON")
+        await conn.commit()
 
     # ── Seed the account-scoped LLM provider catalog exactly once ───────────
     from db.models import Account, LLMProvider, LLMProviderCatalogState

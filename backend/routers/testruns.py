@@ -123,7 +123,7 @@ class RunOut(BaseModel):
 
 class ResultOut(BaseModel):
     id: str
-    case_id: str
+    case_id: str = ""
     path: str
     expected: str
     status: str
@@ -821,11 +821,11 @@ async def get_results(run_id: str, db: AsyncSession = Depends(get_db)):
     )).scalars().all()
 
     # case_id resolves against test_cases (legacy runs) OR step_nodes (tree runs).
-    ids = [r.case_id for r in results]
+    ids = [r.case_id for r in results if r.case_id]
     cases = {c.id: c for c in (await db.execute(
         select(TestCase).where(TestCase.id.in_(ids))
-    )).scalars().all()}
-    node_ids = [cid for cid in ids if cid not in cases]
+    )).scalars().all()} if ids else {}
+    node_ids = [cid for cid in ids if cid and cid not in cases]
     nodes: dict = {}
     node_path: dict = {}
     if node_ids:
@@ -847,7 +847,9 @@ async def get_results(run_id: str, db: AsyncSession = Depends(get_db)):
             chain = chain_to_node(by_suite.get(n.suite_id, []), nid)
             node_path[nid] = " > ".join(c.action for c in chain)
 
-    def _path_expected(cid: str):
+    def _path_expected(cid: Optional[str]):
+        if not cid:
+            return "执行流程", ""
         if cid in cases:
             return cases[cid].path, cases[cid].expected
         if cid in nodes:
@@ -858,7 +860,7 @@ async def get_results(run_id: str, db: AsyncSession = Depends(get_db)):
     for r in results:
         path, expected = _path_expected(r.case_id)
         out.append(ResultOut(
-            id=r.id, case_id=r.case_id, path=path, expected=expected,
+            id=r.id, case_id=r.case_id or "", path=path, expected=expected,
             status=r.status, reason=r.reason, steps=r.steps,
             screenshot_b64=r.screenshot_b64, log=r.log,
             started_at=r.started_at.isoformat() if r.started_at else None,

@@ -231,19 +231,39 @@ async def execute_execution_plan_run(
         async with AsyncSessionLocal() as db:
             run = await db.get(TestRun, run_id)
             plan = await db.get(ExecutionPlan, plan_id)
-            if not run or not plan or plan.suite_id != run.suite_id:
-                raise RuntimeError("执行计划或测试运行记录不存在")
-            case = await db.get(TestCase, plan.test_case_id)
+            if not run:
+                raise RuntimeError("测试运行记录不存在")
+            try:
+                snapshot = json.loads(run.execution_plan_snapshot_json or "{}")
+            except (TypeError, json.JSONDecodeError):
+                snapshot = {}
+            if not isinstance(snapshot, dict) or not snapshot:
+                if not plan or plan.suite_id != run.suite_id:
+                    raise RuntimeError("执行计划或测试运行记录不存在")
+                snapshot = {
+                    "id": plan.id, "suite_id": plan.suite_id,
+                    "test_case_id": plan.test_case_id, "version": plan.version,
+                    "app_package": plan.app_package or "",
+                    "metadata": json.loads(plan.metadata_json or "{}"),
+                    "steps": json.loads(plan.steps_json or "[]"),
+                }
+            if snapshot.get("suite_id") != run.suite_id:
+                raise RuntimeError("执行计划与测试运行所属套件不一致")
+            case_id = snapshot.get("test_case_id")
+            case = await db.get(TestCase, case_id) if case_id else None
             result = (await db.execute(select(TestResult).where(
-                TestResult.run_id == run_id, TestResult.case_id == plan.test_case_id
-            ))).scalar_one_or_none()
-            if not case or not result:
-                raise RuntimeError("执行计划关联的用例或结果记录不存在")
+                TestResult.run_id == run_id
+            ))).scalars().first()
+            if not result:
+                raise RuntimeError("执行计划运行结果记录不存在")
             lifecycle_result_id = result.id
-            steps = json.loads(plan.steps_json or "[]")
-            plan_metadata = json.loads(plan.metadata_json or "{}")
-            lifecycle_post_actions = plan_metadata.get("post_actions", []) if isinstance(plan_metadata, dict) else []
-            lifecycle_pre_actions = plan_metadata.get("pre_actions", []) if isinstance(plan_metadata, dict) else []
+            steps = snapshot.get("steps") if isinstance(snapshot.get("steps"), list) else []
+            plan_metadata = snapshot.get("metadata") if isinstance(snapshot.get("metadata"), dict) else {}
+            expected = (case.expected or "") if case else str(plan_metadata.get("expected") or "")
+            plan_version = snapshot.get("version") or 1
+            plan_app_package = str(snapshot.get("app_package") or "")
+            lifecycle_post_actions = plan_metadata.get("post_actions", [])
+            lifecycle_pre_actions = plan_metadata.get("pre_actions", [])
             device_id, provider, model, model_id, account_id = run.device_id, run.provider, run.model, run.model_id, run.account_id
 
         if not steps:
@@ -291,7 +311,7 @@ async def execute_execution_plan_run(
             state.redact = login_context.redact
 
         from core.test_runner import _suite_app_package
-        target_package = plan.app_package or await _suite_app_package(plan.suite_id, device.platform)
+        target_package = plan_app_package or await _suite_app_package(run.suite_id, device.platform)
         async with AsyncSessionLocal() as knowledge_db:
             from db.exploration_models import ExploreKnowledge
             knowledge_rows = (await knowledge_db.execute(select(ExploreKnowledge).where(
@@ -322,7 +342,7 @@ async def execute_execution_plan_run(
             ))
             await db.commit()
 
-        await emit(f"执行计划 v{plan.version}：{len(steps)} 步 · 设备={device_id}")
+        await emit(f"执行流程 v{plan_version}：{len(steps)} 步 · 设备={device_id}")
         if await recorder.start(device_id):
             await emit("音视频录制已启动 (Scrcpy)")
 
@@ -506,10 +526,10 @@ async def execute_execution_plan_run(
                 await emit(f"  ✗ {final_reason}")
                 break
 
-        if final_status == "pass" and case.expected:
-            await emit("所有步骤已执行，正在验证用例预期结果…")
+        if final_status == "pass" and expected:
+            await emit("所有步骤已执行，正在验证最终预期结果…")
             confirmed, reason, shot_b64, _gap = await verifier.verify(
-                device, case.expected, log=emit, action_history=[
+                device, expected, log=emit, action_history=[
                     f"Step {item.get('step')}: {item.get('executor')} {item.get('action')} → {item.get('result', item.get('error', ''))}"
                     for item in action_history
                 ],
