@@ -190,6 +190,8 @@ async def test_run_results_resolve_node_ids(client, session):
 
     results = (await client.get(f"/api/runs/{run.id}/results")).json()
     assert len(results) == 1
+    assert results[0]["case_id"] == ""
+    assert results[0]["node_id"] == n2.id
     assert results[0]["path"] == "登录 > 点击空间"
     assert results[0]["expected"] == "个人信息页"
     assert results[0]["status"] == "pass"
