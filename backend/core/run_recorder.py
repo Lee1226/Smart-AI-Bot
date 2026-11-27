@@ -228,14 +228,11 @@ class RunRecorder:
                     return_when=asyncio.FIRST_COMPLETED,
                 )
                 batch: list[tuple[str, object]] = []
-                ended: set[str] = set()
-
                 for name, task in list(get_tasks.items()):
                     if task not in done:
                         continue
                     item = task.result()
                     if item is None:
-                        ended.add(name)
                         get_tasks.pop(name, None)
                     elif isinstance(item, dict) and item.get("error"):
                         raise RuntimeError(f"{name} capture failed: {item['error']}")
@@ -245,11 +242,10 @@ class RunRecorder:
                             queues[name].get(), name=f"rec-{name}-get-{self.run_id[:8]}"
                         )
 
-                # Keep exactly one outstanding queue.get() per stream and
-                # never bypass it with get_nowait(). A pending getter may already
-                # have reserved an AAC/H.264 configuration packet; draining the
-                # queue here could then hand a later data packet to the muxer
-                # before that configuration packet is written.
+                # Keep exactly one outstanding queue.get() per stream and never
+                # bypass it with get_nowait(). A pending getter may already have
+                # reserved an AAC/H.264 configuration packet; draining the queue
+                # could hand a later data packet to the muxer first.
                 stats["max_video_queue"] = max(
                     stats["max_video_queue"],
                     getattr(queues["video"], "_recorder_peak_size", queues["video"].qsize()),
