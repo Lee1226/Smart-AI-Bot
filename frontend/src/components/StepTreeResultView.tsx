@@ -129,7 +129,7 @@ export default function StepTreeResultView({
   const tree = useMemo(() => buildTree(nodes), [nodes])
   const byNode = useMemo(() => {
     const m = new Map<string, TestResult>()
-    results.forEach(r => m.set(r.case_id, r))
+    results.forEach(r => { if (r.node_id) m.set(r.node_id, r) })
     return m
   }, [results])
 
@@ -142,8 +142,8 @@ export default function StepTreeResultView({
   }
 
   const nodeIds = new Set(nodes.map(n => n.id))
-  const mapped = results.filter(r => nodeIds.has(r.case_id))
-  // Legacy run (results key old case ids, not step nodes) -> flat fallback.
+  const mapped = results.filter(r => !!r.node_id && nodeIds.has(r.node_id))
+  // Runs without StepNode targets are displayed as a flat result list.
   if (mapped.length === 0) {
     return (
       <div className="bg-white border rounded-lg overflow-hidden shadow-sm">
@@ -154,7 +154,7 @@ export default function StepTreeResultView({
     )
   }
 
-  const orphans = results.filter(r => !nodeIds.has(r.case_id))
+  const orphans = results.filter(r => !r.node_id || !nodeIds.has(r.node_id))
   return (
     <div className="bg-white border rounded-lg overflow-hidden shadow-sm">
       {tree.map(n => (
