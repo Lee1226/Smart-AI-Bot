@@ -1122,7 +1122,7 @@ async def delete_node_results(node_id: str, scope: str = "all", db: AsyncSession
     await _require_node(node_id, db)
     if scope not in ("all", "failed"):
         raise HTTPException(status_code=400, detail="scope must be 'all' or 'failed'")
-    stmt = select(TestResult).where(TestResult.case_id == node_id)
+    stmt = select(TestResult).where(TestResult.node_id == node_id)
     if scope == "failed":
         stmt = stmt.where(TestResult.status.in_(["fail", "error"]))
     rows = (await db.execute(stmt)).scalars().all()
