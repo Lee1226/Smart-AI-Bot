@@ -11,7 +11,7 @@ from sqlalchemy import func, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from auth.access import require_account_id, require_device
-from core.execution_plan import SUPPORTED_ACTIONS, SYSTEM_ACTIONS, legacy_replay_to_plan
+from core.execution_plan import SUPPORTED_ACTIONS, SYSTEM_ACTIONS
 from db.database import AsyncSessionLocal
 from db.models import ExecutionPlan, TestCase, TestSuite, TestRun, TestResult
 
@@ -27,10 +27,6 @@ class ExecutionPlanRunRequest(BaseModel):
     device_id: str
     model_id: str = Field(min_length=1, max_length=128)
     max_steps: int = 8
-
-
-class LegacyImportRequest(BaseModel):
-    platform: str = ""
 
 
 class SuitePlanCreateRequest(BaseModel):
@@ -478,67 +474,3 @@ async def run_execution_plan(
     return await _run_out(run, db)
 
 
-@router.post("/cases/{case_id}/import-legacy", response_model=ExecutionPlanOut, status_code=201)
-async def import_legacy_replay(
-    case_id: str,
-    body: LegacyImportRequest,
-    request: Request,
-    db: AsyncSession = Depends(get_db),
-):
-    """Create a new draft plan from replay_steps without modifying the source case."""
-    case, suite = await _owned_case(db, request, case_id)
-    try:
-        steps, warnings = legacy_replay_to_plan(case.replay_steps or "")
-    except ValueError as exc:
-        raise HTTPException(status_code=422, detail=str(exc))
-
-    account_id = require_account_id(request)
-    existing_suite_plan = (await db.execute(select(ExecutionPlan.id).where(
-        ExecutionPlan.suite_id == suite.id,
-        ExecutionPlan.account_id == account_id,
-    ).limit(1))).scalar_one_or_none()
-    if existing_suite_plan:
-        raise HTTPException(status_code=409, detail="该套件已存在执行流程，请先编辑现有流程")
-    try:
-        lifecycle_metadata = json.loads(case.lifecycle_actions_json or "{}")
-    except (TypeError, json.JSONDecodeError) as exc:
-        raise HTTPException(status_code=422, detail="用例的执行前/后处理配置不是有效 JSON") from exc
-    if not isinstance(lifecycle_metadata, dict):
-        raise HTTPException(status_code=422, detail="用例的执行前/后处理配置格式无效")
-    _validate_lifecycle_actions(lifecycle_metadata)
-    latest_version = await db.scalar(
-        select(func.max(ExecutionPlan.version)).where(
-            ExecutionPlan.suite_id == suite.id,
-            ExecutionPlan.account_id == account_id,
-        )
-    )
-    latest = (await db.execute(
-        select(ExecutionPlan).where(
-            ExecutionPlan.suite_id == suite.id,
-            ExecutionPlan.account_id == account_id,
-        ).order_by(ExecutionPlan.version.desc(), ExecutionPlan.updated_at.desc()).limit(1)
-    )).scalar_one_or_none()
-
-    plan = ExecutionPlan(
-        test_case_id=case.id,
-        suite_id=suite.id,
-        version=(latest_version or 0) + 1,
-        status="draft",
-        source="legacy_import",
-        platform=body.platform.strip(),
-        app_package=suite.app_package or "",
-        metadata_json=json.dumps({
-            "expected": case.expected or "",
-            "source_format": suite.source_format or "",
-            "legacy_path": case.path or "",
-            **lifecycle_metadata,
-        }, ensure_ascii=False),
-        steps_json=json.dumps(steps, ensure_ascii=False),
-        warnings_json=json.dumps(warnings, ensure_ascii=False),
-        previous_plan_id=latest.id if latest else None,
-        account_id=account_id,
-    )
-    db.add(plan)
-    await db.commit()
-    await db.refresh(plan)
-    return _out(plan)
