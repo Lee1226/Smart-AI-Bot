@@ -477,7 +477,10 @@ export const fetchSteps = (runId: string, resultId: string) =>
 // ── Run Comparison ───────────────────────────────────────────────────────────
 
 export interface CompareItem {
-  case_id: string
+  target_id: string
+  target_type: 'case' | 'node' | 'flow'
+  case_id?: string | null
+  node_id?: string | null
   path: string
   expected: string
   status_a: string | null
