@@ -79,6 +79,10 @@ export interface Run {
 export interface TestResult {
   id: string
   case_id: string
+  node_id?: string | null
+  target_name?: string
+  target_path?: string
+  target_expected?: string
   path: string
   expected: string
   status: string
