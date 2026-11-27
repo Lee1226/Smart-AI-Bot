@@ -274,7 +274,7 @@ async def execute_batch_run(run_id: str, state: "RunState", base_path: str,
             account_id = run_row.account_id
             suite_id = run_row.suite_id
             res = await session.execute(select(TestResult).where(TestResult.run_id == run_id))
-            result_rows = {r.case_id: r for r in res.scalars().all()}
+            result_rows = {r.node_id: r for r in res.scalars().all()}
             cres = await session.execute(select(TestCase).where(TestCase.id.in_(case_ids)))
             case_map = {c.id: c for c in cres.scalars().all()}
 
