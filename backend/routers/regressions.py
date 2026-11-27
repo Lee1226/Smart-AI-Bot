@@ -118,7 +118,13 @@ async def create_plan(body: PlanIn, request: Request, db: AsyncSession = Depends
             runs.append(run)
             db.add(RegressionTarget(plan_id=plan.id, run_id=run.id, suite_name=suite.name, device_name=device.name))
             for target in targets_by_suite[suite.id]:
-                db.add(TestResult(run_id=run.id, case_id=target.node_id, status='pending', account_id=request.state.account_id))
+                chain = target.chain
+                target_name = chain[-1].action if chain else ""
+                target_path = " > ".join(item.action for item in chain)
+                target_expected = chain[-1].expected if chain else ""
+                db.add(TestResult(run_id=run.id, node_id=target.node_id, target_name=target_name,
+                                  target_path=target_path, target_expected=target_expected,
+                                  status='pending', account_id=request.state.account_id))
     await db.commit()
     for run in runs:
         await start_tree_run(run.id, max_steps=body.max_steps)
@@ -181,7 +187,13 @@ async def retry_failed(plan_id: str, request: Request, db: AsyncSession = Depend
         runs.append(run)
         db.add(RegressionTarget(plan_id=new.id, run_id=run.id, suite_name=row['suite_name'], device_name=row['device_name']))
         for target in targets:
-            db.add(TestResult(run_id=run.id, case_id=target.node_id, status='pending', account_id=request.state.account_id))
+            chain = target.chain
+            target_name = chain[-1].action if chain else ""
+            target_path = " > ".join(item.action for item in chain)
+            target_expected = chain[-1].expected if chain else ""
+            db.add(TestResult(run_id=run.id, node_id=target.node_id, target_name=target_name,
+                              target_path=target_path, target_expected=target_expected,
+                              status='pending', account_id=request.state.account_id))
     await db.commit()
     for run in runs:
         await start_tree_run(run.id, max_steps=config['max_steps'])
@@ -211,8 +223,8 @@ async def junit(plan_id: str, request: Request, db: AsyncSession = Depends(get_d
             ET.SubElement(case, 'error', message=row['status']).text = '计划门禁未通过，运行尚未完整结束'
         for result in results:
             snapshots = data['config'].get('suite_snapshot', {}).get(row.get('suite_id'), [])
-            snapshot = next((s for s in snapshots if s['node_id'] == result.case_id), None)
-            case_name = ' > '.join(s['action'] for s in snapshot['steps']) if snapshot else result.case_id
+            snapshot = next((s for s in snapshots if s['node_id'] == result.node_id), None)
+            case_name = ' > '.join(s['action'] for s in snapshot['steps']) if snapshot else (result.target_path or result.node_id or '')
             case = ET.SubElement(suite, 'testcase', name=case_name, classname=row['suite_name'])
             if result.status == 'fail': ET.SubElement(case, 'failure', message=result.reason).text = result.reason
             elif result.status != 'pass': ET.SubElement(case, 'error', message=result.reason or result.status).text = result.reason
