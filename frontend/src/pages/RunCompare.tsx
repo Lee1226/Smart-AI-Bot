@@ -148,7 +148,7 @@ export default function RunCompare() {
                     }
                   }
                   return (
-                    <tr key={c.case_id} className={`border-t border-slate-100 transition hover:bg-blue-50/40 ${i % 2 === 0 ? 'bg-white' : 'bg-slate-50/40'}`}>
+                    <tr key={`${c.target_type}:${c.target_id}`} className={`border-t border-slate-100 transition hover:bg-blue-50/40 ${i % 2 === 0 ? 'bg-white' : 'bg-slate-50/40'}`}>
                       <td className="px-5 py-3">
                         <div className="truncate font-mono text-[11px] text-slate-400">{c.path}</div>
                         <div className="mt-1 truncate text-xs leading-5 text-slate-600">{c.expected}</div>
