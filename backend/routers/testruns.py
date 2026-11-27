@@ -853,51 +853,13 @@ async def get_results(run_id: str, db: AsyncSession = Depends(get_db)):
         select(TestResult).where(TestResult.run_id == run_id)
     )).scalars().all()
 
-    case_ids = [r.case_id for r in results if r.case_id]
-    cases = {c.id: c for c in (await db.execute(
-        select(TestCase).where(TestCase.id.in_(case_ids))
-    )).scalars().all()} if case_ids else {}
-    node_ids = [r.node_id for r in results if r.node_id]
-    nodes = {n.id: n for n in (await db.execute(
-        select(StepNode).where(StepNode.id.in_(node_ids))
-    )).scalars().all()} if node_ids else {}
-    node_path: dict = {}
-    if nodes:
-        suite_ids = {n.suite_id for n in nodes.values()}
-        suite_nodes = (await db.execute(
-            select(StepNode).where(StepNode.suite_id.in_(suite_ids))
-        )).scalars().all()
-        by_suite: dict = {}
-        for n in suite_nodes:
-            by_suite.setdefault(n.suite_id, []).append(
-                NodeRow(id=n.id, parent_id=n.parent_id, action=n.action,
-                        expected=n.expected or "", order=n.order)
-            )
-        for nid, n in nodes.items():
-            node_path[nid] = " > ".join(c.action for c in chain_to_node(by_suite.get(n.suite_id, []), nid))
-
     out = []
     for r in results:
-        if r.target_path:
-            path = r.target_path
-        elif r.case_id and r.case_id in cases:
-            path = cases[r.case_id].path
-        elif r.node_id and r.node_id in nodes:
-            path = node_path.get(r.node_id, "")
-        else:
-            path = "执行流程"
-        if r.target_expected:
-            expected = r.target_expected
-        elif r.case_id and r.case_id in cases:
-            expected = cases[r.case_id].expected
-        elif r.node_id and r.node_id in nodes:
-            expected = nodes[r.node_id].expected or ""
-        else:
-            expected = ""
-        target_name = r.target_name or (path.split(" > ")[-1] if path else "")
+        path = r.target_path or r.target_name or "执行流程"
+        expected = r.target_expected
         out.append(ResultOut(
             id=r.id, case_id=r.case_id or "", node_id=r.node_id,
-            target_name=target_name, target_path=path, target_expected=expected,
+            target_name=r.target_name, target_path=r.target_path, target_expected=r.target_expected,
             path=path, expected=expected,
             status=r.status, reason=r.reason, steps=r.steps,
             screenshot_b64=r.screenshot_b64, log=r.log,
