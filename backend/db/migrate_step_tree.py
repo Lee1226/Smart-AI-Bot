@@ -5,11 +5,11 @@ Idempotent per suite: a suite that already has StepNode rows is skipped.
 from __future__ import annotations
 
 import json
-from sqlalchemy import select, update
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from core.step_tree import BuiltNode, LegacyCase, build_tree_from_cases
-from db.models import StepNode, TestCase, TestResult, TestSuite
+from db.models import StepNode, TestCase, TestSuite
 
 
 def _checkpoints(raw: str) -> list[tuple]:
@@ -50,9 +50,6 @@ async def migrate_suite_to_step_tree(session: AsyncSession, suite_id: str) -> in
         if len(existing_nodes) == 1 and len(cases) == 1:
             node, case = existing_nodes[0], cases[0]
             if node.parent_id is None and node.action == case.path and (node.expected or "") == (case.expected or ""):
-                await session.execute(
-                    update(TestResult).where(TestResult.case_id == node.id).values(case_id=case.id)
-                )
                 await session.delete(node)
                 await session.commit()
         return 0
@@ -76,8 +73,6 @@ async def migrate_suite_to_step_tree(session: AsyncSession, suite_id: str) -> in
     roots = build_tree_from_cases(legacy)
 
     created = 0
-    remap: dict[str, str] = {}  # old case_id -> final node id
-
     async def _persist(node: BuiltNode, parent_id: str | None) -> None:
         nonlocal created
         row = StepNode(
@@ -87,17 +82,11 @@ async def migrate_suite_to_step_tree(session: AsyncSession, suite_id: str) -> in
         session.add(row)
         await session.flush()  # assign row.id
         created += 1
-        if node.source_case_id:
-            remap[node.source_case_id] = row.id
         for child in node.children:
             await _persist(child, row.id)
 
     for r in roots:
         await _persist(r, None)
 
-    for old_case_id, node_id in remap.items():
-        await session.execute(
-            update(TestResult).where(TestResult.case_id == old_case_id).values(case_id=node_id)
-        )
     await session.commit()
     return created
