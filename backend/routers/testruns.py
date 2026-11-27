@@ -514,7 +514,10 @@ async def create_node_run(req: NodeRunRequest, request: Request, db: AsyncSessio
 # ── Run Comparison (must be before /{run_id} to avoid route shadowing) ──────
 
 class CompareItem(BaseModel):
-    case_id: str
+    target_id: str
+    target_type: str
+    case_id: Optional[str] = None
+    node_id: Optional[str] = None
     path: str
     expected: str
     status_a: Optional[str] = None
@@ -523,7 +526,6 @@ class CompareItem(BaseModel):
     reason_b: str = ""
     steps_a: int = 0
     steps_b: int = 0
-
 
 class CompareOut(BaseModel):
     run_a: RunOut
@@ -543,30 +545,48 @@ async def compare_runs(
     run_a = await require_run(request, db, a)
     run_b = await require_run(request, db, b)
 
-    async def _results_by_case(run_id: str):
-        res = await db.execute(
-            select(TestResult, TestCase)
-            .join(TestCase, TestResult.case_id == TestCase.id)
-            .where(TestResult.run_id == run_id)
-            .order_by(TestCase.order)
-        )
-        return {c.id: (r, c) for r, c in res.all()}
+    async def _results_by_target(run_id: str):
+        rows = (await db.execute(
+            select(TestResult).where(TestResult.run_id == run_id)
+        )).scalars().all()
+        mapped = {}
+        for result in rows:
+            if result.case_id:
+                key = ("case", result.case_id)
+                target_type, target_id = "case", result.case_id
+            elif result.node_id:
+                key = ("node", result.node_id)
+                target_type, target_id = "node", result.node_id
+            else:
+                key = ("flow", "flow")
+                target_type, target_id = "flow", "flow"
+            mapped[key] = (result, target_type, target_id)
+        return mapped
 
-    map_a = await _results_by_case(a)
-    map_b = await _results_by_case(b)
-    all_case_ids = list(dict.fromkeys(list(map_a.keys()) + list(map_b.keys())))
+    map_a = await _results_by_target(a)
+    map_b = await _results_by_target(b)
+    all_targets = list(dict.fromkeys(list(map_a.keys()) + list(map_b.keys())))
 
     cases: List[CompareItem] = []
     improved = regressed = unchanged = 0
 
-    for cid in all_case_ids:
-        ra, ca = map_a.get(cid, (None, None))
-        rb, cb = map_b.get(cid, (None, None))
-        c = ca or cb
+    for key in all_targets:
+        entry_a = map_a.get(key)
+        entry_b = map_b.get(key)
+        ra = entry_a[0] if entry_a else None
+        rb = entry_b[0] if entry_b else None
+        source = ra or rb
+        target_type = (entry_a or entry_b)[1]
+        target_id = (entry_a or entry_b)[2]
+        path = source.target_path or source.target_name or ("执行流程" if target_type == "flow" else "")
+        expected = source.target_expected or ""
         item = CompareItem(
-            case_id=cid,
-            path=c.path if c else "",
-            expected=c.expected if c else "",
+            target_id=target_id,
+            target_type=target_type,
+            case_id=source.case_id,
+            node_id=source.node_id,
+            path=path,
+            expected=expected,
             status_a=ra.status if ra else None,
             status_b=rb.status if rb else None,
             reason_a=ra.reason if ra else "",
