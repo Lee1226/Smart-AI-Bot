@@ -79,22 +79,20 @@ async def generate_html_report(run_id: str) -> str:
             select(TestResult).where(TestResult.run_id == run_id)
         )).scalars().all()
 
-        # A result's case_id resolves against test_cases (legacy runs) OR
-        # step_nodes (tree runs). The old inner join on TestCase produced an
-        # empty report for tree runs, whose results reference StepNode ids.
-        ids = [r.case_id for r in results]
+        # Resolve each result through its explicit target relation. Snapshot
+        # fields remain authoritative if the source asset is later edited/deleted.
+        case_ids = [r.case_id for r in results if r.case_id]
         cases = {c.id: c for c in (await db.execute(
-            select(TestCase).where(TestCase.id.in_(ids))
-        )).scalars().all()}
-        node_ids = [cid for cid in ids if cid not in cases]
-        node_info: dict[str, tuple[str, str]] = {}  # id -> (path, expected)
+            select(TestCase).where(TestCase.id.in_(case_ids))
+        )).scalars().all()} if case_ids else {}
+        node_ids = [r.node_id for r in results if r.node_id]
+        target_nodes = {n.id: n for n in (await db.execute(
+            select(StepNode).where(StepNode.id.in_(node_ids))
+        )).scalars().all()} if node_ids else {}
+        node_info: dict[str, tuple[str, str]] = {}
         node_order: dict[str, int] = {}
-        if node_ids:
-            node_rows = (await db.execute(
-                select(StepNode).where(StepNode.id.in_(node_ids))
-            )).scalars().all()
-            target_nodes = {n.id: n for n in node_rows}
-            suite_ids = {n.suite_id for n in node_rows}
+        if target_nodes:
+            suite_ids = {n.suite_id for n in target_nodes.values()}
             suite_nodes = (await db.execute(
                 select(StepNode).where(StepNode.suite_id.in_(suite_ids))
             )).scalars().all()
@@ -109,17 +107,28 @@ async def generate_html_report(run_id: str) -> str:
                 node_info[nid] = (" > ".join(ci.action for ci in chain), n.expected or "")
                 node_order[nid] = n.order
 
-        def _resolve(cid: str):
-            if cid in cases:
-                c = cases[cid]
-                return SimpleNamespace(path=c.path, expected=c.expected), c.order
-            if cid in node_info:
-                path, expected = node_info[cid]
-                return SimpleNamespace(path=path, expected=expected), node_order.get(cid, 0)
-            return SimpleNamespace(path="", expected=""), 0
+        def _resolve(result: TestResult):
+            if result.target_path:
+                path = result.target_path
+            elif result.case_id and result.case_id in cases:
+                path = cases[result.case_id].path
+            elif result.node_id and result.node_id in node_info:
+                path = node_info[result.node_id][0]
+            else:
+                path = "执行流程"
+            if result.target_expected:
+                expected = result.target_expected
+            elif result.case_id and result.case_id in cases:
+                expected = cases[result.case_id].expected
+            elif result.node_id and result.node_id in node_info:
+                expected = node_info[result.node_id][1]
+            else:
+                expected = ""
+            order = cases[result.case_id].order if result.case_id and result.case_id in cases else node_order.get(result.node_id or "", 0)
+            return SimpleNamespace(path=path, expected=expected), order
 
         ordered = sorted(
-            ((_resolve(r.case_id), r) for r in results),
+            ((_resolve(r), r) for r in results),
             key=lambda t: t[0][1],
         )
         rows = [(r, c) for (c, _order), r in ordered]
