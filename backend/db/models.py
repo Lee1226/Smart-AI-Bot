@@ -1,7 +1,7 @@
 import uuid
 from datetime import datetime
 from typing import Optional
-from sqlalchemy import Boolean, Float, String, Text, Integer, DateTime, ForeignKey, UniqueConstraint
+from sqlalchemy import Boolean, Float, String, Text, Integer, DateTime, ForeignKey, UniqueConstraint, CheckConstraint
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 from db.database import Base
 
@@ -191,8 +191,11 @@ class TestRun(Base):
 
 
 class TestResult(Base):
-    """Result of a single test case within a run."""
+    """Outcome for one TestCase, one StepNode, or one flow-level execution."""
     __tablename__ = "test_results"
+    __table_args__ = (
+        CheckConstraint("case_id IS NULL OR node_id IS NULL", name="ck_test_result_single_target"),
+    )
 
     id: Mapped[str] = mapped_column(String, primary_key=True, default=_uuid)
     run_id: Mapped[str] = mapped_column(ForeignKey("test_runs.id"))
