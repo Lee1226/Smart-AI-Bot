@@ -123,7 +123,7 @@ class RunOut(BaseModel):
 
 class ResultOut(BaseModel):
     id: str
-    case_id: Optional[str] = None
+    case_id: str = ""
     node_id: Optional[str] = None
     target_name: str = ""
     target_path: str = ""
@@ -876,7 +876,7 @@ async def get_results(run_id: str, db: AsyncSession = Depends(get_db)):
             expected = ""
         target_name = r.target_name or (path.split(" > ")[-1] if path else "")
         out.append(ResultOut(
-            id=r.id, case_id=r.case_id, node_id=r.node_id,
+            id=r.id, case_id=r.case_id or "", node_id=r.node_id,
             target_name=target_name, target_path=path, target_expected=expected,
             path=path, expected=expected,
             status=r.status, reason=r.reason, steps=r.steps,
