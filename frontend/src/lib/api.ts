@@ -1003,8 +1003,6 @@ export const createSuiteExecutionPlan = (suiteId: string, platform: string) =>
   api.post<ExecutionPlan>(`/execution-plans/suites/${suiteId}`, { platform }).then(r => r.data)
 export const fetchExecutionPlans = (caseId: string) =>
   api.get<ExecutionPlan[]>(`/execution-plans/cases/${caseId}`).then(r => r.data)
-export const importLegacyExecutionPlan = (caseId: string, platform: string) =>
-  api.post<ExecutionPlan>(`/execution-plans/cases/${caseId}/import-legacy`, { platform }).then(r => r.data)
 export const createExecutionPlanVersion = (planId: string, body: {
   steps: ExecutionPlanStep[]
   metadata?: Record<string, unknown>
