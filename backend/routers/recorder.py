@@ -30,7 +30,8 @@ from sqlalchemy import select
 from agent.ws_device import WebSocketDevice
 from auth.access import require_device
 from db.database import AsyncSessionLocal
-from db.models import TestCase, TestSuite
+from db.models import ExecutionPlan, TestCase, TestSuite
+from core.execution_plan import legacy_replay_to_plan
 from agent import local_adb
 from core.recorder_engine import recorder_engine, sanitize_events_for_storage
 from core.device_control import execute_manual_device_control
@@ -273,11 +274,13 @@ class SaveRequest(BaseModel):
     events: Optional[List[Dict[str, Any]]] = None
     pre_actions: List[Dict[str, Any]] = Field(default_factory=list)
     post_actions: List[Dict[str, Any]] = Field(default_factory=list)
+    platform: str = ""
 
 
 class SaveResponse(BaseModel):
     suite_id: str
     case_id: str
+    execution_plan_id: str
 
 
 # ── Helpers ───────────────────────────────────────────────────────────────────
@@ -817,12 +820,45 @@ async def save_recording(req: SaveRequest, request: Request):
         asset_dir = Path(__file__).resolve().parents[1] / "data" / "recordings" / case.id
         stored_events = sanitize_events_for_storage(req.events or [], str(asset_dir))
         case.recorder_events = json.dumps(stored_events, ensure_ascii=False)
+
+        # A recording save creates its reusable execution flow in the same
+        # transaction as the suite and source case. The flow remains a draft:
+        # recorded gestures do not imply confirmed business intent.
+        try:
+            plan_steps, plan_warnings = legacy_replay_to_plan(case.replay_steps or "")
+            lifecycle_metadata = json.loads(case.lifecycle_actions_json or "{}")
+        except (ValueError, json.JSONDecodeError) as exc:
+            raise HTTPException(status_code=422, detail=f"无法从录制数据生成执行流程：{exc}") from exc
+        if not isinstance(lifecycle_metadata, dict):
+            raise HTTPException(status_code=422, detail="录制用例的执行前/后处理配置格式无效")
+
+        plan = ExecutionPlan(
+            test_case_id=case.id,
+            suite_id=suite.id,
+            version=1,
+            status="draft",
+            source="legacy_import",
+            platform=req.platform.strip(),
+            app_package=suite.app_package or "",
+            metadata_json=json.dumps({
+                "expected": case.expected or "",
+                "source_format": suite.source_format or "",
+                "legacy_path": case.path or "",
+                **lifecycle_metadata,
+            }, ensure_ascii=False),
+            steps_json=json.dumps(plan_steps, ensure_ascii=False),
+            warnings_json=json.dumps(plan_warnings, ensure_ascii=False),
+            account_id=account_id,
+        )
+        db.add(plan)
+        await db.flush()
         await db.commit()
         await db.refresh(suite)
         await db.refresh(case)
+        await db.refresh(plan)
 
-    logger.info("Saved recorded test '%s' (%d steps)", req.suite_name, len(req.steps))
-    return SaveResponse(suite_id=suite.id, case_id=case.id)
+    logger.info("Saved recorded test '%s' (%d steps) with execution plan %s", req.suite_name, len(req.steps), plan.id)
+    return SaveResponse(suite_id=suite.id, case_id=case.id, execution_plan_id=plan.id)
 
 
 @router.get("/cases/{case_id}/events")
