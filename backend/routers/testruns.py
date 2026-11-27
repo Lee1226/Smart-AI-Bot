@@ -123,7 +123,11 @@ class RunOut(BaseModel):
 
 class ResultOut(BaseModel):
     id: str
-    case_id: str = ""
+    case_id: Optional[str] = None
+    node_id: Optional[str] = None
+    target_name: str = ""
+    target_path: str = ""
+    target_expected: str = ""
     path: str
     expected: str
     status: str
@@ -269,7 +273,7 @@ async def create_run(req: StartRunRequest, request: Request, db: AsyncSession = 
 
     # Pre-create result rows
     for case in cases:
-        db.add(TestResult(run_id=run.id, case_id=case.id, status="pending", account_id=account_id))
+        db.add(TestResult(run_id=run.id, case_id=case.id, target_name=case.path, target_path=case.path, target_expected=case.expected, status="pending", account_id=account_id))
 
     await db.commit()
     await db.refresh(run)
@@ -318,7 +322,8 @@ async def create_batch_run(req: StartBatchRunRequest, request: Request, db: Asyn
     await db.flush()
     await _attach_test_account(db, run, req)
     for cid in ordered_ids:
-        db.add(TestResult(run_id=run.id, case_id=cid, status="pending", account_id=request.state.account_id))
+        case = cases[cid]
+        db.add(TestResult(run_id=run.id, case_id=cid, target_name=case.path, target_path=case.path, target_expected=case.expected, status="pending", account_id=request.state.account_id))
     await db.commit()
     await db.refresh(run)
 
@@ -453,7 +458,11 @@ async def create_tree_run(req: StartRunRequest, request: Request, db: AsyncSessi
     db.add(run); await db.flush()
     await _attach_test_account(db, run, req)
     for t in targets:
-        db.add(TestResult(run_id=run.id, case_id=t.node_id, status="pending", account_id=request.state.account_id))
+        node_chain = t.chain
+        node_name = node_chain[-1].action if node_chain else ""
+        node_path = " > ".join(item.action for item in node_chain)
+        node_expected = node_chain[-1].expected if node_chain else ""
+        db.add(TestResult(run_id=run.id, node_id=t.node_id, target_name=node_name, target_path=node_path, target_expected=node_expected, status="pending", account_id=request.state.account_id))
     await db.commit(); await db.refresh(run)
     await start_tree_run(run.id, max_steps=req.max_steps)
     return await _run_out(run, db)
@@ -492,7 +501,11 @@ async def create_node_run(req: NodeRunRequest, request: Request, db: AsyncSessio
                   account_id=request.state.account_id, webhook_url=req.webhook_url)
     db.add(run); await db.flush()
     await _attach_test_account(db, run, req)
-    db.add(TestResult(run_id=run.id, case_id=req.node_id, status="pending", account_id=request.state.account_id))
+    node_chain = targets[0].chain
+    node_name = node_chain[-1].action if node_chain else ""
+    node_path = " > ".join(item.action for item in node_chain)
+    node_expected = node_chain[-1].expected if node_chain else ""
+    db.add(TestResult(run_id=run.id, node_id=req.node_id, target_name=node_name, target_path=node_path, target_expected=node_expected, status="pending", account_id=request.state.account_id))
     await db.commit(); await db.refresh(run)
     await start_tree_run(run.id, max_steps=req.max_steps, only_node_id=req.node_id)
     return await _run_out(run, db)
@@ -820,20 +833,17 @@ async def get_results(run_id: str, db: AsyncSession = Depends(get_db)):
         select(TestResult).where(TestResult.run_id == run_id)
     )).scalars().all()
 
-    # case_id resolves against test_cases (legacy runs) OR step_nodes (tree runs).
-    ids = [r.case_id for r in results if r.case_id]
+    case_ids = [r.case_id for r in results if r.case_id]
     cases = {c.id: c for c in (await db.execute(
-        select(TestCase).where(TestCase.id.in_(ids))
-    )).scalars().all()} if ids else {}
-    node_ids = [cid for cid in ids if cid and cid not in cases]
-    nodes: dict = {}
+        select(TestCase).where(TestCase.id.in_(case_ids))
+    )).scalars().all()} if case_ids else {}
+    node_ids = [r.node_id for r in results if r.node_id]
+    nodes = {n.id: n for n in (await db.execute(
+        select(StepNode).where(StepNode.id.in_(node_ids))
+    )).scalars().all()} if node_ids else {}
     node_path: dict = {}
-    if node_ids:
-        node_rows = (await db.execute(
-            select(StepNode).where(StepNode.id.in_(node_ids))
-        )).scalars().all()
-        nodes = {n.id: n for n in node_rows}
-        suite_ids = {n.suite_id for n in node_rows}
+    if nodes:
+        suite_ids = {n.suite_id for n in nodes.values()}
         suite_nodes = (await db.execute(
             select(StepNode).where(StepNode.suite_id.in_(suite_ids))
         )).scalars().all()
@@ -844,23 +854,31 @@ async def get_results(run_id: str, db: AsyncSession = Depends(get_db)):
                         expected=n.expected or "", order=n.order)
             )
         for nid, n in nodes.items():
-            chain = chain_to_node(by_suite.get(n.suite_id, []), nid)
-            node_path[nid] = " > ".join(c.action for c in chain)
-
-    def _path_expected(cid: Optional[str]):
-        if not cid:
-            return "执行流程", ""
-        if cid in cases:
-            return cases[cid].path, cases[cid].expected
-        if cid in nodes:
-            return node_path.get(cid, ""), nodes[cid].expected or ""
-        return "", ""
+            node_path[nid] = " > ".join(c.action for c in chain_to_node(by_suite.get(n.suite_id, []), nid))
 
     out = []
     for r in results:
-        path, expected = _path_expected(r.case_id)
+        if r.target_path:
+            path = r.target_path
+        elif r.case_id and r.case_id in cases:
+            path = cases[r.case_id].path
+        elif r.node_id and r.node_id in nodes:
+            path = node_path.get(r.node_id, "")
+        else:
+            path = "执行流程"
+        if r.target_expected:
+            expected = r.target_expected
+        elif r.case_id and r.case_id in cases:
+            expected = cases[r.case_id].expected
+        elif r.node_id and r.node_id in nodes:
+            expected = nodes[r.node_id].expected or ""
+        else:
+            expected = ""
+        target_name = r.target_name or (path.split(" > ")[-1] if path else "")
         out.append(ResultOut(
-            id=r.id, case_id=r.case_id or "", path=path, expected=expected,
+            id=r.id, case_id=r.case_id, node_id=r.node_id,
+            target_name=target_name, target_path=path, target_expected=expected,
+            path=path, expected=expected,
             status=r.status, reason=r.reason, steps=r.steps,
             screenshot_b64=r.screenshot_b64, log=r.log,
             started_at=r.started_at.isoformat() if r.started_at else None,
