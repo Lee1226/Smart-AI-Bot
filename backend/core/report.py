@@ -80,7 +80,7 @@ async def generate_html_report(run_id: str) -> str:
         )).scalars().all()
 
         # Resolve each result through its explicit target relation. Snapshot
-        # fields remain authoritative if the source asset is later edited/deleted.
+        # fields remain authoritative if the source asset is later edited.
         case_ids = [r.case_id for r in results if r.case_id]
         cases = {c.id: c for c in (await db.execute(
             select(TestCase).where(TestCase.id.in_(case_ids))
