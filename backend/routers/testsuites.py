@@ -1031,12 +1031,13 @@ async def _purge_results(results: List[TestResult], db: AsyncSession) -> int:
     primed by experience the user just discarded.
     """
     for r in results:
-        await db.execute(
-            delete(LessonLearned).where(
-                LessonLearned.case_id == r.case_id,
-                LessonLearned.source_run_id == r.run_id,
+        if r.case_id:
+            await db.execute(
+                delete(LessonLearned).where(
+                    LessonLearned.case_id == r.case_id,
+                    LessonLearned.source_run_id == r.run_id,
+                )
             )
-        )
         await db.execute(delete(TestStepLog).where(TestStepLog.result_id == r.id))
         await db.execute(delete(TestResult).where(TestResult.id == r.id))
     await db.commit()
@@ -1093,7 +1094,7 @@ async def list_node_results(node_id: str, db: AsyncSession = Depends(get_db)):
     rows = await db.execute(
         select(TestResult, TestRun)
         .join(TestRun, TestResult.run_id == TestRun.id)
-        .where(TestResult.case_id == node_id)
+        .where(TestResult.node_id == node_id)
         .order_by(TestRun.created_at.desc())
     )
     out: List[CaseResultOut] = []
@@ -1111,7 +1112,7 @@ async def list_node_results(node_id: str, db: AsyncSession = Depends(get_db)):
 async def delete_node_result(node_id: str, result_id: str, db: AsyncSession = Depends(get_db)):
     await _require_node(node_id, db)
     result = await db.get(TestResult, result_id)
-    if not result or result.case_id != node_id:
+    if not result or result.node_id != node_id:
         raise HTTPException(status_code=404, detail="Result not found")
     await _purge_results([result], db)
 
