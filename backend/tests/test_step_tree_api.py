@@ -60,7 +60,7 @@ async def test_migrate_flat_cases_to_tree(session):
     assert len(nodes) == 3
     answer = next(n for n in nodes if n.action == "答题")
     await session.refresh(res)
-    assert res.case_id == answer.id          # result repointed to final node
+    assert res.case_id == c1.id and res.node_id is None  # asset migration never rewrites execution-result identity
 
     # Idempotent: running again creates nothing.
     again = await migrate_suite_to_step_tree(session, suite.id)
@@ -164,7 +164,7 @@ async def test_node_results_history(client, session):
     suite = TestSuite(account_id='fixture-account', name="s", source_format="manual"); session.add(suite); await session.flush()
     node = StepNode(account_id='fixture-account', suite_id=suite.id, parent_id=None, action="登录", order=0); session.add(node); await session.flush()
     run = TestRun(account_id='fixture-account', suite_id=suite.id, device_id="d", provider="p", model="m"); session.add(run); await session.flush()
-    r = TestResult(account_id='fixture-account', run_id=run.id, case_id=node.id, status="pass", steps=3, total_tokens=42)
+    r = TestResult(account_id='fixture-account', run_id=run.id, node_id=node.id, target_name=node.action, target_path=node.action, status="pass", steps=3, total_tokens=42)
     session.add(r); await session.commit()
 
     results = (await client.get(f"/api/nodes/{node.id}/results")).json()
@@ -178,14 +178,14 @@ async def test_node_results_history(client, session):
 
 @pytest.mark.asyncio
 async def test_run_results_resolve_node_ids(client, session):
-    # Tree-run results key TestResult.case_id to a node id — the run detail must
+    # Tree-run results use TestResult.node_id — the run detail must
     # still resolve path/expected (regression: inner-join to test_cases gave [] ).
     suite = TestSuite(account_id='fixture-account', name="s", source_format="manual"); session.add(suite); await session.flush()
     n1 = StepNode(account_id='fixture-account', suite_id=suite.id, parent_id=None, action="登录", order=0); session.add(n1); await session.flush()
     n2 = StepNode(account_id='fixture-account', suite_id=suite.id, parent_id=n1.id, action="点击空间", expected="个人信息页", order=0)
     session.add(n2); await session.flush()
     run = TestRun(account_id='fixture-account', suite_id=suite.id, device_id="d", provider="p", model="m"); session.add(run); await session.flush()
-    session.add(TestResult(account_id='fixture-account', run_id=run.id, case_id=n2.id, status="pass", steps=5))
+    session.add(TestResult(account_id='fixture-account', run_id=run.id, node_id=n2.id, target_name=n2.action, target_path="登录 > 点击空间", target_expected=n2.expected, status="pass", steps=5))
     await session.commit()
 
     results = (await client.get(f"/api/runs/{run.id}/results")).json()
