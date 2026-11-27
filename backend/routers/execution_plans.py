@@ -456,7 +456,7 @@ async def run_execution_plan(
     )
     db.add(run)
     await db.flush()
-    db.add(TestResult(run_id=run.id, case_id=case.id if case else None, status="pending", account_id=account_id))
+    db.add(TestResult(run_id=run.id, target_name="执行计划", target_path="执行计划", status="pending", account_id=account_id))
     plan.status = "draft"
     plan.validated_run_id = ""
     plan.updated_at = datetime.utcnow()
