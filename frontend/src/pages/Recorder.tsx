@@ -573,11 +573,12 @@ export default function Recorder() {
     setLoading(true)
     setError('')
     try {
-      const { data } = await api.post<{ suite_id: string }>('/recorder/save', {
+      const { data } = await api.post<{ suite_id: string; case_id: string; execution_plan_id: string }>('/recorder/save', {
         device_id: deviceId,
         suite_name: suiteName.trim(),
         case_name: caseName.trim(),
         expected: expected.trim(),
+        platform: selectedDevice?.platform || '',
         steps,
         pre_actions: preActions,
         post_actions: postActions,
