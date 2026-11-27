@@ -245,26 +245,11 @@ class RunRecorder:
                             queues[name].get(), name=f"rec-{name}-get-{self.run_id[:8]}"
                         )
 
-                # Drain both bounded queues in batches, amortizing executor
-                # scheduling while preserving device PTS order within each batch.
-                for name, queue in queues.items():
-                    if name in ended or name not in get_tasks:
-                        continue
-                    for _ in range(64):
-                        try:
-                            item = queue.get_nowait()
-                        except asyncio.QueueEmpty:
-                            break
-                        if item is None:
-                            ended.add(name)
-                            task = get_tasks.pop(name, None)
-                            if task is not None:
-                                task.cancel()
-                            break
-                        if isinstance(item, dict) and item.get("error"):
-                            raise RuntimeError(f"{name} capture failed: {item['error']}")
-                        batch.append((name, item))
-
+                # Keep exactly one outstanding queue.get() per stream and
+                # never bypass it with get_nowait(). A pending getter may already
+                # have reserved an AAC/H.264 configuration packet; draining the
+                # queue here could then hand a later data packet to the muxer
+                # before that configuration packet is written.
                 stats["max_video_queue"] = max(
                     stats["max_video_queue"],
                     getattr(queues["video"], "_recorder_peak_size", queues["video"].qsize()),
