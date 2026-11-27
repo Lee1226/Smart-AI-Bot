@@ -4,7 +4,7 @@ import { api, type Device } from '../lib/api'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import {
   updateExecutionPlan, ExecutionPlanStep, ExecutionPlanIntent,
-  createSuiteExecutionPlan, fetchAppCatalog, fetchSuiteExecutionPlan, runExecutionPlan,
+  createSuiteExecutionPlan, fetchAppCatalog, fetchSuiteExecutionPlan, fetchSuiteCases, runExecutionPlan,
 } from '../lib/api'
 import { useT } from '../lib/i18n'
 import LifecycleActionEditor, { type LifecycleAction } from './LifecycleActionEditor'
@@ -52,7 +52,7 @@ function hasValidSwipeCoordinates(step: ExecutionPlanStep): boolean {
   })
 }
 
-export default function ExecutionPlanManager({ suiteId, platform, device }: { suiteId: string; platform: string; device: Device | null }) {
+export default function ExecutionPlanManager({ suiteId, sourceFormat, platform, device }: { suiteId: string; sourceFormat: string; platform: string; device: Device | null }) {
   const t = useT()
   const qc = useQueryClient()
   const [planId, setPlanId] = useState('')
@@ -69,6 +69,12 @@ export default function ExecutionPlanManager({ suiteId, platform, device }: { su
   const { models } = useExecutionModels()
   const selectedModel = models.find(item => item.id === modelId)
 
+  const { data: cases = [] } = useQuery({
+    queryKey: ['suite-cases', suiteId],
+    queryFn: () => fetchSuiteCases(suiteId),
+    enabled: sourceFormat === 'recorded',
+  })
+  const selectedCase = cases[0]
   const { data: plans = [], isLoading: plansLoading } = useQuery({
     queryKey: ['suite-execution-plan', suiteId],
     queryFn: () => fetchSuiteExecutionPlan(suiteId),
