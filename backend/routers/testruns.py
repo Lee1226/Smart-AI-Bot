@@ -17,13 +17,11 @@ from core.run_recorder import has_recording, recording_path, recording_directory
 from core.settings_store import load_settings
 from core.test_runner import active_runs, cancel_run, run_log_stream, start_run, start_batch_run
 from db.database import AsyncSessionLocal
-from core.step_tree import NodeRow, chain_to_node
 from db.models import (
     QUICK_SUITE_FORMAT,
     QUICK_SUITE_PREFIX,
     Device,
     LessonLearned,
-    StepNode,
     TestCase,
     TestResult,
     TestRun,
