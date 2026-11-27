@@ -4,7 +4,7 @@ import { api, type Device } from '../lib/api'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import {
   updateExecutionPlan, ExecutionPlanStep, ExecutionPlanIntent,
-  createSuiteExecutionPlan, fetchAppCatalog, fetchSuiteExecutionPlan, fetchSuiteCases, importLegacyExecutionPlan, runExecutionPlan,
+  createSuiteExecutionPlan, fetchAppCatalog, fetchSuiteExecutionPlan, runExecutionPlan,
 } from '../lib/api'
 import { useT } from '../lib/i18n'
 import LifecycleActionEditor, { type LifecycleAction } from './LifecycleActionEditor'
@@ -69,13 +69,6 @@ export default function ExecutionPlanManager({ suiteId, sourceFormat, platform, 
   const { models } = useExecutionModels()
   const selectedModel = models.find(item => item.id === modelId)
 
-  const { data: cases = [], isLoading: casesLoading } = useQuery({
-    queryKey: ['suite-cases', suiteId],
-    queryFn: () => fetchSuiteCases(suiteId),
-    enabled: sourceFormat === 'recorded',
-  })
-  const selectedCase = cases[0]
-  const activeCaseId = selectedCase?.id || ''
   const { data: plans = [], isLoading: plansLoading } = useQuery({
     queryKey: ['suite-execution-plan', suiteId],
     queryFn: () => fetchSuiteExecutionPlan(suiteId),
@@ -109,21 +102,6 @@ export default function ExecutionPlanManager({ suiteId, sourceFormat, platform, 
     onError: (e: unknown) => {
       const msg = (e as { response?: { data?: { detail?: string } } })?.response?.data?.detail || String(e)
       alert(t(`创建执行流程失败：${msg}`, `Failed to create execution flow: ${msg}`))
-    },
-  })
-  const importMut = useMutation({
-    mutationFn: () => {
-      if (!activeCaseId) throw new Error('该录制套件没有可导入的录制用例')
-      return importLegacyExecutionPlan(activeCaseId, platform)
-    },
-    onSuccess: async plan => {
-      setPlanId(plan.id)
-      setEditing(false)
-      await invalidate()
-    },
-    onError: (e: unknown) => {
-      const msg = (e as { response?: { data?: { detail?: string } } })?.response?.data?.detail || String(e)
-      alert(t(`生成失败：${msg}`, `Generation failed: ${msg}`))
     },
   })
   const saveMut = useMutation({
@@ -353,7 +331,7 @@ export default function ExecutionPlanManager({ suiteId, sourceFormat, platform, 
     })
   }
 
-  if ((sourceFormat === 'recorded' && casesLoading) || plansLoading) return <div className="mt-6 text-sm text-gray-400">{t('加载执行流程…', 'Loading execution flow…')}</div>
+  if (plansLoading) return <div className="mt-6 text-sm text-gray-400">{t('加载执行流程…', 'Loading execution flow…')}</div>
 
   return (
     <section className="mt-6 overflow-hidden rounded-2xl border border-slate-200/80 bg-white shadow-[0_10px_32px_rgba(31,75,135,0.06)]">
@@ -375,12 +353,6 @@ export default function ExecutionPlanManager({ suiteId, sourceFormat, platform, 
                 disabled={createMut.isPending} onClick={() => createMut.mutate()}>
                 {createMut.isPending ? t('创建中…', 'Creating…') : t('创建执行流程', 'Create flow')}
               </button>
-              {sourceFormat === 'recorded' && activeCaseId && (
-                <button className="rounded-md border border-blue-200 bg-blue-50 px-3 py-2 text-xs font-medium text-blue-700 hover:bg-blue-100 disabled:opacity-50"
-                  disabled={importMut.isPending} onClick={() => importMut.mutate()}>
-                  {importMut.isPending ? t('导入中…', 'Importing…') : t('从录制数据生成', 'Import recording')}
-                </button>
-              )}
             </>
           )}
         </div>
@@ -410,7 +382,7 @@ export default function ExecutionPlanManager({ suiteId, sourceFormat, platform, 
             {!selectedPlan && !plansLoading && (
               <div className="rounded-2xl border border-dashed border-slate-200 bg-slate-50/70 px-4 py-8 text-center">
                 <div className="text-sm font-medium text-gray-700">{t('还没有执行流程', 'No execution flow yet')}</div>
-                <p className="mt-1 text-xs text-gray-500">{t('可以手动编排步骤；录制套件也可以从录制数据导入。', 'Create steps manually, or import recorded actions for a recorded suite.')}</p>
+                <p className="mt-1 text-xs text-gray-500">{t('可以在这里手动编排执行步骤。', 'Create steps manually, or import recorded actions for a recorded suite.')}</p>
               </div>
             )}
           </>
