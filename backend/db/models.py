@@ -137,10 +137,10 @@ class TestCase(Base):
 
 
 class StepNode(Base):
-    """One step in a suite's step-tree. A test case = a root→node path.
+    """A node in a suite's step-tree forest and an independently executable target.
 
-    Shared prefixes are a single node (true reuse): every case passing through
-    a node references the same row. See the step-tree design spec.
+    A suite may contain multiple roots. Executing a node runs its root-to-target
+    path, while the result belongs only to the selected target node.
     """
     __tablename__ = "step_nodes"
 
@@ -196,8 +196,14 @@ class TestResult(Base):
 
     id: Mapped[str] = mapped_column(String, primary_key=True, default=_uuid)
     run_id: Mapped[str] = mapped_column(ForeignKey("test_runs.id"))
-    # Null for suite-level execution-plan runs; tree/case runs keep their target ID.
-    case_id: Mapped[Optional[str]] = mapped_column(ForeignKey("test_cases.id"), nullable=True)
+    # Exactly one asset target may be set. Both null means a flow-level result
+    # (for example, an ExecutionPlan run).
+    case_id: Mapped[Optional[str]] = mapped_column(ForeignKey("test_cases.id"), nullable=True, index=True)
+    node_id: Mapped[Optional[str]] = mapped_column(ForeignKey("step_nodes.id"), nullable=True, index=True)
+    # Immutable execution-time identity, independent of later asset edits.
+    target_name: Mapped[str] = mapped_column(String, default="")
+    target_path: Mapped[str] = mapped_column(Text, default="")
+    target_expected: Mapped[str] = mapped_column(Text, default="")
     status: Mapped[str] = mapped_column(String, default="pending")  # pending/pass/fail/error/skip
     reason: Mapped[str] = mapped_column(Text, default="")
     steps: Mapped[int] = mapped_column(Integer, default=0)
