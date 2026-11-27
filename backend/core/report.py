@@ -79,8 +79,8 @@ async def generate_html_report(run_id: str) -> str:
             select(TestResult).where(TestResult.run_id == run_id)
         )).scalars().all()
 
-        # Resolve each result through its explicit target relation. Snapshot
-        # fields remain authoritative if the source asset is later edited.
+        # Result labels are execution-time snapshots; current asset edits must
+        # not rewrite the historical report.
         case_ids = [r.case_id for r in results if r.case_id]
         cases = {c.id: c for c in (await db.execute(
             select(TestCase).where(TestCase.id.in_(case_ids))
@@ -89,41 +89,11 @@ async def generate_html_report(run_id: str) -> str:
         target_nodes = {n.id: n for n in (await db.execute(
             select(StepNode).where(StepNode.id.in_(node_ids))
         )).scalars().all()} if node_ids else {}
-        node_info: dict[str, tuple[str, str]] = {}
-        node_order: dict[str, int] = {}
-        if target_nodes:
-            suite_ids = {n.suite_id for n in target_nodes.values()}
-            suite_nodes = (await db.execute(
-                select(StepNode).where(StepNode.suite_id.in_(suite_ids))
-            )).scalars().all()
-            by_suite: dict = {}
-            for n in suite_nodes:
-                by_suite.setdefault(n.suite_id, []).append(
-                    NodeRow(id=n.id, parent_id=n.parent_id, action=n.action,
-                            expected=n.expected or "", order=n.order)
-                )
-            for nid, n in target_nodes.items():
-                chain = chain_to_node(by_suite.get(n.suite_id, []), nid)
-                node_info[nid] = (" > ".join(ci.action for ci in chain), n.expected or "")
-                node_order[nid] = n.order
+        node_order = {nid: node.order for nid, node in target_nodes.items()}
 
         def _resolve(result: TestResult):
-            if result.target_path:
-                path = result.target_path
-            elif result.case_id and result.case_id in cases:
-                path = cases[result.case_id].path
-            elif result.node_id and result.node_id in node_info:
-                path = node_info[result.node_id][0]
-            else:
-                path = "执行流程"
-            if result.target_expected:
-                expected = result.target_expected
-            elif result.case_id and result.case_id in cases:
-                expected = cases[result.case_id].expected
-            elif result.node_id and result.node_id in node_info:
-                expected = node_info[result.node_id][1]
-            else:
-                expected = ""
+            path = result.target_path or result.target_name or "执行流程"
+            expected = result.target_expected
             order = cases[result.case_id].order if result.case_id and result.case_id in cases else node_order.get(result.node_id or "", 0)
             return SimpleNamespace(path=path, expected=expected), order
 
