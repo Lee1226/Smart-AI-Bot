@@ -430,7 +430,7 @@ async def quick_run(req: QuickRunRequest, request: Request, db: AsyncSession = D
     await db.flush()
     await _attach_test_account(db, run, req)
 
-    db.add(TestResult(run_id=run.id, case_id=case.id, status="pending", account_id=account_id))
+    db.add(TestResult(run_id=run.id, case_id=case.id, target_name=case.path, target_path=case.path, target_expected=case.expected, status="pending", account_id=account_id))
     await db.commit()
     await db.refresh(run)
 
