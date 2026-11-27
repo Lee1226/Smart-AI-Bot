@@ -53,6 +53,10 @@ async def init_db():
             "is_starred": "BOOLEAN DEFAULT 0",
             "action_history_json": "TEXT DEFAULT ''",
             "total_tokens": "INTEGER DEFAULT 0",
+            "node_id": "VARCHAR",
+            "target_name": "VARCHAR DEFAULT ''",
+            "target_path": "TEXT DEFAULT ''",
+            "target_expected": "TEXT DEFAULT ''",
         })
 
         await _ensure_columns("test_step_logs", {
