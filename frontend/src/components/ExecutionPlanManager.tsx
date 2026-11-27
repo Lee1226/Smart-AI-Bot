@@ -52,7 +52,7 @@ function hasValidSwipeCoordinates(step: ExecutionPlanStep): boolean {
   })
 }
 
-export default function ExecutionPlanManager({ suiteId, sourceFormat, platform, device }: { suiteId: string; sourceFormat: string; platform: string; device: Device | null }) {
+export default function ExecutionPlanManager({ suiteId, platform, device }: { suiteId: string; platform: string; device: Device | null }) {
   const t = useT()
   const qc = useQueryClient()
   const [planId, setPlanId] = useState('')
