@@ -121,7 +121,7 @@ export default function RunCompare() {
             <table className="w-full min-w-[760px] text-sm">
               <thead>
                 <tr className="border-b border-slate-200 bg-slate-50 text-left text-xs font-semibold tracking-wide text-slate-500">
-                  <th className="px-5 py-3">测试用例</th>
+                  <th className="px-5 py-3">测试目标</th>
                   <th className="w-20 px-4 py-3 text-center">基准 A</th>
                   <th className="w-10 px-2 py-3 text-center"></th>
                   <th className="w-20 px-4 py-3 text-center">新版本 B</th>
