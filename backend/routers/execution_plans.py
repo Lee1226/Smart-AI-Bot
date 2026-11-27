@@ -1,4 +1,4 @@
-"""Versioned execution-plan APIs and legacy replay import."""
+"""Versioned execution-plan APIs."""
 from __future__ import annotations
 
 import json
