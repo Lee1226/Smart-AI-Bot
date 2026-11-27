@@ -40,11 +40,17 @@ from core.settings_store import (
 logger = logging.getLogger(__name__)
 
 
-async def _resolve_verifier_model(account_id: str, settings: dict):
-    """Resolve the optional dedicated Verifier model; empty means inherit the run model."""
+async def _resolve_verifier_model(account_id: str, settings: dict, run_model_config: dict):
+    """Resolve the dedicated Verifier model, or inherit the selected run model."""
     model_id = (settings.get("verifier_model_id") or "").strip()
     if not model_id:
-        return "", "", "", "", {}
+        return (
+            run_model_config["provider"],
+            run_model_config["model"],
+            run_model_config["api_key"],
+            run_model_config["api_base"],
+            run_model_config.get("provider_kwargs", {}),
+        )
     from core.model_resolver import resolve_model_config
     async with AsyncSessionLocal() as session:
         config = await resolve_model_config(session, account_id, model_id)
@@ -302,7 +308,7 @@ async def execute_batch_run(run_id: str, state: "RunState", base_path: str,
         provider, model = model_config["provider"], model_config["model"]
         api_key, api_base = model_config["api_key"], model_config["api_base"]
         api_extra_kwargs = model_config.get("provider_kwargs", {})
-        v_provider, v_model, v_key, v_base, v_extra_kwargs = await _resolve_verifier_model(account_id, settings)
+        v_provider, v_model, v_key, v_base, v_extra_kwargs = await _resolve_verifier_model(account_id, settings, model_config)
         fallbacks, verifier_fallbacks = await _resolve_run_fallbacks(account_id, model_config, settings)
         language = resolve_language(settings)
         if _missing_key(provider, api_key):
@@ -578,7 +584,7 @@ async def execute_tree_run(run_id: str, state: "RunState", max_steps: int = 20,
         provider, model = model_config["provider"], model_config["model"]
         api_key, api_base = model_config["api_key"], model_config["api_base"]
         api_extra_kwargs = model_config.get("provider_kwargs", {})
-        v_provider, v_model, v_key, v_base, v_extra_kwargs = await _resolve_verifier_model(account_id, settings)
+        v_provider, v_model, v_key, v_base, v_extra_kwargs = await _resolve_verifier_model(account_id, settings, model_config)
         fallbacks, verifier_fallbacks = await _resolve_run_fallbacks(account_id, model_config, settings)
         language = resolve_language(settings)
         if _missing_key(provider, api_key):
@@ -901,7 +907,7 @@ async def execute_replay_run(
         provider, model = model_config["provider"], model_config["model"]
         api_key, api_base = model_config["api_key"], model_config["api_base"]
         api_extra_kwargs = model_config.get("provider_kwargs", {})
-        v_provider, v_model, v_key, v_base, v_extra_kwargs = await _resolve_verifier_model(account_id, settings)
+        v_provider, v_model, v_key, v_base, v_extra_kwargs = await _resolve_verifier_model(account_id, settings, model_config)
         fallbacks, verifier_fallbacks = await _resolve_run_fallbacks(account_id, model_config, settings)
         language = resolve_language(settings)
         if _missing_key(provider, api_key):
@@ -1093,7 +1099,7 @@ async def execute_run(
         provider, model = model_config["provider"], model_config["model"]
         api_key, api_base = model_config["api_key"], model_config["api_base"]
         api_extra_kwargs = model_config.get("provider_kwargs", {})
-        v_provider, v_model, v_key, v_base, v_extra_kwargs = await _resolve_verifier_model(account_id, settings)
+        v_provider, v_model, v_key, v_base, v_extra_kwargs = await _resolve_verifier_model(account_id, settings, model_config)
         fallbacks, verifier_fallbacks = await _resolve_run_fallbacks(account_id, model_config, settings)
         language = resolve_language(settings)
         if _missing_key(provider, api_key):
