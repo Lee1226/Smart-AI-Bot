@@ -351,7 +351,7 @@ export default function ExecutionPlanManager({ suiteId, sourceFormat, platform, 
       <div className="space-y-5 p-5">
         <div className="flex flex-wrap items-center gap-2">
           {selectedPlan ? (
-            <span className="text-xs text-gray-500">{selectedPlan.source === 'legacy_import' ? t('来源：录制数据导入', 'Source: recording import') : t('来源：手动编排', 'Source: manual authoring')}</span>
+            <span className="text-xs text-gray-500">{selectedPlan.source === 'legacy_import' ? t('来源：录制自动生成', 'Source: automatically generated from recording') : t('来源：手动编排', 'Source: manual authoring')}</span>
           ) : (
             <>
               <span className="flex-1 text-xs text-gray-500">{t('该套件尚未创建执行流程。', 'This suite does not have an execution flow yet.')}</span>
