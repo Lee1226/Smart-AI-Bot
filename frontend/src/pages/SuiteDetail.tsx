@@ -281,7 +281,7 @@ export default function SuiteDetail() {
 
           {suite?.source_format === 'ai_organized' && <SuiteOrganizationInfo suiteId={suiteId!} />}
           <StepTreeEditor suiteId={suiteId!} onRunNode={onRunNode} />
-          {suite && <ExecutionPlanManager suiteId={suiteId!} platform={devices.find(d => d.id === deviceId)?.platform || 'android'} device={devices.find(d => d.id === deviceId) || null} />}
+          {suite && <ExecutionPlanManager suiteId={suiteId!} sourceFormat={suite.source_format} platform={devices.find(d => d.id === deviceId)?.platform || 'android'} device={devices.find(d => d.id === deviceId) || null} />}
 
           {/* Pass rate trend chart */}
           {trends.length >= 2 && (
