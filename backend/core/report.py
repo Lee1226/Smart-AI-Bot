@@ -23,7 +23,6 @@ from sqlalchemy import select
 
 from core.i18n import report_labels
 from core.settings_store import load_settings, resolve_language
-from core.step_tree import NodeRow, chain_to_node
 from db.database import AsyncSessionLocal
 from db.models import StepNode, TestCase, TestResult, TestRun, TestStepLog, TestSuite
 
